@@ -373,22 +373,21 @@ def _test_step(self, inputs):
   enc_output, enc_state = self.encoder(input_tokens)
   dec_state = enc_state
   loss = tf.constant(0.0)
-  metric = tf.constant(0.0)
 
   for t in tf.range(max_target_length-1):
       # Pass in two tokens from the target sequence:
       # 1. The current input to the decoder.
       # 2. The target for the decoder's next prediction.
       new_tokens = target_tokens[:, t:t+2]
-      step_loss, step_metric, dec_state = self._loop_step(
+      y, y_pred, dec_state = self._loop_step(
                                              new_tokens, input_mask,
                                              enc_output, dec_state)
-      loss = loss + step_loss
-      metric = metric + step_metric
+      loss = loss + self.loss(y, y_pred)
+      self.test_metric.update_state(y, y_pred)
 
     # Average the loss over all non padding tokens.
   average_loss = loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
-  average_metric = metric / tf.reduce_sum(tf.cast(target_mask, tf.float32))
+  average_metric = self.test_metric.result()
 
   return {'loss': average_loss, 'accuracy': average_metric}
 
@@ -411,22 +410,22 @@ def _train_step(self, inputs):
     # units.
     dec_state = enc_state
     loss = tf.constant(0.0)
-    metric = tf.constant(0.0)
+    #metric = tf.constant(0.0)
 
     for t in tf.range(max_target_length-1):
       # Pass in two tokens from the target sequence:
       # 1. The current input to the decoder.
       # 2. The target for the decoder's next prediction.
       new_tokens = target_tokens[:, t:t+2]
-      step_loss, step_metric, dec_state = self._loop_step(
+      y, y_pred, dec_state = self._loop_step(
                                              new_tokens, input_mask,
                                              enc_output, dec_state)
-      loss = loss + step_loss
-      metric = metric + step_metric
+      loss = loss + self.loss(y, y_pred)
+      self.train_metric.update_state(y, y_pred)
 
     # Average the loss over all non padding tokens.
     average_loss = loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
-    average_metric = metric / tf.reduce_sum(tf.cast(target_mask, tf.float32))
+    average_metric = self.train_metric.result() # / tf.reduce_sum(tf.cast(target_mask, tf.float32))
 
   # Apply an optimization step
   variables = self.trainable_variables
@@ -435,6 +434,54 @@ def _train_step(self, inputs):
 
   # Return a dict mapping metric names to current value
   return {'loss': average_loss, 'accuracy': average_metric}
+
+def _train_step_(self, inputs):
+    input_text, target_text = inputs
+
+    (input_tokens, input_mask,
+    target_tokens, target_mask) = self._preprocess(input_text, target_text)
+
+    max_target_length = tf.shape(target_tokens)[1]
+    loss = tf.constant(0.0)
+    #seq_outputs = []
+    with tf.GradientTape() as tape:
+
+        for t in range(max_target_length-1):  #tf.range(max_target_length-1):
+        #metric = tf.constant(0.0)
+
+    # Encode the input
+            enc_output, enc_state = self.encoder(input_tokens)
+            self.shape_checker(enc_output, ('batch', 's', 'enc_units'))
+            self.shape_checker(enc_state, ('batch', 'enc_units'))
+
+    # Initialize the decoder's state to the encoder's final state.
+    # This only works if the encoder and decoder have the same number of
+    # units.
+            dec_state = enc_state
+            dec_state_ = enc_state
+      # Pass in two tokens from the target sequence:
+      # 1. The current input to the decoder.
+      # 2. The target for the decoder's next prediction.
+            new_tokens = target_tokens[:, t:t+2]
+            y, y_pred, dec_state = self._loop_step(
+                                             new_tokens, input_mask,
+                                             enc_output, dec_state)
+            loss = loss + self.loss(y, y_pred)
+            #seq_output.append((y, y_pred))
+            self.metric.update_state(y, y_pred)
+
+
+    # Average the loss over all non padding tokens.
+    average_loss = loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
+    average_metric = self.metric.result()
+
+  # Apply an optimization step
+    variables = self.trainable_variables
+    gradients = tape.gradient(average_loss, variables)
+    self.optimizer.apply_gradients(zip(gradients, variables))
+
+  # Return a dict mapping metric names to current value
+    return {'loss': average_loss, 'accuracy': average_metric}
 
 
 def _loop_step(self, new_tokens, input_mask, enc_output, dec_state):
@@ -453,10 +500,14 @@ def _loop_step(self, new_tokens, input_mask, enc_output, dec_state):
   # `self.loss` returns the total for non-padded tokens
   y = target_token
   y_pred = dec_result.logits
-  step_loss = self.loss(y, y_pred)
-  step_metric = self.metric(y, y_pred)
 
-  return step_loss, step_metric, dec_state
+  #if loss_metric:
+  #  out_eval = self.loss(y, y_pred)
+  #else:
+  #  self.metric.update_state(y, y_pred)
+  #  out_eval = None
+  return y, y_pred, dec_state
+  #return out_eval, dec_state
 
 
 @tf.function(input_signature=[[tf.TensorSpec(dtype=tf.string, shape=[None]),
@@ -662,7 +713,8 @@ TrainTranslator._test_step = _test_step
 TrainTranslator._loop_step = _loop_step
 TrainTranslator._tf_train_step = _tf_train_step
 TrainTranslator._tf_test_step = _tf_test_step
-TrainTranslator.metric = keras.metrics.SparseCategoricalAccuracy()
+TrainTranslator.train_metric = keras.metrics.SparseCategoricalAccuracy()
+TrainTranslator.test_metric = keras.metrics.SparseCategoricalAccuracy()
 
 Translator.tokens_to_text = tokens_to_text
 Translator.sample = sample
@@ -729,7 +781,7 @@ max_vocab = max([
 if max_features > max_vocab:
     max_features = max_vocab
 
-checkpoint_path = ("results/KBCCSRNCD-attentionRNN_epochs"
+checkpoint_path = ("results/CSRncdKBC-attentionGRU_epochs"
     "-{}_seqlen-{}_maxfeat-{}_batch-{}_embdim-{}_steps-{}/cp.ckpt".format(
     n_epochs,
     sequence_length,
