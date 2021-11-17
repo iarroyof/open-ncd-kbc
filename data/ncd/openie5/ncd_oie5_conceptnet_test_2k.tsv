@@ -1,0 +1,2000 @@
+     1	     1	IsA	cavity	decay hole in your tooth	2.0
+     2	     2	HasPrerequisite	watch even news	be near tv	1.5849625007211563
+     3	     3	IsA	sun	set in west	1.5849625007211563
+     4	     4	AtLocation	canoe	water	2.807354922057604
+     5	     5	CausesDesire	love	procreate	2.321928094887362
+     6	     6	AtLocation	apple	resturant	1.5849625007211563
+     7	     7	AtLocation	unidentified fly object	sky	2.0
+     8	     8	PartOf	tree	forrest	2.584962500721156
+     9	     9	AtLocation	battleship	any sea	1.5849625007211563
+    10	    10	CapableOf	leather seat	get hot	1.5849625007211563
+    11	    11	CapableOf	something	decompose	2.321928094887362
+    12	    12	HasProperty	tulip	pink	2.0
+    13	    13	CapableOf	vagina	widen	2.0
+    14	    14	AtLocation	poop	street	1.5849625007211563
+    15	    15	AtLocation	horse	sumo	1.5849625007211563
+    16	    16	CapableOf	greeter	welcome patron	1.5849625007211563
+    17	    17	HasPrerequisite	think	brain cell	1.5849625007211563
+    18	    18	UsedFor	computer	accomplish task	1.5849625007211563
+    19	    19	IsA	eros	greek god	2.0
+    20	    20	NotDesires	person	broke leg	1.5849625007211563
+    21	    21	AtLocation	passenger	vehicle	2.0
+    22	    22	AtLocation	bomb	aircraft	2.0
+    23	    23	HasSubevent	chat with friend	talk about business	2.0
+    24	    24	DefinedAs	san bruno elfin butterfly	callophrys mossii bayensis	1.5849625007211563
+    25	    25	HasProperty	alarm clock	loud	2.584962500721156
+    26	    26	MotivatedByGoal	yawn	you be tire	1.5849625007211563
+    27	    27	HasPrerequisite	purchase cellular phone	good credit	1.5849625007211563
+    28	    28	HasSubevent	have physical examination	you talk to doctor	2.0
+    29	    29	AtLocation	snake	museum	1.5849625007211563
+    30	    30	HasProperty	homemade food	good than store-bought	1.5849625007211563
+    31	    31	AtLocation	neighbor	neighborhood	2.0
+    32	    32	HasProperty	portrait	common before camera be invent	1.5849625007211563
+    33	    33	AtLocation	someone	motel	2.321928094887362
+    34	    34	MotivatedByGoal	take extra care of yourself	of cold	1.5849625007211563
+    35	    35	HasSubevent	child play with toy	it be have fun	1.5849625007211563
+    36	    36	HasPrerequisite	make speech	practice in front of mirror	1.5849625007211563
+    37	    37	AtLocation	spatula	kitchen	2.0
+    38	    38	IsA	vanilla	ice cream	2.0
+    39	    39	AtLocation	harlot	street corner	2.0
+    40	    40	Desires	person	strong fingernail	2.0
+    41	    41	AtLocation	heifer	german field	2.321928094887362
+    42	    42	IsA	this	modern office build	1.5849625007211563
+    43	    43	AtLocation	doorknob	front door	2.0
+    44	    44	NotCapableOf	person	climb mountain under water	1.5849625007211563
+    45	    45	IsA	capital of gibraltar	gibraltar	1.5849625007211563
+    46	    46	AtLocation	carpet	live room	2.321928094887362
+    47	    47	UsedFor	comb	your hair	1.5849625007211563
+    48	    48	HasProperty	ray charles	dead	1.5849625007211563
+    49	    49	MotivatedByGoal	cool off	it be hot	2.584962500721156
+    50	    50	IsA	vacuum	state of no air	1.5849625007211563
+    51	    51	HasProperty	person	kind	2.807354922057604
+    52	    52	IsA	this	old telephone	2.321928094887362
+    53	    53	CausesDesire	love	give gift	2.807354922057604
+    54	    54	IsA	house hold oil	oil	2.0
+    55	    55	UsedFor	eat vegetable	stay healthy	2.321928094887362
+    56	    56	IsA	emo	music	2.0
+    57	    57	AtLocation	blood	person	3.0
+    58	    58	ReceivesAction	all small child	keep on leash	1.5849625007211563
+    59	    59	HasSubevent	design software	get bug	1.5849625007211563
+    60	    60	DefinedAs	little colorado spinedace	lepidomeda vittata	1.5849625007211563
+    61	    61	HasProperty	neigbor	annoy	2.321928094887362
+    62	    62	UsedFor	harmonica	create music	2.321928094887362
+    63	    63	IsA	this	bunch of flower	1.5849625007211563
+    64	    64	AtLocation	mural	wall	1.5849625007211563
+    65	    65	HasProperty	some fish	solitary	2.0
+    66	    66	UsedFor	see art	pleasure	2.321928094887362
+    67	    67	CapableOf	tornado	destory almost anything	1.5849625007211563
+    68	    68	Causes	design software	your eye to cross	1.5849625007211563
+    69	    69	Causes	cold	you will have runny nose	2.0
+    70	    70	UsedFor	reproduce	copy	2.321928094887362
+    71	    71	UsedFor	new york city	live in	2.0
+    72	    72	HasProperty	unusual shape	entertain	2.0
+    73	    73	UsedFor	visit other country	learn from other culture	2.321928094887362
+    74	    74	CapableOf	person	be violent	2.321928094887362
+    75	    75	HasProperty	person who like animal	annoy	1.5849625007211563
+    76	    76	HasPrerequisite	avoid heartbreak	avoid intimacy	1.5849625007211563
+    77	    77	UsedFor	alias	keep your true identity private	1.5849625007211563
+    78	    78	AtLocation	hot table	kitchen	2.584962500721156
+    79	    79	UsedFor	go to party	celebrate	2.0
+    80	    80	AtLocation	ticket agent	airport	2.0
+    81	    81	IsA	space	our great frontier	1.5849625007211563
+    82	    82	UsedFor	receive degree	advance in one career	2.321928094887362
+    83	    83	MotivatedByGoal	meet friend	talk to her	2.321928094887362
+    84	    84	IsA	musical	play in	2.0
+    85	    85	IsA	linux	computer operate system	2.0
+    86	    86	CapableOf	heat	kill bacteria	2.0
+    87	    87	AtLocation	sandwich	lunchbox	2.807354922057604
+    88	    88	HasA	werewolf	fang and fur	2.0
+    89	    89	NotDesires	cat	bath	2.807354922057604
+    90	    90	UsedFor	see excite story	have fun	2.0
+    91	    91	IsA	there	many card game	2.321928094887362
+    92	    92	AtLocation	carrier bag	supermarket	2.584962500721156
+    93	    93	DefinedAs	pink-headed duck	rhodonessa caryophyllacea	1.5849625007211563
+    94	    94	CapableOf	diagram show various part	make up human eye	1.5849625007211563
+    95	    95	AtLocation	bullet	war	2.0
+    96	    96	AtLocation	tweeter	speaker	2.0
+    97	    97	IsA	house	consider shelter	1.5849625007211563
+    98	    98	HasPrerequisite	take examination	study all your note	2.0
+    99	    99	HasSubevent	while eat	choke	2.321928094887362
+   100	   100	UsedFor	conquer nation	expand your territory	2.321928094887362
+   101	   101	CapableOf	this object	pin something into place	1.5849625007211563
+   102	   102	UsedFor	eat apple	help your digestion	2.321928094887362
+   103	   103	IsA	exercise look like fun but it	not	1.5849625007211563
+   104	   104	HasSubevent	sleep	miss event that happen around you	1.5849625007211563
+   105	   105	MotivatedByGoal	have rest	renew energy	2.0
+   106	   106	HasSubevent	take shower	drop soap	1.5849625007211563
+   107	   107	AtLocation	boot	sport good store	2.0
+   108	   108	UsedFor	truck	haul many different thing	1.5849625007211563
+   109	   109	HasProperty	horse	dangerous	1.5849625007211563
+   110	   110	MadeOf	computer	hardware	2.0
+   111	   111	ReceivesAction	rope	make out of strong cotton	1.5849625007211563
+   112	   112	AtLocation	dental office	medical complez	2.321928094887362
+   113	   113	HasProperty	hockey	ice	1.5849625007211563
+   114	   114	IsA	jersey	cow	2.0
+   115	   115	IsA	vampire	fictional monster	2.0
+   116	   116	UsedFor	pleasure garden	beauty for eye	2.321928094887362
+   117	   117	HasPrerequisite	clean house	get broom	2.807354922057604
+   118	   118	IsA	heart	shape	2.0
+   119	   119	IsA	this	small television set	1.5849625007211563
+   120	   120	CapableOf	you	find flower	1.5849625007211563
+   121	   121	UsedFor	bar of soap	disinfect and clean	1.5849625007211563
+   122	   122	AtLocation	bulb	lamp	1.5849625007211563
+   123	   123	Desires	person	more money	2.321928094887362
+   124	   124	UsedFor	get exercise	take care of your heart	2.321928094887362
+   125	   125	Desires	person	know all	2.321928094887362
+   126	   126	IsA	quetzal	bird	2.1699250014423126
+   127	   127	UsedFor	weed garden	give need space to other plant	1.5849625007211563
+   128	   128	Causes	listen to music	stress relief	1.5849625007211563
+   129	   129	HasProperty	peace symbol	important during the'60s and'70s	1.5849625007211563
+   130	   130	MotivatedByGoal	watch film	you need diversion	1.5849625007211563
+   131	   131	CapableOf	bat	be hang upside down	1.5849625007211563
+   132	   132	AtLocation	someone	tavern	2.584962500721156
+   133	   133	HasA	sex	effect of burn calorie	2.584962500721156
+   134	   134	CapableOf	chef	cook dinner	3.3219280948873626
+   135	   135	CausesDesire	cruel remark	punch someone	1.5849625007211563
+   136	   136	UsedFor	hear testimony	find out fact	2.321928094887362
+   137	   137	HasPrerequisite	stop your car	put your foot on brake	2.0
+   138	   138	CapableOf	something	string bead	1.5849625007211563
+   139	   139	HasProperty	metal	heavy	3.0
+   140	   140	HasSubevent	memorize	use index card	2.0
+   141	   141	HasProperty	fire	useful	3.0
+   142	   142	HasProperty	musician	famous	1.5849625007211563
+   143	   143	Desires	person	good memory	2.321928094887362
+   144	   144	UsedFor	compete against someone	athletic competition	2.321928094887362
+   145	   145	UsedFor	clean your clothe	keep them free from dirt	2.321928094887362
+   146	   146	UsedFor	farecard	travel	2.584962500721156
+   147	   147	IsA	highway	great feat of engineer	2.321928094887362
+   148	   148	AtLocation	indian ocean	east	2.584962500721156
+   149	   149	HasPrerequisite	eat orange	peel it first	1.5849625007211563
+   150	   150	IsA	ray	flat fish	2.321928094887362
+   151	   151	Causes	knit	create scarf	1.5849625007211563
+   152	   152	AtLocation	red or blue thread	dollar bill	1.5849625007211563
+   153	   153	HasProperty	peace	good than war	2.807354922057604
+   154	   154	HasSubevent	fax	enter phone number	2.0
+   155	   155	UsedFor	pen	communicate in write	2.321928094887362
+   156	   156	PartOf	monroe county	michigan	2.0
+   157	   157	AtLocation	phone	desk	2.807354922057604
+   158	   158	Causes	read book	learn	2.584962500721156
+   159	   159	ReceivesAction	juice	make from fruit	1.5849625007211563
+   160	   160	ReceivesAction	television picture	transmit by radio wave	1.5849625007211563
+   161	   161	HasProperty	ping-pong ball	light	1.5849625007211563
+   162	   162	UsedFor	view video	learn something new	1.5849625007211563
+   163	   163	IsA	motorcycle	vehicle	2.807354922057604
+   164	   164	SymbolOf	christmas tree	christmas	2.584962500721156
+   165	   165	Desires	america	bunch of war	1.5849625007211563
+   166	   166	UsedFor	air conditioner	keep house cool and dry	1.5849625007211563
+   167	   167	HasProperty	view from space	awesome	1.5849625007211563
+   168	   168	CapableOf	this picture look like it	be in school psychology class	1.5849625007211563
+   169	   169	AtLocation	someone	rainbow	1.5849625007211563
+   170	   170	ReceivesAction	chocolate	eat	2.807354922057604
+   171	   171	HasPrerequisite	go for drive	have car	2.807354922057604
+   172	   172	IsA	this	ping pong paddle	2.0
+   173	   173	CapableOf	container	hold warm or cold material	1.5849625007211563
+   174	   174	HasPrerequisite	go outside for even	leave your house	2.321928094887362
+   175	   175	IsA	average amount of sleep	8 hour	1.5849625007211563
+   176	   176	HasFirstSubevent	go to pub	find seat	2.321928094887362
+   177	   177	IsA	boot	tall shoe	1.5849625007211563
+   178	   178	AtLocation	horn	march band	2.0
+   179	   179	NotDesires	mouse	be eat by cat	1.5849625007211563
+   180	   180	AtLocation	water bottle	supermarket	1.5849625007211563
+   181	   181	HasProperty	person	afraid of dark	2.321928094887362
+   182	   182	AtLocation	gasoline	gas tank	1.5849625007211563
+   183	   183	CapableOf	you	get water from faucet	1.5849625007211563
+   184	   184	HasPrerequisite	typewriter	ink	1.5849625007211563
+   185	   185	DefinedAs	kuenzler hedgehog cactus	echinocereus fendleri kuenzleri	1.5849625007211563
+   186	   186	ReceivesAction	many animal	kill with spear	1.5849625007211563
+   187	   187	HasA	woman	hole slot	1.5849625007211563
+   188	   188	PartOf	portland harbor	gulf of maine	1.5849625007211563
+   189	   189	HasProperty	ass fuck	good	1.5849625007211563
+   190	   190	CapableOf	evidence	determine truth	1.5849625007211563
+   191	   191	Causes	be in charge of project	stress	3.4594316186372978
+   192	   192	MotivatedByGoal	discover truth	honesty	2.0
+   193	   193	IsA	fountain pen	fine write instrument	1.5849625007211563
+   194	   194	UsedFor	outerspace	learn	1.5849625007211563
+   195	   195	UsedFor	apple	sate hunger	2.0
+   196	   196	HasSubevent	restaurant	ask for check	2.0
+   197	   197	CapableOf	small child	suck their thumb	1.5849625007211563
+   198	   198	IsA	cucumber	plant	1.8073549220576042
+   199	   199	PartOf	cushion	sofa	1.5849625007211563
+   200	   200	CausesDesire	be out of shape	get exercise	2.807354922057604
+   201	   201	AtLocation	desk	house	2.0
+   202	   202	PartOf	letter x	alphabet	2.0
+   203	   203	HasSubevent	cry	shed tear	2.807354922057604
+   204	   204	HasPrerequisite	mint coin	cast die	1.5849625007211563
+   205	   205	PartOf	two arm	normal human body	1.5849625007211563
+   206	   206	CapableOf	without kickstand bike	fall over	1.5849625007211563
+   207	   207	CapableOf	amphibian	live on water and land	1.5849625007211563
+   208	   208	AtLocation	do list	desk	1.5849625007211563
+   209	   209	ReceivesAction	fan	break	1.5849625007211563
+   210	   210	IsA	capital of canada	ottawa	1.5849625007211563
+   211	   211	IsA	cousin	person	2.321928094887362
+   212	   212	HasProperty	climate in mediterranean	very mild	1.5849625007211563
+   213	   213	IsA	this	duck on water	1.5849625007211563
+   214	   214	HasSubevent	open business	rent office space	1.5849625007211563
+   215	   215	UsedFor	study for subject	memorize it	2.0
+   216	   216	HasA	insect	six leg	3.3219280948873626
+   217	   217	CreatedBy	butterfly	cocoon	2.0
+   218	   218	AtLocation	rock	on grind	2.321928094887362
+   219	   219	AtLocation	drawer	dresser	2.0
+   220	   220	AtLocation	lipstick case	purse	2.0
+   221	   221	HasFirstSubevent	drive your car	check visibility	2.0
+   222	   222	HasProperty	blood	red	3.0
+   223	   223	MotivatedByGoal	live simply	it bring peace	1.5849625007211563
+   224	   224	UsedFor	one person chair	sit at table	2.321928094887362
+   225	   225	HasSubevent	diminish your own hunger	drink	1.5849625007211563
+   226	   226	IsA	horse	modern animal	2.321928094887362
+   227	   227	HasProperty	teenager	lazy	1.5849625007211563
+   228	   228	AtLocation	stuff to make cookie	cupboard	2.0
+   229	   229	HasSubevent	play game	win game	2.584962500721156
+   230	   230	UsedFor	lug wrench	nut on automobile wheel	1.5849625007211563
+   231	   231	Causes	play chess	move piece	2.321928094887362
+   232	   232	PartOf	province	country	2.321928094887362
+   233	   233	HasProperty	watch telly	educational	1.5849625007211563
+   234	   234	NotDesires	high school student	homework	2.0
+   235	   235	Desires	some men	cross dress	1.5849625007211563
+   236	   236	UsedFor	ladder	provide ace to window	2.321928094887362
+   237	   237	ReceivesAction	meat	cook before consumption	1.5849625007211563
+   238	   238	CapableOf	human	be gay	2.584962500721156
+   239	   239	HasSubevent	you eat	you sit on chair	2.0
+   240	   240	UsedFor	family room	watch television	3.0
+   241	   241	AtLocation	mayor	city hal	2.321928094887362
+   242	   242	HasSubevent	kill person	hate it	2.0
+   243	   243	AtLocation	finger	glove	2.0
+   244	   244	AtLocation	tree	in park	2.321928094887362
+   245	   245	IsA	sky	different color	2.0
+   246	   246	HasA	some male giraffe	grow more than 5.5 meter	1.5849625007211563
+   247	   247	MotivatedByGoal	scratch your elbow	your elbow have itch	1.5849625007211563
+   248	   248	CapableOf	man	believe in god	3.1699250014423126
+   249	   249	IsA	this	common courtship ritual	1.5849625007211563
+   250	   250	UsedFor	train ticket	travel by train	2.321928094887362
+   251	   251	HasSubevent	plan vacation	save your money	2.0
+   252	   252	Desires	person with dirty fingernail	eat disk	1.5849625007211563
+   253	   253	UsedFor	take exam	pass class	2.584962500721156
+   254	   254	DefinedAs	lar valley viper	vipera latifii	1.5849625007211563
+   255	   255	UsedFor	party	relax	2.0
+   256	   256	UsedFor	propose to woman	profess your undying love	2.321928094887362
+   257	   257	UsedFor	place to stay	reside	2.584962500721156
+   258	   258	UsedFor	eyeglass	correct poor vision	1.5849625007211563
+   259	   259	HasSubevent	you throw football	it should spin	1.5849625007211563
+   260	   260	HasA	tea	caffeine	3.0
+   261	   261	UsedFor	toy soldier	create mock battle	2.321928094887362
+   262	   262	DefinedAs	hoffmann slender-flowered gilia	gilia tenuiflora hoffmannii	1.5849625007211563
+   263	   263	AtLocation	ficus	field	2.0
+   264	   264	CapableOf	refrigerator	cool food	2.807354922057604
+   265	   265	HasLastSubevent	buy present for others	give them to them	2.0
+   266	   266	IsA	happy gold dog	stare at you	1.5849625007211563
+   267	   267	HasSubevent	get warm	you feel more comfortable	2.0
+   268	   268	InstanceOf	ipod	portable music player	2.0
+   269	   269	HasProperty	dick	penis	2.0
+   270	   270	UsedFor	skateboard	go from place to place	1.5849625007211563
+   271	   271	Causes	see your idea become reality	feel really good about oneself	1.5849625007211563
+   272	   272	CapableOf	american	speak english	2.0
+   273	   273	HasA	volcano	crater	2.321928094887362
+   274	   274	CapableOf	kindergarten student	cut that out	1.5849625007211563
+   275	   275	AtLocation	skier	mountain	2.321928094887362
+   276	   276	HasA	kerosene	strong odor	1.5849625007211563
+   277	   277	IsA	this	shiny black comb	1.5849625007211563
+   278	   278	CapableOf	someone	drive train	1.5849625007211563
+   279	   279	CausesDesire	windy day	fly kite	2.584962500721156
+   280	   280	IsA	softball	team sport	2.0
+   281	   281	MotivatedByGoal	open bag of chip	you be hungry	2.0
+   282	   282	CapableOf	bob dylan	wear hat	2.0
+   283	   283	AtLocation	fast food	chain restaurant	2.321928094887362
+   284	   284	DefinedAs	lyric	word to song	2.0
+   285	   285	ReceivesAction	human eye	locate in their head	1.5849625007211563
+   286	   286	CapableOf	girlfriend	boyfriend send each other love letter	1.5849625007211563
+   287	   287	CapableOf	elder person	stay in shape if they exercise	1.5849625007211563
+   288	   288	UsedFor	make phone call	communicate with someone	2.0
+   289	   289	UsedFor	lose weight	buy more clothe that fit	2.321928094887362
+   290	   290	IsA	song	integral part of human culture	1.5849625007211563
+   291	   291	Causes	hang out at bar	be in fight	1.5849625007211563
+   292	   292	CapableOf	tire person	become angry without much provocation	1.5849625007211563
+   293	   293	CapableOf	dinner	include desert	1.5849625007211563
+   294	   294	UsedFor	hat	warm your head	1.5849625007211563
+   295	   295	HasProperty	some court case	classify as criminal case	2.0
+   296	   296	HasA	andorra	none airport	1.5849625007211563
+   297	   297	Desires	person	candy	3.0
+   298	   298	UsedFor	bobby pin	hold hair	2.0
+   299	   299	AtLocation	hotdog stand	at corner of two street	2.321928094887362
+   300	   300	HasProperty	republican	right-wing	2.321928094887362
+   301	   301	AtLocation	concept car	car show	1.5849625007211563
+   302	   302	DefinedAs	bono	singer for u2	1.5849625007211563
+   303	   303	HasA	bird	variety of color	1.5849625007211563
+   304	   304	HasPrerequisite	play card	get deck of card	2.321928094887362
+   305	   305	AtLocation	two horse in front	many tree	1.5849625007211563
+   306	   306	IsA	college	place where we learn thing	2.321928094887362
+   307	   307	CausesDesire	become good at it	play game of chess	1.5849625007211563
+   308	   308	UsedFor	electricity	die	1.5849625007211563
+   309	   309	HasPrerequisite	chew your food	move your jaw up and down	2.584962500721156
+   310	   310	CapableOf	doctor	set break bone	3.1699250014423126
+   311	   311	AtLocation	display sign	driveway	2.0
+   312	   312	IsA	crab	expensive type of seafood	1.5849625007211563
+   313	   313	HasSubevent	fight enemy	death	3.0
+   314	   314	UsedFor	chess set	have fun	3.0
+   315	   315	NotCapableOf	human	drink poison	1.5849625007211563
+   316	   316	CapableOf	fire	warm your hand	3.0
+   317	   317	CapableOf	girl	play sport	1.5849625007211563
+   318	   318	UsedFor	freeway	speed	2.321928094887362
+   319	   319	Causes	eat apple	not feel so hungery	1.5849625007211563
+   320	   320	CausesDesire	love	sing	2.807354922057604
+   321	   321	IsA	clothe	often	1.5849625007211563
+   322	   322	CapableOf	woman	eat less food than men do	1.5849625007211563
+   323	   323	IsA	sativa	marijuana	1.5849625007211563
+   324	   324	HasProperty	apple	alive	1.5849625007211563
+   325	   325	AtLocation	kitten	child arm	2.0
+   326	   326	HasA	driver	insurance	1.5849625007211563
+   327	   327	CapableOf	couch	be in live room	3.0
+   328	   328	AtLocation	apple tree	someone yard	1.5849625007211563
+   329	   329	AtLocation	foot rest	desk	2.584962500721156
+   330	   330	DefinedAs	canberra	capital of australia	2.807354922057604
+   331	   331	HasSubevent	have examination	examination paper be distribute	1.5849625007211563
+   332	   332	AtLocation	roulette	casino	2.584962500721156
+   333	   333	IsA	rice plant	grain	2.0
+   334	   334	HasSubevent	cut yourself	cut get infect	1.5849625007211563
+   335	   335	UsedFor	read	relaxation	2.321928094887362
+   336	   336	UsedFor	doll	fun for child	2.0
+   337	   337	MotivatedByGoal	find inclusive set	learn new language	2.0
+   338	   338	IsA	earring	piece of jewlery	2.0
+   339	   339	HasProperty	good posture	good for you	1.5849625007211563
+   340	   340	Causes	do crossword puzzle	kill time	1.5849625007211563
+   341	   341	IsA	person get marry when they	in love	1.5849625007211563
+   342	   342	Causes	drink coffee	jitter	1.5849625007211563
+   343	   343	UsedFor	bike	ride	2.321928094887362
+   344	   344	HasA	clam	one foot	1.5849625007211563
+   345	   345	AtLocation	sunspot	sun	2.584962500721156
+   346	   346	UsedFor	thin	paint	2.0
+   347	   347	IsA	screw	fastener	1.5849625007211563
+   348	   348	HasLastSubevent	excrete	wipe yourself	1.5849625007211563
+   349	   349	AtLocation	god	nowhere	2.0
+   350	   350	HasPrerequisite	clean clothe	wash it	2.0
+   351	   351	IsA	little baby girl	verry cute	1.5849625007211563
+   352	   352	Desires	diva	sing	1.5849625007211563
+   353	   353	AtLocation	check	checkbook	2.584962500721156
+   354	   354	AtLocation	someone	blimp	1.5849625007211563
+   355	   355	Desires	person	sec	2.321928094887362
+   356	   356	AtLocation	cat	beam of sunlight	2.0
+   357	   357	HasProperty	apple juice	nice	1.5849625007211563
+   358	   358	IsA	this	clutter office desk	1.5849625007211563
+   359	   359	HasA	solid	definite shape and volume	2.0
+   360	   360	AtLocation	i-beam	any large build	2.0
+   361	   361	AtLocation	moustache	face	1.5849625007211563
+   362	   362	IsA	my house	dark probably because it nighttime	1.5849625007211563
+   363	   363	Causes	hear news	be sad	2.584962500721156
+   364	   364	AtLocation	someone	experimental space colony	1.5849625007211563
+   365	   365	IsA	move slowly	action	2.0
+   366	   366	Causes	wash clothe	waste some valuable time	1.5849625007211563
+   367	   367	HasPrerequisite	dry your hand	towel	2.0
+   368	   368	CapableOf	anger	divide person	1.5849625007211563
+   369	   369	AtLocation	cellar	basement	2.321928094887362
+   370	   370	MotivatedByGoal	satisfy appetite with minimum effort	maximum enjoyment from your meal	1.5849625007211563
+   371	   371	SymbolOf	formal clothe	presentation	2.0
+   372	   372	HasSubevent	it be cold	you should wear glove	1.5849625007211563
+   373	   373	IsA	slack	form of clothe	2.584962500721156
+   374	   374	HasSubevent	light fire	you use kindle	2.0
+   375	   375	Causes	wait table	tire foot	2.321928094887362
+   376	   376	NotDesires	spider	run short of fly	1.5849625007211563
+   377	   377	UsedFor	write instrument	write letter	2.807354922057604
+   378	   378	AtLocation	city	state	2.584962500721156
+   379	   379	MotivatedByGoal	make bread	i hungry	2.0
+   380	   380	IsA	hand	hold some jewelry out for display	1.5849625007211563
+   381	   381	AtLocation	peace of mind	home	1.5849625007211563
+   382	   382	IsA	this horse	show how handsome he be	1.5849625007211563
+   383	   383	HasProperty	win	awesome	1.5849625007211563
+   384	   384	PartOf	gun	arsenal	1.5849625007211563
+   385	   385	HasSubevent	buy something	compare and contrast	2.0
+   386	   386	PartOf	gorilla	animal	2.0
+   387	   387	AtLocation	pasta	grocery store	1.5849625007211563
+   388	   388	CapableOf	parent	strike child	1.5849625007211563
+   389	   389	DefinedAs	mandrill	mandrillus sphinx	1.5849625007211563
+   390	   390	HasSubevent	eat in fast food restaurant	order french fry	2.0
+   391	   391	HasA	many bird	tail	2.321928094887362
+   392	   392	HasA	many house	slant roof	2.321928094887362
+   393	   393	HasProperty	marijuana	fun	2.0
+   394	   394	HasLastSubevent	debate politics	you offensive language	1.5849625007211563
+   395	   395	CapableOf	still lake	reflect image like mirror doe	1.5849625007211563
+   396	   396	CapableOf	child	learn coordination and athletic skill	1.5849625007211563
+   397	   397	Causes	answer question	provide listener with information	1.5849625007211563
+   398	   398	HasSubevent	serve time	write your memoir	1.5849625007211563
+   399	   399	IsA	dog	faithful friend and companion	2.321928094887362
+   400	   400	HasPrerequisite	have shower	use water	1.5849625007211563
+   401	   401	Causes	entertain someone	laughter	2.807354922057604
+   402	   402	CausesDesire	nothing	bungee jump from high bridge	1.5849625007211563
+   403	   403	UsedFor	can of soda	quench your thirst	2.321928094887362
+   404	   404	MotivatedByGoal	listen	hear	2.584962500721156
+   405	   405	IsA	lunar lander	prepare to land on moon	1.5849625007211563
+   406	   406	CapableOf	kitten	be feed small quantity often	1.5849625007211563
+   407	   407	AtLocation	family	park	3.0
+   408	   408	AtLocation	many insect	field	1.5849625007211563
+   409	   409	HasA	old news	low value	2.0
+   410	   410	HasSubevent	these two piece be combine	occur	1.5849625007211563
+   411	   411	AtLocation	mammal	zoo	1.5849625007211563
+   412	   412	HasA	many rose	thorn	1.5849625007211563
+   413	   413	Causes	see person play game	kibitz	1.5849625007211563
+   414	   414	ReceivesAction	fire truck	drive by fireman	2.321928094887362
+   415	   415	UsedFor	hot faucet	wash dish	2.0
+   416	   416	IsA	horse	very smart animal	2.0
+   417	   417	DefinedAs	roof	top of build	3.0
+   418	   418	HasProperty	cut flower	put in vase	1.5849625007211563
+   419	   419	CapableOf	something	start fire	2.0
+   420	   420	NotCapableOf	person	want know asinine jerk	1.5849625007211563
+   421	   421	HasProperty	sun	large	2.0
+   422	   422	HasSubevent	make it grow	water plant	2.584962500721156
+   423	   423	ReceivesAction	groom and bride	marry	2.0
+   424	   424	HasPrerequisite	violin	two hand to play	1.5849625007211563
+   425	   425	IsA	bolivia	country	2.700439718141092
+   426	   426	UsedFor	oboe	practice	1.5849625007211563
+   427	   427	UsedFor	vacuum cleaner	clean carpet and rug	2.584962500721156
+   428	   428	CapableOf	horse	suck	1.5849625007211563
+   429	   429	UsedFor	sit quietly	meditation	3.0
+   430	   430	HasPrerequisite	change your appearance	seek professional help.\	2.0
+   431	   431	MadeOf	triangle	metal	1.5849625007211563
+   432	   432	IsA	exercise	key to long life	1.5849625007211563
+   433	   433	AtLocation	reflex hammer	doctor	2.321928094887362
+   434	   434	UsedFor	invest money or energy	keep away from boredom	2.584962500721156
+   435	   435	HasPrerequisite	forgive someone	tell him	2.321928094887362
+   436	   436	HasSubevent	take oath	you will promise something	2.0
+   437	   437	Desires	person	receive phd	2.0
+   438	   438	HasPrerequisite	write story	plot	2.807354922057604
+   439	   439	CapableOf	you	dive into pool	1.5849625007211563
+   440	   440	AtLocation	sex	home	1.5849625007211563
+   441	   441	AtLocation	chair	hotel	1.5849625007211563
+   442	   442	IsA	pitcher	container	2.584962500721156
+   443	   443	UsedFor	kiss	foreplay	2.584962500721156
+   444	   444	CapableOf	customer	pay bill	2.0
+   445	   445	CapableOf	you	feel good after you rest	1.5849625007211563
+   446	   446	HasPrerequisite	go public	have idea	2.321928094887362
+   447	   447	HasSubevent	skate	you put on your skate	2.321928094887362
+   448	   448	AtLocation	health food store	big city	2.584962500721156
+   449	   449	MotivatedByGoal	clean your clothe	get dirty	2.0
+   450	   450	CapableOf	procreate	involve sex	2.0
+   451	   451	HasA	baseball player just after he	pitch ball	1.5849625007211563
+   452	   452	HasProperty	coffee	have distinctive aroma	2.0
+   453	   453	AtLocation	newspaper clip	scrap book	2.0
+   454	   454	AtLocation	old stuff	cellar	2.0
+   455	   455	AtLocation	bad guy	jail	2.0
+   456	   456	IsA	t-shirt	piece of clothe	3.0
+   457	   457	UsedFor	large food store	shop grocery	2.321928094887362
+   458	   458	UsedFor	attend lecture	get high education	2.321928094887362
+   459	   459	HasProperty	rubber duck	comfort	1.5849625007211563
+   460	   460	IsA	person	hold cigarette	1.5849625007211563
+   461	   461	HasPrerequisite	be dead	once live	1.5849625007211563
+   462	   462	IsA	space	dangerous place	2.0
+   463	   463	Causes	commit suicide	you die	1.5849625007211563
+   464	   464	Causes	join army	learn to march	1.5849625007211563
+   465	   465	HasProperty	bicycle	for ride	2.0
+   466	   466	HasSubevent	buy something	thank clerk	2.0
+   467	   467	NotDesires	fairy tale	have bad end	2.0
+   468	   468	IsA	spite	emotion	1.5849625007211563
+   469	   469	UsedFor	acoustic guitar	folk music	2.584962500721156
+   470	   470	MotivatedByGoal	run	exercise	2.321928094887362
+   471	   471	AtLocation	mouse	grain silo	2.321928094887362
+   472	   472	IsA	wire	magazine	2.807354922057604
+   473	   473	HasA	life	evolve to exploit every food source	1.5849625007211563
+   474	   474	ReceivesAction	hair	find all over your body	1.5849625007211563
+   475	   475	UsedFor	shoulder bag	be accessory	2.321928094887362
+   476	   476	AtLocation	spanish restaurant	rice	2.321928094887362
+   477	   477	HasPrerequisite	get contract	hire hitman	2.0
+   478	   478	ReceivesAction	light	stop by solid object	1.5849625007211563
+   479	   479	HasProperty	warm light-filled room	comfortable for read	1.5849625007211563
+   480	   480	HasSubevent	stay healthy	happiness	1.5849625007211563
+   481	   481	UsedFor	glue	bind like item together	2.321928094887362
+   482	   482	NotDesires	person	have his ear talk off	2.321928094887362
+   483	   483	AtLocation	castle	fairy tale	2.0
+   484	   484	MotivatedByGoal	surf	you enjoy speed	1.5849625007211563
+   485	   485	ReceivesAction	eight inch floppy disk	use in nineteen seventy	1.5849625007211563
+   486	   486	UsedFor	dive	ecology research	1.5849625007211563
+   487	   487	HasProperty	fishbowl	cruel	1.5849625007211563
+   488	   488	HasA	pepsi machine	become very expensive	1.5849625007211563
+   489	   489	CapableOf	if you save your money you	spend it late	1.5849625007211563
+   490	   490	AtLocation	something	angle	2.0
+   491	   491	AtLocation	resident	apartment	2.584962500721156
+   492	   492	HasFirstSubevent	go public	call newspaper	2.321928094887362
+   493	   493	AtLocation	sofa bed	live room	3.1699250014423126
+   494	   494	UsedFor	math	play with	2.321928094887362
+   495	   495	IsA	this	man best friend dog	1.5849625007211563
+   496	   496	AtLocation	someone	friend home	2.584962500721156
+   497	   497	UsedFor	lake	sail	2.321928094887362
+   498	   498	Causes	tell story	laughter	2.321928094887362
+   499	   499	HasProperty	male bird usually	more colorful than female	1.5849625007211563
+   500	   500	ReceivesAction	trophy	clutter together	1.5849625007211563
+   501	   501	MotivatedByGoal	clean house	have pride in your home	2.0
+   502	   502	IsA	sprite	soft drink	2.807354922057604
+   503	   503	IsA	this	livingroom in house	1.5849625007211563
+   504	   504	IsA	deficit	shortage	2.0
+   505	   505	AtLocation	shark	bad hollywood movie	2.321928094887362
+   506	   506	Causes	snore	wake your spouse	2.584962500721156
+   507	   507	CapableOf	one	meditate without practice	1.5849625007211563
+   508	   508	DefinedAs	this	front interior of car	1.5849625007211563
+   509	   509	HasProperty	terrain of palmyra atoll	very low	1.5849625007211563
+   510	   510	MotivatedByGoal	play guitar	you be part of band	1.5849625007211563
+   511	   511	DefinedAs	schedule or calendar	list of appointment	1.5849625007211563
+   512	   512	HasProperty	child learn fast when they	young	1.5849625007211563
+   513	   513	ReceivesAction	peru	locate in andies mountain	1.5849625007211563
+   514	   514	HasProperty	this room	bright	1.5849625007211563
+   515	   515	Causes	stop be marry to someone	you have to live alone	1.5849625007211563
+   516	   516	HasPrerequisite	drive your car	fasten your seatbelt	2.0
+   517	   517	HasProperty	star be hot planet	cold	1.5849625007211563
+   518	   518	MotivatedByGoal	stay in bed	rest some more	2.321928094887362
+   519	   519	UsedFor	go to store	fun	2.0
+   520	   520	UsedFor	movie	entertain	2.321928094887362
+   521	   521	ReceivesAction	giraffe horn	cover by hair	1.5849625007211563
+   522	   522	HasSubevent	open gift	thank giver	2.584962500721156
+   523	   523	UsedFor	food	fill up your stomach	2.0
+   524	   524	IsA	god	fairy tale for adult	2.321928094887362
+   525	   525	HasProperty	space travel will	possible in near future	1.5849625007211563
+   526	   526	CapableOf	couple	marry each other	2.0
+   527	   527	HasProperty	computer that help good person	good	1.5849625007211563
+   528	   528	CausesDesire	wear plaid shirt and workboots	chop firewood	1.5849625007211563
+   529	   529	HasProperty	this pot	good for carry water	1.5849625007211563
+   530	   530	HasProperty	simple live	much more rational than consumerism	1.5849625007211563
+   531	   531	ReceivesAction	justice	serve in courtroom	2.0
+   532	   532	CapableOf	tobacco	cause cancer	1.5849625007211563
+   533	   533	HasA	guitar	fretboard	1.5849625007211563
+   534	   534	NotDesires	teacher	be ignore	1.5849625007211563
+   535	   535	UsedFor	book	order food	1.5849625007211563
+   536	   536	IsA	doctor	smart person	2.321928094887362
+   537	   537	HasSubevent	object enter atmosphere	it usually burn up	1.5849625007211563
+   538	   538	IsA	cocaine	drug	1.8073549220576042
+   539	   539	MotivatedByGoal	scuba dive	see fish	2.321928094887362
+   540	   540	AtLocation	panhandler	bus stop	2.0
+   541	   541	AtLocation	cheque book holder	my purse	2.321928094887362
+   542	   542	IsA	ussr	country	2.0
+   543	   543	HasA	some calculator	their own program language	1.5849625007211563
+   544	   544	AtLocation	computer	mall	2.0
+   545	   545	NotIsA	house be home but home	house	1.5849625007211563
+   546	   546	PartOf	spain	europe	2.321928094887362
+   547	   547	HasProperty	that guy	look at that girl ass	1.5849625007211563
+   548	   548	AtLocation	spanish restaurant	spain	2.584962500721156
+   549	   549	UsedFor	wall	divide person	1.5849625007211563
+   550	   550	IsA	nintendo gamecube	game device	2.0
+   551	   551	IsA	what woman want	good movie	1.5849625007211563
+   552	   552	HasProperty	yo-yo	fun to play with	3.1699250014423126
+   553	   553	MotivatedByGoal	buy product	you need product	2.0
+   554	   554	AtLocation	song	kazaa as mp3	1.5849625007211563
+   555	   555	Desires	person	stability in their life	2.0
+   556	   556	AtLocation	checkbook holder	purse	2.807354922057604
+   557	   557	HasPrerequisite	not be hungry	eat	1.5849625007211563
+   558	   558	AtLocation	train	track	2.321928094887362
+   559	   559	Desires	person	new model of item	2.321928094887362
+   560	   560	HasSubevent	fan be turn on	it provide cool	1.5849625007211563
+   561	   561	IsA	peppermint	plant	2.4594316186372973
+   562	   562	HasProperty	card game	addictive	2.321928094887362
+   563	   563	IsA	price for anthrax spore	3,685 plus ship cost	2.321928094887362
+   564	   564	UsedFor	water	extinguish most fire	3.0
+   565	   565	CapableOf	professional	train novice	1.5849625007211563
+   566	   566	CapableOf	pen	leak	1.5849625007211563
+   567	   567	HasSubevent	entertain someone	make shadow on wall	2.0
+   568	   568	AtLocation	train window	train	1.5849625007211563
+   569	   569	Causes	see band	hear music	3.0
+   570	   570	AtLocation	pet snake	fish tank	1.5849625007211563
+   571	   571	HasPrerequisite	go to zoo	look for animal	2.0
+   572	   572	ReceivesAction	celery	serve for dinner	1.5849625007211563
+   573	   573	AtLocation	24 hour	one day	2.807354922057604
+   574	   574	HasSubevent	listen music	have fun	1.5849625007211563
+   575	   575	HasProperty	cloth	limp	1.5849625007211563
+   576	   576	IsA	wheel	sport	1.5849625007211563
+   577	   577	CausesDesire	alcohol	dance	2.321928094887362
+   578	   578	IsA	ticket	receipt	1.5849625007211563
+   579	   579	AtLocation	bee	countryside	1.5849625007211563
+   580	   580	IsA	chicago	city	2.700439718141092
+   581	   581	HasA	most person	two arm	2.321928094887362
+   582	   582	AtLocation	computer lab	university	1.5849625007211563
+   583	   583	HasA	eritrea	20 airport	1.5849625007211563
+   584	   584	HasSubevent	get away with crime	feel sense of relief	1.5849625007211563
+   585	   585	IsA	window	operate system	3.4594316186372978
+   586	   586	ReceivesAction	tortoise	find on galapagos island	1.5849625007211563
+   587	   587	HasProperty	pretty be when something	please to eye	1.5849625007211563
+   588	   588	MotivatedByGoal	go to doctor	have physical exam	2.807354922057604
+   589	   589	IsA	garnet	precious stone	1.5849625007211563
+   590	   590	UsedFor	purse	store checkbook	1.5849625007211563
+   591	   591	UsedFor	study	prepare for test	2.807354922057604
+   592	   592	AtLocation	cola	fridge	2.321928094887362
+   593	   593	NotDesires	cougher	cough in his hand	1.5849625007211563
+   594	   594	HasPrerequisite	school	go to class	1.5849625007211563
+   595	   595	HasProperty	fortune cookie	just for fun	1.5849625007211563
+   596	   596	HasSubevent	clean your room	vacuum	2.584962500721156
+   597	   597	UsedFor	column	add number	1.5849625007211563
+   598	   598	IsA	this	old-fashioned television set	1.5849625007211563
+   599	   599	AtLocation	sex	bed	1.5849625007211563
+   600	   600	IsA	this	picture of adjustable wrench	2.321928094887362
+   601	   601	UsedFor	store	buy thing	3.0
+   602	   602	HasPrerequisite	open gift	remove ribbon	2.0
+   603	   603	HasProperty	propellar beanie	popular with boy of all age	1.5849625007211563
+   604	   604	IsA	sound	vibration in air	3.0
+   605	   605	HasPrerequisite	stand in line	stand	2.584962500721156
+   606	   606	CapableOf	disease	travel from animal to human	1.5849625007211563
+   607	   607	HasSubevent	water be still	it reflect like mirror	1.5849625007211563
+   608	   608	HasProperty	downhill ski	fun and adventurous	1.5849625007211563
+   609	   609	NotDesires	husband	drive	2.0
+   610	   610	DefinedAs	maguire daisy	erigeron maguirei	1.5849625007211563
+   611	   611	DefinedAs	st	troglodyte aedon mesoleucus	1.5849625007211563
+   612	   612	IsA	one apple	object	2.0
+   613	   613	AtLocation	something	restuarant	2.0
+   614	   614	MotivatedByGoal	lie	you do not	1.5849625007211563
+   615	   615	UsedFor	shampoo and conditioner	lather your hair	2.321928094887362
+   616	   616	Desires	some person	experience danger as entertainment	1.5849625007211563
+   617	   617	HasProperty	baby cry because they	wet or hungry	1.5849625007211563
+   618	   618	HasPrerequisite	go see play	see what play be on	1.5849625007211563
+   619	   619	UsedFor	excersize	releive stress	1.5849625007211563
+   620	   620	UsedFor	dvd	relaxation	1.5849625007211563
+   621	   621	AtLocation	flower	wed	2.0
+   622	   622	IsA	aeroplane	heavy than air	1.5849625007211563
+   623	   623	IsA	these penquins	bird	2.0
+   624	   624	UsedFor	house hold oil	quiet squeaky door	2.0
+   625	   625	IsA	xylophone	musical instrument	2.807354922057604
+   626	   626	CapableOf	student	watch tv	1.5849625007211563
+   627	   627	HasPrerequisite	compete	skill	2.0
+   628	   628	HasA	i	go to bathroom	1.5849625007211563
+   629	   629	AtLocation	many wonder	universe	1.5849625007211563
+   630	   630	HasSubevent	do crossword puzzle	success	1.5849625007211563
+   631	   631	IsA	blue and yellow bird	spread it wing	1.5849625007211563
+   632	   632	CapableOf	we	sit on this chair and rest	1.5849625007211563
+   633	   633	CapableOf	kitten	mew	1.5849625007211563
+   634	   634	CausesDesire	be tire	go to sleep	3.0
+   635	   635	HasPrerequisite	groom	comb your hair	1.5849625007211563
+   636	   636	IsA	boot	for cowboy	1.5849625007211563
+   637	   637	IsA	balloon	light than air	1.5849625007211563
+   638	   638	HasProperty	all american	stupid	1.5849625007211563
+   639	   639	ReceivesAction	family	mean to stick together	1.5849625007211563
+   640	   640	HasProperty	oxygen	necessary for life	1.5849625007211563
+   641	   641	HasProperty	healthy grass	green	3.0
+   642	   642	IsA	shellfish	not really fish	1.5849625007211563
+   643	   643	CapableOf	person	blink	1.5849625007211563
+   644	   644	AtLocation	loose sock	dry	2.321928094887362
+   645	   645	HasPrerequisite	print on printer	ink and paper	2.0
+   646	   646	UsedFor	mirror	look at your hair	1.5849625007211563
+   647	   647	HasA	men and woman	many difference	1.5849625007211563
+   648	   648	CapableOf	screw	describe have sex	1.5849625007211563
+   649	   649	UsedFor	stage	performance	2.584962500721156
+   650	   650	IsA	cock	animal	1.5849625007211563
+   651	   651	NotDesires	person	urine	2.0
+   652	   652	HasSubevent	stand in line	get tire	2.807354922057604
+   653	   653	HasSubevent	attend rock concert	enjoy music	2.584962500721156
+   654	   654	HasProperty	dog	small	2.807354922057604
+   655	   655	UsedFor	suit and tie	social symbol	1.5849625007211563
+   656	   656	AtLocation	cat	petshop	2.321928094887362
+   657	   657	PartOf	dictator	dictatorship	1.5849625007211563
+   658	   658	CapableOf	fire	heat house	3.0
+   659	   659	HasPrerequisite	change clothe	remove clothe	2.0
+   660	   660	HasFirstSubevent	christmas shop	buy present for your wife	2.321928094887362
+   661	   661	CapableOf	wine	make person drunk	1.5849625007211563
+   662	   662	InheritsFrom	love	sex	1.5849625007211563
+   663	   663	HasSubevent	make stitch in time	that you avoid need nine stitch	1.5849625007211563
+   664	   664	AtLocation	comfort	home	2.584962500721156
+   665	   665	AtLocation	mandolin	instrument case	2.0
+   666	   666	HasPrerequisite	start fire	get matchbox	1.5849625007211563
+   667	   667	Desires	person	good relationship	2.0
+   668	   668	AtLocation	large food store	big city	1.5849625007211563
+   669	   669	UsedFor	channel	passage of ship	1.5849625007211563
+   670	   670	HasSubevent	tell story	tell lie	2.0
+   671	   671	AtLocation	pair or sock	sock drawer	2.584962500721156
+   672	   672	DefinedAs	etowah darter	etheostoma etowahae	1.5849625007211563
+   673	   673	AtLocation	beverage	restaurant	1.5849625007211563
+   674	   674	HasA	some person do not believe human	visit moon	1.5849625007211563
+   675	   675	HasProperty	paint	messy	1.5849625007211563
+   676	   676	IsA	these be trophy and	reward for win game	1.5849625007211563
+   677	   677	NotDesires	woman	be ugly	1.5849625007211563
+   678	   678	CapableOf	clerk	price item	1.5849625007211563
+   679	   679	IsA	lute	string instrument	1.5849625007211563
+   680	   680	Desires	person	excel	2.0
+   681	   681	HasPrerequisite	go fish	get your fish pole	2.584962500721156
+   682	   682	UsedFor	ice	drink	2.584962500721156
+   683	   683	IsA	there	shelve	1.5849625007211563
+   684	   684	IsA	relationship	thing compare to one another	1.5849625007211563
+   685	   685	HasFirstSubevent	have heart attack	panic	2.0
+   686	   686	IsA	wind	energy	2.0
+   687	   687	AtLocation	swim pool	school	3.1699250014423126
+   688	   688	AtLocation	acorn	grind	1.5849625007211563
+   689	   689	MadeOf	ricecake	rice	2.0
+   690	   690	HasPrerequisite	light match	find rough surface	2.321928094887362
+   691	   691	HasProperty	kitten be fragile and delicate they	easy to harm	1.5849625007211563
+   692	   692	HasLastSubevent	view film at home	rewind film	2.0
+   693	   693	AtLocation	can of paint	hardware store	3.1699250014423126
+   694	   694	CapableOf	child	eat potato	1.5849625007211563
+   695	   695	CapableOf	music	cause emotion in person	1.5849625007211563
+   696	   696	HasPrerequisite	get job	go on interview	2.321928094887362
+   697	   697	HasProperty	some spanner	adjustable	2.0
+   698	   698	HasSubevent	meet girl	you blush	2.0
+   699	   699	IsA	bed	place where you sleep	2.321928094887362
+   700	   700	UsedFor	toothbrush handle	clear paper jam	1.5849625007211563
+   701	   701	CausesDesire	be extrovert	entertain person	2.584962500721156
+   702	   702	NotCapableOf	natto and soya sauce	taste similar	1.5849625007211563
+   703	   703	CapableOf	death	bring sorrow	3.1699250014423126
+   704	   704	AtLocation	woman	store	2.584962500721156
+   705	   705	IsA	this	portrait of thomas jefferson	1.5849625007211563
+   706	   706	HasProperty	teenager	old than tottler	1.5849625007211563
+   707	   707	AtLocation	something	municipal dump	1.5849625007211563
+   708	   708	CapableOf	something	cut paper into piece	2.321928094887362
+   709	   709	HasSubevent	cinema	share large soda	2.0
+   710	   710	HasProperty	rubber chicken	ugly	2.321928094887362
+   711	   711	UsedFor	guitar	fun	2.321928094887362
+   712	   712	HasA	namibia	135 airport	1.5849625007211563
+   713	   713	HasSubevent	drive your car	listen to radio	2.584962500721156
+   714	   714	HasProperty	ride roller coaster	scary but generally safe	1.5849625007211563
+   715	   715	UsedFor	conquer nation	distract your population from internal problem	2.321928094887362
+   716	   716	HasProperty	swim on sunny day	refresh	1.5849625007211563
+   717	   717	HasA	ride bicycle as much as	effect of reduce debt	1.5849625007211563
+   718	   718	HasSubevent	cut your hair	your hair get short	2.584962500721156
+   719	   719	CapableOf	computer program	check spell	2.321928094887362
+   720	   720	AtLocation	date	newspaper	2.0
+   721	   721	UsedFor	headlight on car	see in dark	1.5849625007211563
+   722	   722	UsedFor	mead	get drunk	2.0
+   723	   723	HasSubevent	mow lawn	make all grass short	1.5849625007211563
+   724	   724	IsA	three person on horseback	prepare for ride competition	1.5849625007211563
+   725	   725	UsedFor	rubber stamp	mark something	2.321928094887362
+   726	   726	UsedFor	cake	dessert	2.584962500721156
+   727	   727	PartOf	proteus	bacteria	2.0
+   728	   728	HasProperty	some type of noise	please to hear	1.5849625007211563
+   729	   729	HasPrerequisite	live life	freedom	1.5849625007211563
+   730	   730	UsedFor	drink alcohol	get drunk	2.584962500721156
+   731	   731	Causes	drink alone	thought of suicide	1.5849625007211563
+   732	   732	AtLocation	3 foot	yard	1.5849625007211563
+   733	   733	UsedFor	launch platfrom	launch rocket or space shuttle	2.321928094887362
+   734	   734	HasPrerequisite	feel good	become human	1.5849625007211563
+   735	   735	UsedFor	ballot	throw bastard out	2.0
+   736	   736	UsedFor	locker room	store exercise clothe	2.321928094887362
+   737	   737	HasPrerequisite	eat in restaurant	place order	2.0
+   738	   738	Causes	buy beer	problem	1.5849625007211563
+   739	   739	UsedFor	bay	sail	2.0
+   740	   740	ReceivesAction	basketball	play by tall person	1.5849625007211563
+   741	   741	HasA	trinidad and tobago	6 airport	1.5849625007211563
+   742	   742	AtLocation	anemone	flower bed	1.5849625007211563
+   743	   743	AtLocation	gas station	city	2.0
+   744	   744	IsA	america	continent	1.8073549220576042
+   745	   745	IsA	lens galaxy	galaxy	2.0
+   746	   746	HasSubevent	write story	think about plot	1.5849625007211563
+   747	   747	IsA	go barefoot	become luxury	1.5849625007211563
+   748	   748	IsA	man	male person	2.584962500721156
+   749	   749	NotCapableOf	computer	hold it breath	1.5849625007211563
+   750	   750	PartOf	joy	human experience	2.0
+   751	   751	IsA	hacker	programmer	2.0
+   752	   752	Causes	stress	ulcer	1.5849625007211563
+   753	   753	AtLocation	girl	theatre	1.5849625007211563
+   754	   754	CapableOf	person who use gun on target	use them on human	1.5849625007211563
+   755	   755	CapableOf	leave	fall from tree	2.321928094887362
+   756	   756	DefinedAs	three-keeled asian turtle	melanochelys tricarinata	1.5849625007211563
+   757	   757	UsedFor	talk	communicate with family	2.321928094887362
+   758	   758	AtLocation	live room	couch	2.0
+   759	   759	HasProperty	human that	destructive towards each other be bad	1.5849625007211563
+   760	   760	HasProperty	cross country ski	fun	1.5849625007211563
+   761	   761	DefinedAs	heart muscle	strong muscle in body	1.5849625007211563
+   762	   762	CapableOf	you	destroy whole country	1.5849625007211563
+   763	   763	UsedFor	play game of chess	challenge someone	2.0
+   764	   764	AtLocation	pepper	farmer market	2.0
+   765	   765	HasSubevent	copulate	have orgasm	2.807354922057604
+   766	   766	IsA	this	empty school bus	1.5849625007211563
+   767	   767	Desires	woman	lover	2.0
+   768	   768	HasSubevent	see predator	should be freeze	1.5849625007211563
+   769	   769	IsA	wicker	woman thing	1.5849625007211563
+   770	   770	AtLocation	front garden in front	build	1.5849625007211563
+   771	   771	IsA	dish	plate	2.584962500721156
+   772	   772	DefinedAs	swayne hartebeest	alcelaphus buselaphus swaynei	1.5849625007211563
+   773	   773	HasSubevent	punish someone	feel of guilt	1.5849625007211563
+   774	   774	IsA	household cat	close relative to this specie	1.5849625007211563
+   775	   775	HasProperty	pizza	consider unhealthy	2.0
+   776	   776	CapableOf	cloth	become wet	2.321928094887362
+   777	   777	IsA	birthday	celebration of our age	1.5849625007211563
+   778	   778	UsedFor	cd recorder	pirate software	1.5849625007211563
+   779	   779	HasProperty	child	young	3.1699250014423126
+   780	   780	PartOf	null set	all set	2.0
+   781	   781	UsedFor	bill	get payment for service	1.5849625007211563
+   782	   782	UsedFor	take walk	exercise your leg	2.321928094887362
+   783	   783	NotIsA	he	shove penis down her throat	1.5849625007211563
+   784	   784	IsA	anarchism	visceral revolt	2.0
+   785	   785	AtLocation	passenger ticket	airlport	2.807354922057604
+   786	   786	DefinedAs	puerto rican parrot	amazona vittata	1.5849625007211563
+   787	   787	DefinedAs	ewa plain	chamaesyce skottsbergii kalaeloana	1.5849625007211563
+   788	   788	CausesDesire	have date	meet friend	2.0
+   789	   789	AtLocation	exercise equipment	ymca	1.5849625007211563
+   790	   790	AtLocation	kitten	pile of clean clothe	1.5849625007211563
+   791	   791	HasSubevent	chew your food	bite your cheeck	1.5849625007211563
+   792	   792	HasPrerequisite	eat breakfast	pour cereal	1.5849625007211563
+   793	   793	Causes	get in shape	good health	3.0
+   794	   794	AtLocation	work of art	art show	2.0
+   795	   795	MadeOf	pudding	sugar	2.0
+   796	   796	DefinedAs	internet will	great collection of book	1.5849625007211563
+   797	   797	IsA	cart	vehicle	2.0
+   798	   798	IsA	low point in palau	pacific ocean 0 m	1.5849625007211563
+   799	   799	HasA	you	two leg to operate bicycle	1.5849625007211563
+   800	   800	CapableOf	child	play variation of jack for hour	1.5849625007211563
+   801	   801	AtLocation	toilet tank	bathroom	2.321928094887362
+   802	   802	MotivatedByGoal	go on stage	be actor	2.321928094887362
+   803	   803	DefinedAs	unit of power	watt	1.5849625007211563
+   804	   804	CapableOf	heat material	transmit light	1.5849625007211563
+   805	   805	UsedFor	go for drive	get from one place to another	2.321928094887362
+   806	   806	HasPrerequisite	meet interest person	join club	2.0
+   807	   807	UsedFor	lip	lick	2.584962500721156
+   808	   808	HasA	put on sock	effect of wear sock	1.5849625007211563
+   809	   809	HasProperty	too hot	uncomfortable	1.5849625007211563
+   810	   810	Causes	vacuum	clean house	1.5849625007211563
+   811	   811	UsedFor	shampoo	wash rug	1.5849625007211563
+   812	   812	HasProperty	one plus one	two	2.321928094887362
+   813	   813	MotivatedByGoal	attend meet	keep your job	2.0
+   814	   814	AtLocation	lady	supermarket	2.321928094887362
+   815	   815	HasA	before air condition pepole use to	sleep porch	1.5849625007211563
+   816	   816	IsA	paddle	move object across water	1.5849625007211563
+   817	   817	HasProperty	stamp pad	lightweight	2.321928094887362
+   818	   818	CapableOf	teacher	explain that test question	1.5849625007211563
+   819	   819	UsedFor	shower curtain	provide water barrier	2.321928094887362
+   820	   820	UsedFor	first class airplane seat	rich person	2.807354922057604
+   821	   821	IsA	person	smart than fish	1.5849625007211563
+   822	   822	CapableOf	lion	fear massai warrior	1.5849625007211563
+   823	   823	HasPrerequisite	use television	turn on tv	2.0
+   824	   824	HasProperty	eat pussy	great	2.0
+   825	   825	HasSubevent	leave line	lose your place	2.807354922057604
+   826	   826	UsedFor	person	help	2.321928094887362
+   827	   827	NotCapableOf	do	wittle while walk	1.5849625007211563
+   828	   828	HasProperty	office build	very tall even in small city	1.5849625007211563
+   829	   829	HasSubevent	pay cash	count your money	2.321928094887362
+   830	   830	IsA	pill	drug	2.321928094887362
+   831	   831	HasPrerequisite	go to hairdresser	have hair	2.0
+   832	   832	Desires	men	golf	1.5849625007211563
+   833	   833	IsA	honor	virtue	2.0
+   834	   834	HasA	late news	high value	2.0
+   835	   835	AtLocation	shelve	at bookstore	2.584962500721156
+   836	   836	HasPrerequisite	wage war	get your weapon	2.0
+   837	   837	AtLocation	human	hotel	2.584962500721156
+   838	   838	AtLocation	mother	kitchen	1.5849625007211563
+   839	   839	Causes	have checkup	have to remove your clothe	1.5849625007211563
+   840	   840	MotivatedByGoal	express how funny something be	hear another joke	1.5849625007211563
+   841	   841	HasPrerequisite	weed garden	know weed from vegetable	2.0
+   842	   842	CapableOf	you	wet your pant	1.5849625007211563
+   843	   843	ReceivesAction	elephant	find in africa and india	1.5849625007211563
+   844	   844	CapableOf	hand	cup breast	3.0
+   845	   845	HasA	old phone	dial instead of button	1.5849625007211563
+   846	   846	UsedFor	eat breakfast	start your day	3.0
+   847	   847	NotDesires	patient	know about his situation	2.0
+   848	   848	IsA	soccer	team sport	3.0
+   849	   849	HasPrerequisite	sleep at night	quiet	1.5849625007211563
+   850	   850	UsedFor	school	teach	2.321928094887362
+   851	   851	CapableOf	l young	play saxophone	1.5849625007211563
+   852	   852	AtLocation	i	alaska	2.321928094887362
+   853	   853	IsA	one way to get money	work	1.5849625007211563
+   854	   854	IsA	lizard	coldblooded	1.5849625007211563
+   855	   855	CapableOf	you	cut your finger on sharp metal	1.5849625007211563
+   856	   856	IsA	hemoglobin	complex molecule	2.0
+   857	   857	CapableOf	scientist	question theory	2.0
+   858	   858	CapableOf	child	love	2.584962500721156
+   859	   859	IsA	this	bagel with cream cheese	2.321928094887362
+   860	   860	MotivatedByGoal	go to bus stop	take bus	2.321928094887362
+   861	   861	HasProperty	old fashion bicycle that	popular in fifty	1.5849625007211563
+   862	   862	HasSubevent	live simple life	learn to do it for yourself	1.5849625007211563
+   863	   863	NotCapableOf	penguin	fly although they be bird	1.5849625007211563
+   864	   864	AtLocation	something	banner	2.321928094887362
+   865	   865	CapableOf	lightning	damage your computer	1.5849625007211563
+   866	   866	ReceivesAction	some of earth surface	cover by ice	1.5849625007211563
+   867	   867	DefinedAs	kearney blue-star	amsonia kearneyana	1.5849625007211563
+   868	   868	NotHasA	adult person	tail	1.5849625007211563
+   869	   869	AtLocation	person	village	1.5849625007211563
+   870	   870	NotDesires	student	exam	2.0
+   871	   871	UsedFor	pedestal	put statue on	2.584962500721156
+   872	   872	IsA	red giant	star	1.5849625007211563
+   873	   873	HasSubevent	ride bike	lose your balance	2.0
+   874	   874	IsA	lambada	dance	2.0
+   875	   875	HasProperty	law practice	finance	2.0
+   876	   876	AtLocation	weilimdorf	stuttgart	2.0
+   877	   877	IsA	ball	round and usually bounce	1.5849625007211563
+   878	   878	CapableOf	person	continue learn	1.5849625007211563
+   879	   879	HasSubevent	cut yourself	that you bleed	2.0
+   880	   880	IsA	rubber	polymer	2.0
+   881	   881	UsedFor	forgive someone	give in	2.321928094887362
+   882	   882	CapableOf	person	develop bad health by drink and smoke	2.0
+   883	   883	AtLocation	lose item	bed	2.0
+   884	   884	DefinedAs	ashy dogweed	thymophylla tephroleuca	1.5849625007211563
+   885	   885	HasProperty	hockey player	well pad for protection	1.5849625007211563
+   886	   886	AtLocation	wax	floor	1.5849625007211563
+   887	   887	HasFirstSubevent	take midterm	receive test	2.321928094887362
+   888	   888	HasPrerequisite	walk	move your leg	3.1699250014423126
+   889	   889	AtLocation	deli tray	party	1.5849625007211563
+   890	   890	IsA	pearl	birth stone	1.5849625007211563
+   891	   891	MotivatedByGoal	catch mumps	be sick	1.5849625007211563
+   892	   892	UsedFor	golf	wealthy person	1.5849625007211563
+   893	   893	HasPrerequisite	consumerism lifestyle	that person destroy environment	1.5849625007211563
+   894	   894	DefinedAs	mercury	first planet from sun	3.3219280948873626
+   895	   895	IsA	orange juice	food	1.5849625007211563
+   896	   896	CapableOf	woman	mother her child	2.807354922057604
+   897	   897	IsA	solicitor	lawyer	2.321928094887362
+   898	   898	CapableOf	someone	help you bury body	2.0
+   899	   899	NotDesires	dentist	patient with bad breath	1.5849625007211563
+   900	   900	ReceivesAction	soya sauce	make from ferment soy bean	1.5849625007211563
+   901	   901	CapableOf	cat	look at king	3.1699250014423126
+   902	   902	HasProperty	carrot	only one kind of root vegetable	2.0
+   903	   903	HasPrerequisite	hit bottle	reason to consume alcohol	1.5849625007211563
+   904	   904	HasPrerequisite	surf	get surf board	2.0
+   905	   905	AtLocation	clothe shelf	cupboard	2.321928094887362
+   906	   906	AtLocation	gift	gift shop	3.0
+   907	   907	Causes	go into trance	sleepwalk	1.5849625007211563
+   908	   908	AtLocation	bone	bus	1.5849625007211563
+   909	   909	HasLastSubevent	go to opera	go home	2.584962500721156
+   910	   910	HasProperty	trophy	give as prize	1.5849625007211563
+   911	   911	HasPrerequisite	go jog	wear good shoe	1.5849625007211563
+   912	   912	AtLocation	redneck	georgia	2.584962500721156
+   913	   913	UsedFor	altar	sacrifice	2.321928094887362
+   914	   914	AtLocation	bridge	florida	2.0
+   915	   915	HasSubevent	take course	use computer	2.0
+   916	   916	AtLocation	evolution	biosphere	1.5849625007211563
+   917	   917	Causes	democracy	freedom	2.0
+   918	   918	ReceivesAction	this show large highway	cross by another large highway	1.5849625007211563
+   919	   919	CapableOf	family reunion	involve reunion between sister	2.584962500721156
+   920	   920	UsedFor	doll	teach medical personnel	2.0
+   921	   921	UsedFor	shop complex	find bargain in	1.5849625007211563
+   922	   922	HasA	kitchen table	chair around them	1.5849625007211563
+   923	   923	ReceivesAction	fire	extinguish	2.0
+   924	   924	IsA	universe	big place	1.5849625007211563
+   925	   925	PartOf	classroom	school	2.0
+   926	   926	CapableOf	you	cycle home after work	1.5849625007211563
+   927	   927	HasProperty	radio-controlled helicopter	fun	2.0
+   928	   928	MadeOf	glass lense	transparent glass or plastic	2.321928094887362
+   929	   929	PartOf	wrinkle skin	age	1.5849625007211563
+   930	   930	UsedFor	chair	stand on	1.5849625007211563
+   931	   931	HasPrerequisite	speak aloud	have function vocal cord	1.5849625007211563
+   932	   932	AtLocation	many taxi	new york	1.5849625007211563
+   933	   933	AtLocation	eyeglass case	shirt pocket	2.0
+   934	   934	AtLocation	dead person	funeral	2.584962500721156
+   935	   935	Causes	enjoy film	laughter	2.807354922057604
+   936	   936	MotivatedByGoal	remember phone number	call number late	2.0
+   937	   937	HasProperty	sky	full of star	2.807354922057604
+   938	   938	AtLocation	shipwreck	water	2.584962500721156
+   939	   939	CapableOf	royal	beat all other poker hand	2.0
+   940	   940	CapableOf	flow of air	cool you down	1.5849625007211563
+   941	   941	AtLocation	front room	condo	2.0
+   942	   942	HasProperty	polo	very challenge	1.5849625007211563
+   943	   943	AtLocation	computer	box	2.0
+   944	   944	HasSubevent	buy something	look for gimmick	2.0
+   945	   945	HasSubevent	commit perjury	testify	2.0
+   946	   946	HasSubevent	walk dog	wait for him to pee	2.584962500721156
+   947	   947	UsedFor	tell story	entertainment	2.807354922057604
+   948	   948	UsedFor	terrace house	live in	3.1699250014423126
+   949	   949	HasSubevent	chat with friend	low your guard	2.0
+   950	   950	IsA	school	good place to learn	2.0
+   951	   951	Causes	change society	new rule to learn	2.321928094887362
+   952	   952	IsA	baby	small person	3.0
+   953	   953	NotCapableOf	clock	drive car	1.5849625007211563
+   954	   954	CapableOf	someone	put key in ignition	2.321928094887362
+   955	   955	AtLocation	family	at home	3.0
+   956	   956	UsedFor	coathangers	hang clothe	1.5849625007211563
+   957	   957	AtLocation	credit card wallet	purse	2.584962500721156
+   958	   958	AtLocation	bottle of ketchup	restaurant	2.0
+   959	   959	AtLocation	hotel	city	1.5849625007211563
+   960	   960	HasProperty	chlorine	common in swim pool	1.5849625007211563
+   961	   961	HasPrerequisite	go outside house	open door	2.0
+   962	   962	AtLocation	someone	movie theatre	2.807354922057604
+   963	   963	CapableOf	internet user	order book from web-shop	1.5849625007211563
+   964	   964	DefinedAs	onion breath	opposite of baby breath	1.5849625007211563
+   965	   965	IsA	thirty-nine	number	2.0
+   966	   966	ReceivesAction	mask	wear on halloween	1.5849625007211563
+   967	   967	HasPrerequisite	paint	use brush	2.0
+   968	   968	HasSubevent	wait for someone	you be late to your destination	1.5849625007211563
+   969	   969	AtLocation	gate	heaven and guard by st	1.5849625007211563
+   970	   970	UsedFor	t-shirt	cover nipple	2.0
+   971	   971	AtLocation	cow	cornfield	2.321928094887362
+   972	   972	HasSubevent	grow vegetable	pride	2.0
+   973	   973	CapableOf	music	relieve our stress	1.5849625007211563
+   974	   974	IsA	electricity	form of light	1.5849625007211563
+   975	   975	IsA	eleven	number	2.0
+   976	   976	UsedFor	war	control	2.321928094887362
+   977	   977	IsA	sterling morrison	member of velvet underground	1.5849625007211563
+   978	   978	HasProperty	small bird be fly it	black blue and yellow	1.5849625007211563
+   979	   979	AtLocation	skin care article	drug store	1.5849625007211563
+   980	   980	AtLocation	baby	cradle	2.321928094887362
+   981	   981	DefinedAs	hancock build	tall build in boston	1.5849625007211563
+   982	   982	Desires	if you	be hear speak into mike	1.5849625007211563
+   983	   983	Causes	play	have fun	2.807354922057604
+   984	   984	PartOf	cystadenocarcinoma	malignant tumor	2.0
+   985	   985	IsA	earth	70 water	2.0
+   986	   986	UsedFor	corn	cream corn	2.321928094887362
+   987	   987	CapableOf	judge	decide sentence	1.5849625007211563
+   988	   988	HasPrerequisite	go to bed	go to your bedroom	2.0
+   989	   989	AtLocation	object	school	1.5849625007211563
+   990	   990	UsedFor	stone	throw	3.1699250014423126
+   991	   991	UsedFor	dice	play game crap	1.5849625007211563
+   992	   992	UsedFor	marble	game	2.807354922057604
+   993	   993	IsA	thomas jefferson	presidant	1.5849625007211563
+   994	   994	UsedFor	ride horse	compete in equestrian event	2.321928094887362
+   995	   995	NotHasA	little baby	tooth	1.5849625007211563
+   996	   996	IsA	there	much world poverty	1.5849625007211563
+   997	   997	HasProperty	cat make good pet because they	funny	1.5849625007211563
+   998	   998	HasSubevent	deadline	stay up all night	2.0
+   999	   999	UsedFor	hour-glass	tell time	1.5849625007211563
+  1000	  1000	AtLocation	place to stay	city	2.321928094887362
+  1001	  1001	CapableOf	person	drink coffee	2.321928094887362
+  1002	  1002	Causes	commit perjury	person to go to jail	2.0
+  1003	  1003	HasA	human	pet	1.5849625007211563
+  1004	  1004	UsedFor	machine	glaze	2.0
+  1005	  1005	AtLocation	satisfaction	brothel	1.5849625007211563
+  1006	  1006	CapableOf	person	forward email to somebody else	1.5849625007211563
+  1007	  1007	NotCapableOf	white house	exist	1.5849625007211563
+  1008	  1008	AtLocation	servant	rich person house	2.0
+  1009	  1009	HasPrerequisite	find information	go to library	2.584962500721156
+  1010	  1010	CapableOf	you	passport to leave country	2.321928094887362
+  1011	  1011	HasPrerequisite	watch movie	go to movie theater	2.807354922057604
+  1012	  1012	IsA	peace	goal worth strive for	1.5849625007211563
+  1013	  1013	Causes	plan vacation	anticipation	1.5849625007211563
+  1014	  1014	UsedFor	zipper	fasten jacket	1.5849625007211563
+  1015	  1015	HasSubevent	examine thing	read cover	2.321928094887362
+  1016	  1016	AtLocation	many different strain	corn	1.5849625007211563
+  1017	  1017	DefinedAs	mommy	wife of daddy	2.0
+  1018	  1018	IsA	sew	craft	2.584962500721156
+  1019	  1019	HasPrerequisite	dive	learn how to swim	2.0
+  1020	  1020	HasSubevent	party	hear music	2.0
+  1021	  1021	AtLocation	oven	home	2.0
+  1022	  1022	UsedFor	teakettle	boil water for cook purpose	2.321928094887362
+  1023	  1023	HasSubevent	debate politics	argument	2.0
+  1024	  1024	AtLocation	kangaroo	australia	2.807354922057604
+  1025	  1025	HasPrerequisite	clean your room	vacuum floor	2.0
+  1026	  1026	DefinedAs	desert pupfish	cyprinodon macularius	1.5849625007211563
+  1027	  1027	DefinedAs	royal flush	high hand in poker	1.5849625007211563
+  1028	  1028	IsA	game	competition	2.321928094887362
+  1029	  1029	UsedFor	vice	hold thing together	1.5849625007211563
+  1030	  1030	CapableOf	excercise	help reduce your weight	2.0
+  1031	  1031	AtLocation	television	bedroom	3.0
+  1032	  1032	UsedFor	whore	fun	1.5849625007211563
+  1033	  1033	UsedFor	knit	produce finish product	2.321928094887362
+  1034	  1034	AtLocation	many system	organize data	1.5849625007211563
+  1035	  1035	NotDesires	person	break wrist	2.321928094887362
+  1036	  1036	CapableOf	men	fancy woman	2.807354922057604
+  1037	  1037	IsA	pachanga	dance	2.0
+  1038	  1038	Desires	that girl	get fuck	1.5849625007211563
+  1039	  1039	UsedFor	express information	exchange idea	2.321928094887362
+  1040	  1040	CapableOf	family	help each other	1.5849625007211563
+  1041	  1041	Causes	eat in fast food restaurant	indigestion	2.0
+  1042	  1042	UsedFor	tree	build house	2.321928094887362
+  1043	  1043	HasSubevent	go to school	ride with your parent	2.0
+  1044	  1044	IsA	hourglass remind us that time	run out	1.5849625007211563
+  1045	  1045	UsedFor	machine	press clothe	2.0
+  1046	  1046	Desires	person	flex time	2.0
+  1047	  1047	HasSubevent	read book	become distract	1.5849625007211563
+  1048	  1048	CapableOf	clown	delight child	2.807354922057604
+  1049	  1049	HasSubevent	find information	try experiment	2.0
+  1050	  1050	IsA	child	wise than adult	1.5849625007211563
+  1051	  1051	UsedFor	blow dry	scare cat or dog	1.5849625007211563
+  1052	  1052	ReceivesAction	screwdriver	invent by person name phillip	1.5849625007211563
+  1053	  1053	HasProperty	room	next to another room	1.5849625007211563
+  1054	  1054	HasLastSubevent	watch television	turn it off	2.807354922057604
+  1055	  1055	UsedFor	light fire	burn someone at stake	2.321928094887362
+  1056	  1056	HasPrerequisite	make person laugh	tell funny joke	2.0
+  1057	  1057	AtLocation	toll road	unite state	3.4594316186372978
+  1058	  1058	IsA	vinyl	chemical	2.0
+  1059	  1059	UsedFor	go to play	have fun	2.0
+  1060	  1060	UsedFor	bus seat	sit on bus	2.321928094887362
+  1061	  1061	CapableOf	priest	say mass	2.0
+  1062	  1062	HasProperty	atheletes	big and strong	1.5849625007211563
+  1063	  1063	AtLocation	termite	wall of house	1.5849625007211563
+  1064	  1064	IsA	this	salamander	1.5849625007211563
+  1065	  1065	MadeOf	telephone	electronic part	2.0
+  1066	  1066	AtLocation	potato	grocer	2.321928094887362
+  1067	  1067	Causes	stab to death	punishment	2.584962500721156
+  1068	  1068	AtLocation	someone	barber	1.5849625007211563
+  1069	  1069	HasPrerequisite	cook	have ingredient	2.807354922057604
+  1070	  1070	UsedFor	sofa	lounge	2.584962500721156
+  1071	  1071	HasProperty	computer that hurt good person	bad	1.5849625007211563
+  1072	  1072	HasPrerequisite	procreate	you to have sex	2.584962500721156
+  1073	  1073	UsedFor	wash your hand	clean your hand after autopsy	2.321928094887362
+  1074	  1074	UsedFor	mug	clean	1.5849625007211563
+  1075	  1075	IsA	clamp	seafood	2.0
+  1076	  1076	UsedFor	credit card wallet	store credit card	2.584962500721156
+  1077	  1077	HasSubevent	go to party	drink too much	2.0
+  1078	  1078	HasPrerequisite	learn about science	open mind	2.321928094887362
+  1079	  1079	IsA	calculator	machine	2.584962500721156
+  1080	  1080	IsA	something you find outside	rain	2.321928094887362
+  1081	  1081	AtLocation	platypus	australia	1.5849625007211563
+  1082	  1082	AtLocation	gate	fence	2.584962500721156
+  1083	  1083	HasSubevent	kill person	grit your tooth	2.0
+  1084	  1084	UsedFor	buy something for love one	make person feel special	2.321928094887362
+  1085	  1085	UsedFor	get drunk	enjoyment	1.5849625007211563
+  1086	  1086	CausesDesire	want to become doctor	learn about science	1.5849625007211563
+  1087	  1087	MotivatedByGoal	lie down	be comfortable	2.0
+  1088	  1088	HasProperty	some person	intelligent	1.5849625007211563
+  1089	  1089	AtLocation	boat	harbor	3.0
+  1090	  1090	AtLocation	logic	school	2.321928094887362
+  1091	  1091	IsA	this man	serious	1.5849625007211563
+  1092	  1092	IsA	there	no sound in vacuum	2.0
+  1093	  1093	MotivatedByGoal	drive your car	it fast than walk	1.5849625007211563
+  1094	  1094	HasSubevent	fight	break furniture	1.5849625007211563
+  1095	  1095	HasPrerequisite	go jog	run shoe	2.0
+  1096	  1096	HasLastSubevent	finish job	clean up	1.5849625007211563
+  1097	  1097	IsA	something you find inside	indoor paint	1.5849625007211563
+  1098	  1098	IsA	tree	tall than person	1.5849625007211563
+  1099	  1099	HasProperty	kid	our future	1.5849625007211563
+  1100	  1100	IsA	polish stone	semi-precious gem	1.5849625007211563
+  1101	  1101	HasA	leave	chlorophyll	2.0
+  1102	  1102	AtLocation	something	race track	2.807354922057604
+  1103	  1103	HasProperty	green apple often taste tart and	good for make pie	1.5849625007211563
+  1104	  1104	UsedFor	garbage can	dispose of waste	2.321928094887362
+  1105	  1105	HasProperty	dog	good at retrieve toy	1.5849625007211563
+  1106	  1106	HasA	build	foundation	2.0
+  1107	  1107	HasProperty	this 8 ball	magic	1.5849625007211563
+  1108	  1108	AtLocation	toilet	bedroom	2.0
+  1109	  1109	CapableOf	repairer	oil hinge with oilcan	1.5849625007211563
+  1110	  1110	IsA	one impairment person might have	neurosis	2.0
+  1111	  1111	UsedFor	maintain good health	long live	2.321928094887362
+  1112	  1112	HasPrerequisite	be in charge of project	plan project	1.5849625007211563
+  1113	  1113	AtLocation	class	school house	1.5849625007211563
+  1114	  1114	Causes	see art	confusion	1.5849625007211563
+  1115	  1115	AtLocation	water	london	1.5849625007211563
+  1116	  1116	AtLocation	honey	beehive	1.5849625007211563
+  1117	  1117	AtLocation	rat	maze	2.321928094887362
+  1118	  1118	UsedFor	judge someone	justice	2.321928094887362
+  1119	  1119	IsA	library	good place to go for research	2.321928094887362
+  1120	  1120	MadeOf	witch	wood	2.321928094887362
+  1121	  1121	ReceivesAction	utensil	require for cook	1.5849625007211563
+  1122	  1122	Causes	visit museum	you learn new fact	1.5849625007211563
+  1123	  1123	NotDesires	person	hangnail	3.1699250014423126
+  1124	  1124	HasSubevent	be in charge of project	give order	2.584962500721156
+  1125	  1125	UsedFor	typewriter	put text on paper	2.321928094887362
+  1126	  1126	IsA	horse	sometimes	2.584962500721156
+  1127	  1127	Causes	dance	meet person	2.0
+  1128	  1128	CapableOf	dog	wear dog collar	2.0
+  1129	  1129	HasSubevent	play sport	get injure	3.1699250014423126
+  1130	  1130	AtLocation	gazelle	ivory coast	2.321928094887362
+  1131	  1131	Desires	person	appropiate empathy	2.0
+  1132	  1132	IsA	low point in niue	pacific ocean 0 m	1.5849625007211563
+  1133	  1133	CapableOf	cow	shit	2.0
+  1134	  1134	HasPrerequisite	send criminal to prison	trial	2.0
+  1135	  1135	UsedFor	revolver	play russian roulette	2.321928094887362
+  1136	  1136	NotDesires	person	milk if she be lactose intolerant	2.321928094887362
+  1137	  1137	UsedFor	loft	sleep	3.0
+  1138	  1138	Causes	buy food	have something to eat	2.584962500721156
+  1139	  1139	UsedFor	heater	get warm	2.0
+  1140	  1140	NotCapableOf	mormon	drink wine	2.0
+  1141	  1141	UsedFor	shampoo and conditioner	shampoo your hair	2.584962500721156
+  1142	  1142	CapableOf	woman	drive car	2.807354922057604
+  1143	  1143	HasSubevent	apply for job	update your resume	2.584962500721156
+  1144	  1144	CapableOf	someone	climb wall	1.5849625007211563
+  1145	  1145	HasA	utility case	tool	2.321928094887362
+  1146	  1146	UsedFor	celebrate	party	2.0
+  1147	  1147	HasA	book	write knowledge	1.5849625007211563
+  1148	  1148	UsedFor	bus	transportation	2.584962500721156
+  1149	  1149	HasSubevent	change your appearance	new hair color	1.5849625007211563
+  1150	  1150	Causes	view video	hard to describe	1.5849625007211563
+  1151	  1151	AtLocation	gravity	school	1.5849625007211563
+  1152	  1152	DefinedAs	mount graham red squirrel	tamiasciurus hudsonicus grahamensis	1.5849625007211563
+  1153	  1153	CapableOf	dart	mark spot on map	1.5849625007211563
+  1154	  1154	IsA	val kilmer	actor	2.807354922057604
+  1155	  1155	CapableOf	some	hold demonstration	1.5849625007211563
+  1156	  1156	AtLocation	picture	art show	3.1699250014423126
+  1157	  1157	IsA	skyscarapers	very tall build	1.5849625007211563
+  1158	  1158	IsA	paranoia	disturb think process	2.0
+  1159	  1159	AtLocation	beer	bottle	2.584962500721156
+  1160	  1160	CapableOf	dog like cheese more than mouse	do	1.5849625007211563
+  1161	  1161	CapableOf	colorful	live in warm water	1.5849625007211563
+  1162	  1162	MotivatedByGoal	study for subject	do well in class	1.5849625007211563
+  1163	  1163	CapableOf	cook	use oven to cook	2.0
+  1164	  1164	Causes	roll downhill	hit rock	1.5849625007211563
+  1165	  1165	HasProperty	general mixed-sex study session	fun	1.5849625007211563
+  1166	  1166	AtLocation	needlepoint	sew	2.0
+  1167	  1167	AtLocation	electric fan	computer	2.321928094887362
+  1168	  1168	UsedFor	think	process information	2.321928094887362
+  1169	  1169	AtLocation	diamond	ring	2.0
+  1170	  1170	HasA	world	north and south hemisphere	1.5849625007211563
+  1171	  1171	CapableOf	prohibitionist society	restrict freedom	2.0
+  1172	  1172	IsA	society	group of human	2.0
+  1173	  1173	AtLocation	bench to sit on	train station	2.584962500721156
+  1174	  1174	HasSubevent	have heart attack	go to hospital	2.0
+  1175	  1175	DefinedAs	she	queen of unite kingdom	1.5849625007211563
+  1176	  1176	AtLocation	ax	toolbox	2.0
+  1177	  1177	AtLocation	platter	cabinet	2.0
+  1178	  1178	DefinedAs	life perservers	some candy	1.5849625007211563
+  1179	  1179	UsedFor	toothpaste	protect your gum from disease	2.321928094887362
+  1180	  1180	HasProperty	hot dog	fun to ride	1.5849625007211563
+  1181	  1181	HasPrerequisite	get some money from someone	ask for it	3.0
+  1182	  1182	HasProperty	bed	flat	2.321928094887362
+  1183	  1183	IsA	she	say goodbye	1.5849625007211563
+  1184	  1184	CapableOf	hiker	hike mountain	1.5849625007211563
+  1185	  1185	HasProperty	boat motor	very noisy	2.0
+  1186	  1186	CapableOf	sheet of paper	burn	2.0
+  1187	  1187	UsedFor	ranch	clean animal	2.0
+  1188	  1188	CapableOf	cat	sun itself	2.321928094887362
+  1189	  1189	AtLocation	doctor examination room	hospital	3.3219280948873626
+  1190	  1190	UsedFor	horn	entertainment	2.321928094887362
+  1191	  1191	AtLocation	mayonnaise	jar	2.807354922057604
+  1192	  1192	UsedFor	paint	make your house more beautiful	2.321928094887362
+  1193	  1193	Causes	kkk	hate crime	1.5849625007211563
+  1194	  1194	CapableOf	destroyer	defend	2.0
+  1195	  1195	HasLastSubevent	kiss someone	smile	2.0
+  1196	  1196	HasSubevent	eat too much	you get love handle	1.5849625007211563
+  1197	  1197	HasProperty	nature	disgust	1.5849625007211563
+  1198	  1198	UsedFor	poison	kill somebody	2.0
+  1199	  1199	HasProperty	cruise liner	big	1.5849625007211563
+  1200	  1200	HasSubevent	read letter	look	1.5849625007211563
+  1201	  1201	CapableOf	you	buy candy there	2.321928094887362
+  1202	  1202	AtLocation	couple	movie theater	1.5849625007211563
+  1203	  1203	DefinedAs	pie	plural form of pie	2.0
+  1204	  1204	AtLocation	strip mall	city	2.584962500721156
+  1205	  1205	PartOf	pore	skin	1.5849625007211563
+  1206	  1206	AtLocation	someone	rave	2.584962500721156
+  1207	  1207	NotCapableOf	fine restaurant	serve cardboard to person	2.321928094887362
+  1208	  1208	HasProperty	black	sexy	2.0
+  1209	  1209	MotivatedByGoal	go for drive	go somewhere else in your car	2.0
+  1210	  1210	AtLocation	needle	doctor	2.584962500721156
+  1211	  1211	HasA	vietnam	48 airport	1.5849625007211563
+  1212	  1212	CausesDesire	smelly foot	wash dirt from between your toe	2.321928094887362
+  1213	  1213	HasSubevent	ski	fall down	2.321928094887362
+  1214	  1214	CapableOf	lamp	illuminate	2.321928094887362
+  1215	  1215	HasSubevent	play harp	pluck string	3.4594316186372978
+  1216	  1216	DefinedAs	person	only animal capable of think	1.5849625007211563
+  1217	  1217	IsA	yo-yo	cool toy	2.0
+  1218	  1218	UsedFor	state highway	drive	2.584962500721156
+  1219	  1219	IsA	game of table tennis	call ping pong	1.5849625007211563
+  1220	  1220	HasSubevent	act in play	shout	2.0
+  1221	  1221	Causes	take test	you get your grade	2.0
+  1222	  1222	MotivatedByGoal	ferment grape	make wine	2.0
+  1223	  1223	UsedFor	take bus	save time	2.321928094887362
+  1224	  1224	ReceivesAction	art	display in art gallery	2.0
+  1225	  1225	HasLastSubevent	buy present	give them	2.0
+  1226	  1226	UsedFor	revolver	shoot at target	2.0
+  1227	  1227	DefinedAs	ione buckwheat	eriogonum apricum	1.5849625007211563
+  1228	  1228	AtLocation	dental office	town	2.321928094887362
+  1229	  1229	ReceivesAction	passport	need to leave country	1.5849625007211563
+  1230	  1230	ReceivesAction	idea	create in your mind	1.5849625007211563
+  1231	  1231	HasA	this man	dred lock in his hair	1.5849625007211563
+  1232	  1232	HasPrerequisite	debate politics	examine issue	2.0
+  1233	  1233	AtLocation	someone	fish market	2.321928094887362
+  1234	  1234	AtLocation	passenger	on plane	2.0
+  1235	  1235	HasProperty	pear	sweet	2.0
+  1236	  1236	HasA	chest	or hold something	1.5849625007211563
+  1237	  1237	DefinedAs	clinton	42nd president of unite state	1.5849625007211563
+  1238	  1238	CapableOf	two person	shake hand	1.5849625007211563
+  1239	  1239	MotivatedByGoal	swim	cool down	2.807354922057604
+  1240	  1240	AtLocation	information	book	3.0
+  1241	  1241	CapableOf	bride	wear white dress	1.5849625007211563
+  1242	  1242	HasSubevent	ride in car	should wear seatbelt	1.5849625007211563
+  1243	  1243	HasA	entity	shape	2.0
+  1244	  1244	HasA	many machine	metal	2.321928094887362
+  1245	  1245	HasPrerequisite	use calculator	coordination	1.5849625007211563
+  1246	  1246	Causes	get some physical activity	good health	2.321928094887362
+  1247	  1247	DefinedAs	yellow	color	2.0
+  1248	  1248	NotDesires	person	be kill	2.321928094887362
+  1249	  1249	IsA	celebrity	famous person	2.0
+  1250	  1250	HasProperty	beach in hawaii	marvelous	1.5849625007211563
+  1251	  1251	IsA	comforter	chair	1.5849625007211563
+  1252	  1252	MotivatedByGoal	be in charge of project	lead	2.0
+  1253	  1253	HasPrerequisite	do well in school	careful preparation	1.5849625007211563
+  1254	  1254	AtLocation	something	bury	2.0
+  1255	  1255	HasProperty	chocolate	white	2.0
+  1256	  1256	AtLocation	marmot	hole in grind	2.0
+  1257	  1257	AtLocation	computer	in observatory	2.0
+  1258	  1258	IsA	when we	bore we get sleepy	1.5849625007211563
+  1259	  1259	IsA	chocolate	ice cream	2.0
+  1260	  1260	UsedFor	launch pad	launch rocket	2.807354922057604
+  1261	  1261	HasA	computer	no common sense yet	1.5849625007211563
+  1262	  1262	HasPrerequisite	run marathon	stamen	2.0
+  1263	  1263	DefinedAs	lesuer rat-kangaroo	bettongia lesueur	1.5849625007211563
+  1264	  1264	HasSubevent	disconnect hard drive	corrupt it filesystem	1.5849625007211563
+  1265	  1265	UsedFor	go to sleep	relax	2.0
+  1266	  1266	HasSubevent	take shower	you get clean	2.321928094887362
+  1267	  1267	IsA	dog	human creation	1.5849625007211563
+  1268	  1268	HasPrerequisite	view film at home	have vcr	2.584962500721156
+  1269	  1269	AtLocation	pearl	oyster	2.807354922057604
+  1270	  1270	IsA	alien	here	1.5849625007211563
+  1271	  1271	HasProperty	damage to object	apparent	1.5849625007211563
+  1272	  1272	IsA	scotland	country	2.1699250014423126
+  1273	  1273	IsA	star	object	2.0
+  1274	  1274	NotCapableOf	fine toothed comb	work in thick hair	1.5849625007211563
+  1275	  1275	HasSubevent	go fish	drink beer	1.5849625007211563
+  1276	  1276	HasPrerequisite	surf web	use browser	2.0
+  1277	  1277	AtLocation	light	in livingroom	2.0
+  1278	  1278	ReceivesAction	hard hat	wear in construction area	1.5849625007211563
+  1279	  1279	IsA	fuck	fuck good	1.5849625007211563
+  1280	  1280	IsA	movie	story	2.584962500721156
+  1281	  1281	HasA	can	fruit bowl on it	1.5849625007211563
+  1282	  1282	UsedFor	surprise someone	fun	2.0
+  1283	  1283	AtLocation	someone	auditorium	1.5849625007211563
+  1284	  1284	AtLocation	food vendor	bus depot	1.5849625007211563
+  1285	  1285	HasProperty	cat	mean	2.807354922057604
+  1286	  1286	AtLocation	string	guitar	2.584962500721156
+  1287	  1287	CapableOf	someone	march in formation	2.321928094887362
+  1288	  1288	AtLocation	guard	jail	3.1699250014423126
+  1289	  1289	UsedFor	hairdressing salon	get nail do	2.321928094887362
+  1290	  1290	NotDesires	person	bee inferior	2.321928094887362
+  1291	  1291	HasSubevent	wake up in morning	drink coffee	2.584962500721156
+  1292	  1292	MotivatedByGoal	look at map	do not want to be late	2.0
+  1293	  1293	CapableOf	too	rum coke	1.5849625007211563
+  1294	  1294	MotivatedByGoal	ride horse	it be fun	2.584962500721156
+  1295	  1295	AtLocation	knowledge	book	1.5849625007211563
+  1296	  1296	DefinedAs	book	foundation of knowledge	1.5849625007211563
+  1297	  1297	HasPrerequisite	compete against someone	desire to win	2.807354922057604
+  1298	  1298	HasSubevent	surf	you get wet	2.0
+  1299	  1299	AtLocation	wash cloth	bathroom	2.807354922057604
+  1300	  1300	CapableOf	equality for everyone	change government	2.0
+  1301	  1301	CapableOf	child	play in grass	1.5849625007211563
+  1302	  1302	AtLocation	hill	great outdoors	1.5849625007211563
+  1303	  1303	CapableOf	ball fly fast than i	watch	1.5849625007211563
+  1304	  1304	CapableOf	drink and drive	lead to serious auto accident	1.5849625007211563
+  1305	  1305	Causes	faulty traffic light	car accident	1.5849625007211563
+  1306	  1306	CausesDesire	good teacher	learn about world	2.0
+  1307	  1307	HasProperty	birdwatch	educational	1.5849625007211563
+  1308	  1308	UsedFor	chesspiece	capture another piece	2.0
+  1309	  1309	UsedFor	fitness center	work out	2.0
+  1310	  1310	AtLocation	bungalow	suburb	2.584962500721156
+  1311	  1311	HasProperty	some animal	extinct	2.584962500721156
+  1312	  1312	CapableOf	only very tall person	slam dunk	1.5849625007211563
+  1313	  1313	HasProperty	build	multilevel	1.5849625007211563
+  1314	  1314	Causes	do some exercise	work up sweat	1.5849625007211563
+  1315	  1315	ReceivesAction	data	organize into file record and database	1.5849625007211563
+  1316	  1316	UsedFor	article in magazine	learn from	2.321928094887362
+  1317	  1317	IsA	rubberbands	stretchy	1.5849625007211563
+  1318	  1318	UsedFor	lion	safari	2.321928094887362
+  1319	  1319	IsA	pope	man	2.0
+  1320	  1320	AtLocation	computer	graphic card	2.0
+  1321	  1321	MadeOf	playground equipment	metal wood or plastic	2.0
+  1322	  1322	CapableOf	child	watch television	3.1699250014423126
+  1323	  1323	IsA	ford	company	2.584962500721156
+  1324	  1324	IsA	backgammon	popular game	1.5849625007211563
+  1325	  1325	Desires	angry person	vent	1.5849625007211563
+  1326	  1326	HasSubevent	jump up and down	seasik	1.5849625007211563
+  1327	  1327	UsedFor	comb	imitate mustache	1.5849625007211563
+  1328	  1328	IsA	rhea	flightless bird	2.0
+  1329	  1329	HasPrerequisite	have epileptic fit	play video game	1.5849625007211563
+  1330	  1330	AtLocation	driveway	yard	2.0
+  1331	  1331	NotCapableOf	luck be something you	control	1.5849625007211563
+  1332	  1332	IsA	religion	explanation of human existence	1.5849625007211563
+  1333	  1333	CapableOf	saw	cut you	2.321928094887362
+  1334	  1334	NotHasProperty	houseclean	fun	1.5849625007211563
+  1335	  1335	AtLocation	forklift	wherehouse	2.321928094887362
+  1336	  1336	HasProperty	hotdog prepare chicago style	very tasty	1.5849625007211563
+  1337	  1337	NotCapableOf	human	breath in space	2.321928094887362
+  1338	  1338	HasProperty	sky	red at sunrise and sunset	2.0
+  1339	  1339	HasPrerequisite	program	knowledge	2.321928094887362
+  1340	  1340	PartOf	frame	picture	2.0
+  1341	  1341	UsedFor	gold	make ring	1.5849625007211563
+  1342	  1342	CapableOf	alarm	make my neural net go wild	1.5849625007211563
+  1343	  1343	CapableOf	boy	play hockey	2.0
+  1344	  1344	CapableOf	coach	train you for competition	1.5849625007211563
+  1345	  1345	CapableOf	tourist	visit museum	2.0
+  1346	  1346	UsedFor	tan lotion	prevent sunburn	3.4594316186372978
+  1347	  1347	MadeOf	chinese noodle	wheat	2.0
+  1348	  1348	NotDesires	person	egg on his face	2.0
+  1349	  1349	HasProperty	american sport	hard to follow	1.5849625007211563
+  1350	  1350	IsA	this	3.5 inch floppy diskette	1.5849625007211563
+  1351	  1351	IsA	personal computer	computer	2.807354922057604
+  1352	  1352	Causes	gather energy for tomorrow	have energy for use for tomorrow	2.807354922057604
+  1353	  1353	HasA	card file	address	1.5849625007211563
+  1354	  1354	ReceivesAction	paper	make from pulp celulosic fiber	1.5849625007211563
+  1355	  1355	CapableOf	pistol	be deadly weapon	2.321928094887362
+  1356	  1356	ReceivesAction	head of state	paint by artist frequently	1.5849625007211563
+  1357	  1357	HasPrerequisite	tie your shoelace	tie knot	1.5849625007211563
+  1358	  1358	ReceivesAction	apple juice	make from apple	2.321928094887362
+  1359	  1359	NotHasA	human be	wing	1.5849625007211563
+  1360	  1360	HasPrerequisite	fight war	get weapon	2.584962500721156
+  1361	  1361	IsA	this	cyclone or tornado	1.5849625007211563
+  1362	  1362	AtLocation	shoe	bed	2.0
+  1363	  1363	AtLocation	open space	desk	1.5849625007211563
+  1364	  1364	IsA	this	big cat	1.5849625007211563
+  1365	  1365	AtLocation	spam	your inbox	1.5849625007211563
+  1366	  1366	AtLocation	plant	greenhouse	2.321928094887362
+  1367	  1367	UsedFor	urinate	rid body of waste	1.5849625007211563
+  1368	  1368	HasPrerequisite	smoke	buy some cigarette	2.321928094887362
+  1369	  1369	CapableOf	thrush	coat your tongue	1.5849625007211563
+  1370	  1370	HasProperty	cylinder and internal combustion engine	beautiful	1.5849625007211563
+  1371	  1371	AtLocation	broom	closet	2.584962500721156
+  1372	  1372	DefinedAs	northern bald ibis	geronticus eremita	1.5849625007211563
+  1373	  1373	PartOf	make mistake	learn	1.5849625007211563
+  1374	  1374	Causes	fly kite	relaxation	2.807354922057604
+  1375	  1375	AtLocation	french restaurant	nice part of town	1.5849625007211563
+  1376	  1376	HasPrerequisite	compete against someone	be in competition	3.0
+  1377	  1377	AtLocation	birth control pill	whore house	2.0
+  1378	  1378	HasFirstSubevent	express information	think	2.321928094887362
+  1379	  1379	IsA	roller coaster	scary but also fun	1.5849625007211563
+  1380	  1380	IsA	fluoride	element	2.0
+  1381	  1381	HasSubevent	find information	read	2.321928094887362
+  1382	  1382	Causes	drive car	get to store	2.584962500721156
+  1383	  1383	ReceivesAction	make break require that one	determine	1.5849625007211563
+  1384	  1384	CapableOf	person	do bad thing to themselves	2.0
+  1385	  1385	HasPrerequisite	watch film	go to theater	3.0
+  1386	  1386	IsA	budhism	religion	2.321928094887362
+  1387	  1387	UsedFor	shirt	absorb sweat	2.321928094887362
+  1388	  1388	HasPrerequisite	have rest	stop do what you be do	2.0
+  1389	  1389	HasFirstSubevent	have asthma attack	use inhaler	2.0
+  1390	  1390	CapableOf	teacher	dare you to learn	2.584962500721156
+  1391	  1391	HasProperty	brain	more important than brawn	1.5849625007211563
+  1392	  1392	Causes	light match	make flame	2.584962500721156
+  1393	  1393	HasSubevent	get fit	you look good	2.321928094887362
+  1394	  1394	CapableOf	horse	carry human	1.5849625007211563
+  1395	  1395	CapableOf	christian	value truth	2.0
+  1396	  1396	NotDesires	cat	be hit	1.5849625007211563
+  1397	  1397	IsA	high point in unite state	mount mckinley 6,194 m	1.5849625007211563
+  1398	  1398	UsedFor	mayor	lead city	2.807354922057604
+  1399	  1399	HasProperty	glow thing	hot	2.321928094887362
+  1400	  1400	Causes	sign contract	lack of money	2.0
+  1401	  1401	ReceivesAction	manta ray might	see underwater	1.5849625007211563
+  1402	  1402	HasFirstSubevent	tie your shoelace	grasp shoe string	2.0
+  1403	  1403	IsA	this	pump for bicycle tire	1.5849625007211563
+  1404	  1404	AtLocation	more	thirty-five distinctive evolutionary path for eye	1.5849625007211563
+  1405	  1405	CapableOf	look at sun	hurt people eye	1.5849625007211563
+  1406	  1406	IsA	ibm	computer	2.321928094887362
+  1407	  1407	AtLocation	stuff	build	1.5849625007211563
+  1408	  1408	IsA	monarchy	government by one person	1.5849625007211563
+  1409	  1409	IsA	low point in bermuda	atlantic ocean 0 m	1.5849625007211563
+  1410	  1410	DefinedAs	golden langur	trachypithecus geei	1.5849625007211563
+  1411	  1411	HasProperty	big dog	scary	1.5849625007211563
+  1412	  1412	CapableOf	human	can food	1.5849625007211563
+  1413	  1413	AtLocation	forest	countryside	3.3219280948873626
+  1414	  1414	IsA	galaxy	enormous group of star	2.0
+  1415	  1415	IsA	maldives	honeymoon attraction	2.0
+  1416	  1416	HasProperty	put on play	fun	1.5849625007211563
+  1417	  1417	NotDesires	person	be in flood	2.0
+  1418	  1418	HasPrerequisite	see excite story	get comfortable	1.5849625007211563
+  1419	  1419	UsedFor	disinformation	get elect to political office	1.5849625007211563
+  1420	  1420	AtLocation	typewriter	antique shop	2.321928094887362
+  1421	  1421	HasSubevent	smoke	light cigarette	3.3219280948873626
+  1422	  1422	CapableOf	computer	rule world someday	1.5849625007211563
+  1423	  1423	HasProperty	all kitten	cute and adorable	1.5849625007211563
+  1424	  1424	HasProperty	this mask	creepy	1.5849625007211563
+  1425	  1425	HasProperty	they	uncomfortable	2.321928094887362
+  1426	  1426	AtLocation	glass front display cabinet	middle school	2.321928094887362
+  1427	  1427	SymbolOf	surgery	hospital	1.5849625007211563
+  1428	  1428	AtLocation	someone	computer lab	2.321928094887362
+  1429	  1429	IsA	walk	exercise	3.1699250014423126
+  1430	  1430	HasSubevent	human grow old	it die	1.5849625007211563
+  1431	  1431	AtLocation	fruit	garden	1.5849625007211563
+  1432	  1432	MotivatedByGoal	go outside for even	your wife to shut up	2.321928094887362
+  1433	  1433	DefinedAs	satan	leader of fall angel	2.0
+  1434	  1434	UsedFor	escape	avoid undesirable consequence	2.321928094887362
+  1435	  1435	Causes	drink	need to urinate	2.0
+  1436	  1436	UsedFor	passenger terminal	board bus	2.321928094887362
+  1437	  1437	AtLocation	produce	supermarket	2.321928094887362
+  1438	  1438	HasProperty	these be sailboat they	race	1.5849625007211563
+  1439	  1439	IsA	this	4 story office build	1.5849625007211563
+  1440	  1440	UsedFor	bicycle storage area	protect bycyles from bad weather	2.0
+  1441	  1441	HasPrerequisite	play game	find game to play	2.584962500721156
+  1442	  1442	IsA	that which	heavy fall and that	1.5849625007211563
+  1443	  1443	MotivatedByGoal	smoke	you be addict to nicotine	2.0
+  1444	  1444	IsA	this	sattelite	1.5849625007211563
+  1445	  1445	AtLocation	launch pad	cape kennedy	2.807354922057604
+  1446	  1446	NotDesires	cat	die	2.0
+  1447	  1447	MotivatedByGoal	bury cat	hide evidence	1.5849625007211563
+  1448	  1448	AtLocation	get marry	church	1.5849625007211563
+  1449	  1449	Causes	play sport	sweat	2.321928094887362
+  1450	  1450	IsA	man and woman	get	1.5849625007211563
+  1451	  1451	AtLocation	foot	shoe and sock	1.5849625007211563
+  1452	  1452	HasPrerequisite	play poker	have lot of money	1.5849625007211563
+  1453	  1453	UsedFor	take in film	clear your mind of bad thought	2.321928094887362
+  1454	  1454	HasProperty	he	try to hit hockey puck	1.5849625007211563
+  1455	  1455	DefinedAs	cape sable seaside sparrow	ammodramus maritimus mirabilis	1.5849625007211563
+  1456	  1456	IsA	this	hand-operated air pump	1.5849625007211563
+  1457	  1457	HasPrerequisite	go see play	go to theatre	2.807354922057604
+  1458	  1458	CapableOf	someone	test water	1.5849625007211563
+  1459	  1459	Causes	learn something new	become smart	2.584962500721156
+  1460	  1460	IsA	parsnip	domesticate plant	2.0
+  1461	  1461	UsedFor	sharpie	mark permanently	2.807354922057604
+  1462	  1462	IsA	policeman	career	2.0
+  1463	  1463	HasA	kyrgyzstan	54 airport	1.5849625007211563
+  1464	  1464	IsA	genocide	crime	2.321928094887362
+  1465	  1465	AtLocation	dust	suface of moon	2.0
+  1466	  1466	IsA	mangosteen	fruit	2.0
+  1467	  1467	AtLocation	movie theater seat	movie theatre	2.584962500721156
+  1468	  1468	AtLocation	gift adult	use bookstore	1.5849625007211563
+  1469	  1469	MotivatedByGoal	buy something	own it	2.0
+  1470	  1470	IsA	capital of niger	niamey	1.5849625007211563
+  1471	  1471	UsedFor	butter knife	spread butter on bread	2.584962500721156
+  1472	  1472	UsedFor	greengrocer	buy vegetable	2.0
+  1473	  1473	AtLocation	human	subway station	2.0
+  1474	  1474	UsedFor	school	teach person	1.5849625007211563
+  1475	  1475	CapableOf	locksmith	pick lock	3.3219280948873626
+  1476	  1476	IsA	wash machine	modersn convenience	2.0
+  1477	  1477	UsedFor	telephone directory	find phone number	2.321928094887362
+  1478	  1478	CapableOf	you	cross ocean	1.5849625007211563
+  1479	  1479	AtLocation	my car	repair shop	3.0
+  1480	  1480	HasProperty	indian ocean	large	2.321928094887362
+  1481	  1481	Causes	tickle	get slap	2.0
+  1482	  1482	HasProperty	density	mass per unit volume	2.0
+  1483	  1483	Desires	fence keep animal where their owner	them to be	1.5849625007211563
+  1484	  1484	PartOf	television studio	office build	2.807354922057604
+  1485	  1485	AtLocation	shoulder bag	department store	2.0
+  1486	  1486	AtLocation	lobster	water	2.0
+  1487	  1487	MotivatedByGoal	travel	see world	2.807354922057604
+  1488	  1488	ReceivesAction	saw	use as musical instrument	1.5849625007211563
+  1489	  1489	AtLocation	flower	table	2.0
+  1490	  1490	HasPrerequisite	attend class	get out your notebook	1.5849625007211563
+  1491	  1491	AtLocation	coffee	starbucks	2.0
+  1492	  1492	HasProperty	sound of wave	peaceful	1.5849625007211563
+  1493	  1493	AtLocation	machine	hospital	1.5849625007211563
+  1494	  1494	HasProperty	build	tall and also famous	1.5849625007211563
+  1495	  1495	IsA	makisushi	food	2.0
+  1496	  1496	IsA	murder	bad act	2.0
+  1497	  1497	ReceivesAction	corn on cob	harvest in summertime	1.5849625007211563
+  1498	  1498	HasA	many automobile	radio	1.5849625007211563
+  1499	  1499	Causes	watch film	fear	1.5849625007211563
+  1500	  1500	IsA	hurricane	storm	2.807354922057604
+  1501	  1501	IsA	cloroplasts	what make plant green	1.5849625007211563
+  1502	  1502	HasProperty	terrain of johnston atoll	flat	1.5849625007211563
+  1503	  1503	AtLocation	monitor	any large city	2.0
+  1504	  1504	IsA	christmas island	country	2.4594316186372973
+  1505	  1505	UsedFor	jog	get cardiovascular exercise	2.321928094887362
+  1506	  1506	IsA	basement	room under house	2.321928094887362
+  1507	  1507	CapableOf	she	feel his boner	1.5849625007211563
+  1508	  1508	NotCapableOf	do	get angry at vegetable	1.5849625007211563
+  1509	  1509	HasA	bicycle wheel	many spoke	1.5849625007211563
+  1510	  1510	HasSubevent	become preoccupy by something	lose track of time	1.5849625007211563
+  1511	  1511	HasA	human eye	lens and retina	1.5849625007211563
+  1512	  1512	HasA	chinese fortune cookie	message	1.5849625007211563
+  1513	  1513	AtLocation	fruit	house	1.5849625007211563
+  1514	  1514	HasProperty	house roof	slant	1.5849625007211563
+  1515	  1515	IsA	china	very large country	2.0
+  1516	  1516	UsedFor	bake cake	have cake to eat	1.5849625007211563
+  1517	  1517	UsedFor	marriage	companionship	1.5849625007211563
+  1518	  1518	CapableOf	border	divide country	2.0
+  1519	  1519	UsedFor	paper	create origami	2.321928094887362
+  1520	  1520	HasProperty	knife blade	sharp	2.807354922057604
+  1521	  1521	CapableOf	continent move	slowly	1.5849625007211563
+  1522	  1522	ReceivesAction	tack	use on pin board	1.5849625007211563
+  1523	  1523	UsedFor	tape television show	view late	2.0
+  1524	  1524	HasProperty	motorway	very big	1.5849625007211563
+  1525	  1525	HasSubevent	catch mumps	have sore throat	2.584962500721156
+  1526	  1526	IsA	eye wide shut	direct by stanley kubrick	1.5849625007211563
+  1527	  1527	AtLocation	gazelle	biology book	2.321928094887362
+  1528	  1528	AtLocation	book	kitchen	2.0
+  1529	  1529	HasProperty	meat	full of protein	2.0
+  1530	  1530	HasPrerequisite	cross street	step off curb	3.0
+  1531	  1531	ReceivesAction	music	play from this device	1.5849625007211563
+  1532	  1532	AtLocation	knee	table	2.0
+  1533	  1533	AtLocation	sand box	park	2.584962500721156
+  1534	  1534	Causes	go to baseball game	have fun	2.321928094887362
+  1535	  1535	MotivatedByGoal	go to cinema	watch movie	2.321928094887362
+  1536	  1536	AtLocation	handgun	man hand	2.0
+  1537	  1537	UsedFor	take course	earn degree	1.5849625007211563
+  1538	  1538	MotivatedByGoal	chew your food	initiate digestive process	2.321928094887362
+  1539	  1539	AtLocation	cupboard	kitchen	2.321928094887362
+  1540	  1540	Causes	do some exercise	fun	1.5849625007211563
+  1541	  1541	ReceivesAction	letter	find in mailbox	1.5849625007211563
+  1542	  1542	IsA	tank	off-road vehicle	2.0
+  1543	  1543	AtLocation	child	playground	2.321928094887362
+  1544	  1544	DefinedAs	tinian monarch	monarcha takatsukasae	1.5849625007211563
+  1545	  1545	HasFirstSubevent	go for walk	put your walk shoe on	2.0
+  1546	  1546	IsA	museum	popular travel destination	1.5849625007211563
+  1547	  1547	HasProperty	smell of snow	crisp	1.5849625007211563
+  1548	  1548	HasPrerequisite	watch movie	sit	2.0
+  1549	  1549	UsedFor	change diaper	keep baby clean	1.5849625007211563
+  1550	  1550	HasPrerequisite	do housework	pick up garbage	1.5849625007211563
+  1551	  1551	IsA	this	traditional alarm clock	1.5849625007211563
+  1552	  1552	HasPrerequisite	take road trip	have car	1.5849625007211563
+  1553	  1553	UsedFor	pharmaceutical industry	create animal drug	2.0
+  1554	  1554	Desires	person	fulfil career	1.5849625007211563
+  1555	  1555	IsA	author	person	1.8073549220576042
+  1556	  1556	HasSubevent	do some exercise	breathe deeply	2.584962500721156
+  1557	  1557	IsA	this	streetcar	1.5849625007211563
+  1558	  1558	HasA	cat	claw on their foot	2.0
+  1559	  1559	IsA	sport	good exercise	2.807354922057604
+  1560	  1560	CapableOf	bird	fly very fast to pursue prey	1.5849625007211563
+  1561	  1561	HasProperty	thing from vietnam	vietnamese	1.5849625007211563
+  1562	  1562	UsedFor	use calculator	solve mathematical equation	1.5849625007211563
+  1563	  1563	HasPrerequisite	pay bill	make money	2.584962500721156
+  1564	  1564	HasFirstSubevent	when you read	open book	2.584962500721156
+  1565	  1565	IsA	one man trash	another man treasure	1.5849625007211563
+  1566	  1566	IsA	starship enterprise	science fiction	2.0
+  1567	  1567	UsedFor	river	swim	3.3219280948873626
+  1568	  1568	HasSubevent	watch horror movie	you be frighten	1.5849625007211563
+  1569	  1569	IsA	compact	make up	2.0
+  1570	  1570	HasProperty	pool	relax	1.5849625007211563
+  1571	  1571	UsedFor	push pin	attach notice to bulletin board	1.5849625007211563
+  1572	  1572	AtLocation	cigarette	cigarette pack	2.321928094887362
+  1573	  1573	IsA	olive	domesticate plant	2.0
+  1574	  1574	ReceivesAction	medal	award in recognition of exceptional service	1.5849625007211563
+  1575	  1575	Causes	paint house	have new color house	2.321928094887362
+  1576	  1576	CapableOf	love	last forever	2.321928094887362
+  1577	  1577	CapableOf	person	group together	2.807354922057604
+  1578	  1578	HasSubevent	put child to bed	turn out light	1.5849625007211563
+  1579	  1579	HasPrerequisite	breathe	air	3.3219280948873626
+  1580	  1580	IsA	katzbalger	sword	2.0
+  1581	  1581	CausesDesire	pain	have checkup	2.584962500721156
+  1582	  1582	HasSubevent	build cathedral	quarry for stone	1.5849625007211563
+  1583	  1583	IsA	water polo	sport	3.0
+  1584	  1584	UsedFor	spray hose	spray liquid	2.321928094887362
+  1585	  1585	HasProperty	dog howl when they	sad	2.321928094887362
+  1586	  1586	IsA	weight	function of gravity	1.5849625007211563
+  1587	  1587	DefinedAs	hummingbird	small bird in world	1.5849625007211563
+  1588	  1588	AtLocation	car	in street	3.1699250014423126
+  1589	  1589	IsA	man	fix flat tire	1.5849625007211563
+  1590	  1590	AtLocation	walk	closet in house	2.0
+  1591	  1591	IsA	humor	that undefinable thing	1.5849625007211563
+  1592	  1592	Causes	drink alcohol	disorientation	1.5849625007211563
+  1593	  1593	UsedFor	nylon	make rope	2.321928094887362
+  1594	  1594	DefinedAs	arizona hedgehog cactus	echinocereus triglochidiatus arizonicus	1.5849625007211563
+  1595	  1595	CapableOf	person	stand upright	2.584962500721156
+  1596	  1596	PartOf	san francisco	california	2.4594316186372973
+  1597	  1597	Causes	walk dog	exercise both you and dog	2.321928094887362
+  1598	  1598	HasLastSubevent	sing	bow	2.321928094887362
+  1599	  1599	IsA	basket ball game	generally high score	1.5849625007211563
+  1600	  1600	UsedFor	kill	hurt others	2.0
+  1601	  1601	NotDesires	person	friend to be hurt	2.0
+  1602	  1602	MotivatedByGoal	chat with friend	person enjoy talk	2.321928094887362
+  1603	  1603	UsedFor	energy	move	2.0
+  1604	  1604	UsedFor	hair gel	slick back your hair	1.5849625007211563
+  1605	  1605	MotivatedByGoal	paint	accomplish something	1.5849625007211563
+  1606	  1606	HasProperty	hand tool	use before power tool be invent	1.5849625007211563
+  1607	  1607	Desires	person	more information	2.584962500721156
+  1608	  1608	UsedFor	soul	live	1.5849625007211563
+  1609	  1609	UsedFor	hairdressing salon	have your hair cut	2.584962500721156
+  1610	  1610	HasProperty	something you find underwater	coral	2.584962500721156
+  1611	  1611	AtLocation	deli store	mall	2.807354922057604
+  1612	  1612	UsedFor	hoist	lift object	2.321928094887362
+  1613	  1613	HasProperty	plastic	translucent transparent or opaque	1.5849625007211563
+  1614	  1614	MotivatedByGoal	wait table	make money	2.807354922057604
+  1615	  1615	IsA	man	ride horse	1.5849625007211563
+  1616	  1616	HasProperty	smoke	bad for one health	1.5849625007211563
+  1617	  1617	HasProperty	it	normal to enjoy some activity	1.5849625007211563
+  1618	  1618	HasSubevent	wash your clothe	remove dirt from them	2.0
+  1619	  1619	Desires	person	short work hour	2.0
+  1620	  1620	AtLocation	someone	goal post	1.5849625007211563
+  1621	  1621	HasA	expensive book	hard cover	1.5849625007211563
+  1622	  1622	CapableOf	something	eat lunch	2.321928094887362
+  1623	  1623	IsA	hockey	game on ice	1.5849625007211563
+  1624	  1624	AtLocation	evidence of evolution	fossil	1.5849625007211563
+  1625	  1625	PartOf	vermont	u.s	2.321928094887362
+  1626	  1626	CapableOf	pilot	fly glider	1.5849625007211563
+  1627	  1627	ReceivesAction	person	fuck	1.5849625007211563
+  1628	  1628	HasProperty	music	good	2.321928094887362
+  1629	  1629	CapableOf	in space nobody	hear you scream	2.0
+  1630	  1630	AtLocation	wiener dog	london	1.5849625007211563
+  1631	  1631	UsedFor	take bus	travel cheaply	2.321928094887362
+  1632	  1632	IsA	cafeteria	dine area	2.321928094887362
+  1633	  1633	DefinedAs	`akoko	chamaesyce kuwaleana	1.5849625007211563
+  1634	  1634	IsA	catherine havasi	originally from murrysville pennsylvania	1.5849625007211563
+  1635	  1635	HasProperty	it	difficult to hit bull eye	1.5849625007211563
+  1636	  1636	MadeOf	carton be thing which	plastic	2.0
+  1637	  1637	Desires	person	find simple solution	1.5849625007211563
+  1638	  1638	IsA	this	television	2.584962500721156
+  1639	  1639	IsA	dishwasher	machine	2.584962500721156
+  1640	  1640	MotivatedByGoal	cook turkey dinner	it thanksgiving day	2.321928094887362
+  1641	  1641	CapableOf	human	seek lifetime companion	1.5849625007211563
+  1642	  1642	DefinedAs	mow	act of cut grass	1.5849625007211563
+  1643	  1643	AtLocation	employee	corporation	1.5849625007211563
+  1644	  1644	HasProperty	two be	late	2.0
+  1645	  1645	AtLocation	men	woman	1.5849625007211563
+  1646	  1646	HasSubevent	bury cat	put it in box	2.0
+  1647	  1647	HasSubevent	take in film	buy popcorn	1.5849625007211563
+  1648	  1648	IsA	this	duck swim in water	1.5849625007211563
+  1649	  1649	CapableOf	ball	roll very well	2.0
+  1650	  1650	HasPrerequisite	watch television	turn on television	2.321928094887362
+  1651	  1651	HasProperty	two woman	look at something through binoculars	2.0
+  1652	  1652	PartOf	ribbon	tyepwriter	1.5849625007211563
+  1653	  1653	AtLocation	ink	inkwell	2.0
+  1654	  1654	NotDesires	life	be bore	2.0
+  1655	  1655	CapableOf	you	watch world through tv	2.0
+  1656	  1656	HasProperty	some tree	tall	2.0
+  1657	  1657	HasProperty	moon	yellow	2.0
+  1658	  1658	AtLocation	bone	subway	1.5849625007211563
+  1659	  1659	NotDesires	president	change in situation	2.0
+  1660	  1660	AtLocation	wheel	bicycle shop	2.0
+  1661	  1661	CapableOf	man	cum	1.5849625007211563
+  1662	  1662	IsA	rebellion	wonderful thing for youth	1.5849625007211563
+  1663	  1663	HasSubevent	buy hamburger	drop change on floor	1.5849625007211563
+  1664	  1664	IsA	sugar	sweet food	2.584962500721156
+  1665	  1665	UsedFor	rest	take nap	2.0
+  1666	  1666	HasA	kuwait	8 airport	1.5849625007211563
+  1667	  1667	IsA	pepsi	drink	2.807354922057604
+  1668	  1668	CapableOf	miner	mine ore	2.584962500721156
+  1669	  1669	UsedFor	rifle	kill animal	2.321928094887362
+  1670	  1670	AtLocation	bass clarinet	music store	3.0
+  1671	  1671	HasA	paint	lead	2.584962500721156
+  1672	  1672	AtLocation	fruit	in refrigerator	2.0
+  1673	  1673	HasPrerequisite	play soccer	join soccer team	2.0
+  1674	  1674	AtLocation	more black	jail than white	2.0
+  1675	  1675	UsedFor	shout	get attention	1.5849625007211563
+  1676	  1676	HasProperty	well decorate home	comfortable to live in	1.5849625007211563
+  1677	  1677	DefinedAs	green	color of grass	2.584962500721156
+  1678	  1678	UsedFor	play chess	entertainment	2.584962500721156
+  1679	  1679	IsA	change tire	backbreaking work	1.5849625007211563
+  1680	  1680	UsedFor	bottle opener	open beer bottle	2.0
+  1681	  1681	UsedFor	tile	lay floor	1.5849625007211563
+  1682	  1682	UsedFor	surface	place to set thing	2.321928094887362
+  1683	  1683	CapableOf	graduate student	research	2.807354922057604
+  1684	  1684	HasSubevent	leave fall off tree	they die and become brown	1.5849625007211563
+  1685	  1685	AtLocation	curl iron	drawer	2.321928094887362
+  1686	  1686	CapableOf	someone	make telephone call	2.321928094887362
+  1687	  1687	IsA	bob dylan	folk singer	3.1699250014423126
+  1688	  1688	HasSubevent	think	you come to new conclusion	1.5849625007211563
+  1689	  1689	CapableOf	underinflated tire on car	cause serious accident	1.5849625007211563
+  1690	  1690	PartOf	nice face	beautiful	1.5849625007211563
+  1691	  1691	DefinedAs	black-necked crane	grus nigricollis	1.5849625007211563
+  1692	  1692	AtLocation	muskrat	pond	1.5849625007211563
+  1693	  1693	IsA	pingpong	game	1.5849625007211563
+  1694	  1694	AtLocation	something	prison	2.807354922057604
+  1695	  1695	IsA	cliche	that police offer enjoy eat doughnut	1.5849625007211563
+  1696	  1696	IsA	chatter tooth	old comedic prop	1.5849625007211563
+  1697	  1697	IsA	sweden	country	3.0874628412503395
+  1698	  1698	UsedFor	copulate	get in trouble	2.321928094887362
+  1699	  1699	IsA	winter	very cold season	2.0
+  1700	  1700	Causes	be in car accidnet	person might die	2.0
+  1701	  1701	AtLocation	crumb	breadbox	2.0
+  1702	  1702	HasProperty	apple juice	healthful	2.321928094887362
+  1703	  1703	IsA	squirrel	animal	2.4594316186372973
+  1704	  1704	HasPrerequisite	grow vegetable	plant seed	2.807354922057604
+  1705	  1705	Desires	dog	smell world	1.5849625007211563
+  1706	  1706	AtLocation	tire child	class	1.5849625007211563
+  1707	  1707	HasA	space exploration be something many person	dream about	1.5849625007211563
+  1708	  1708	HasSubevent	proposal	blush	2.0
+  1709	  1709	HasPrerequisite	get job	energy	1.5849625007211563
+  1710	  1710	IsA	horse leg	long so	1.5849625007211563
+  1711	  1711	UsedFor	shirt	wear	3.4594316186372978
+  1712	  1712	DefinedAs	indus river dolphin	platanista minor	1.5849625007211563
+  1713	  1713	AtLocation	something	post office	2.584962500721156
+  1714	  1714	Causes	drive	get to destination	2.584962500721156
+  1715	  1715	IsA	google	world most popular search engine	2.0
+  1716	  1716	MotivatedByGoal	make person laugh	be center of attention	1.5849625007211563
+  1717	  1717	IsA	it	grind	1.5849625007211563
+  1718	  1718	HasSubevent	eavesdrop	feel guilty	1.5849625007211563
+  1719	  1719	HasSubevent	fight with your boyfriend	throw plate	1.5849625007211563
+  1720	  1720	CapableOf	cannibal	cook human	2.0
+  1721	  1721	MotivatedByGoal	earn live	coolness when it be hot	2.321928094887362
+  1722	  1722	CapableOf	iron	press pant	2.0
+  1723	  1723	AtLocation	telephone	ear	2.0
+  1724	  1724	HasPrerequisite	calculate thing quickly	gather data	2.321928094887362
+  1725	  1725	CapableOf	sharp object	hurt	2.584962500721156
+  1726	  1726	UsedFor	plunger	free poo from toilet	2.321928094887362
+  1727	  1727	IsA	old tv	blaack and white	1.5849625007211563
+  1728	  1728	IsA	siamese	breed of cat	2.0
+  1729	  1729	UsedFor	cannabis	pleasure	2.0
+  1730	  1730	Causes	attend rock concert	be with many person	2.321928094887362
+  1731	  1731	Causes	chop firewood	injury	1.5849625007211563
+  1732	  1732	HasProperty	american think baseball	interest	1.5849625007211563
+  1733	  1733	HasFirstSubevent	get some money from someone	count money	2.0
+  1734	  1734	UsedFor	light bulb	illumination	2.0
+  1735	  1735	HasProperty	police	wrong	1.5849625007211563
+  1736	  1736	IsA	good home	where person feel safe	1.5849625007211563
+  1737	  1737	UsedFor	have examination	test skill of entity	2.321928094887362
+  1738	  1738	Desires	person	cum	1.5849625007211563
+  1739	  1739	HasProperty	kindness	reciprocal	1.5849625007211563
+  1740	  1740	MadeOf	conecept design	cool idea	2.0
+  1741	  1741	HasSubevent	baseball game	hit ball with bat	2.807354922057604
+  1742	  1742	UsedFor	eviction notice	get rid of bad tenant	1.5849625007211563
+  1743	  1743	CapableOf	plastic cup	hold toothbrush	1.5849625007211563
+  1744	  1744	HasProperty	it	dangerous to drive while intoxicate	1.5849625007211563
+  1745	  1745	IsA	music	way to let out emotion	2.321928094887362
+  1746	  1746	HasSubevent	fight	yell	1.5849625007211563
+  1747	  1747	CapableOf	dagger	stab	2.0
+  1748	  1748	NotDesires	race driver	crash their car	2.0
+  1749	  1749	HasProperty	tree	very important to planet	1.5849625007211563
+  1750	  1750	HasPrerequisite	score homer	bat	2.584962500721156
+  1751	  1751	HasSubevent	read book	see small hieroglyph	1.5849625007211563
+  1752	  1752	HasA	every house	roof	2.0
+  1753	  1753	CapableOf	move vehicle	gain speed	1.5849625007211563
+  1754	  1754	NotDesires	person	bad childhood	2.321928094887362
+  1755	  1755	UsedFor	dog dish	feed dog	1.5849625007211563
+  1756	  1756	HasPrerequisite	take course	register for it	2.807354922057604
+  1757	  1757	IsA	mandarin	dialect of chinese	1.5849625007211563
+  1758	  1758	Desires	cat	eat fish	2.584962500721156
+  1759	  1759	IsA	chip	commonly	1.5849625007211563
+  1760	  1760	CapableOf	bird	soar on rise current	1.5849625007211563
+  1761	  1761	CapableOf	filmmaker	film scene	1.5849625007211563
+  1762	  1762	HasPrerequisite	surf web	computer	3.0
+  1763	  1763	CapableOf	person	love their child	1.5849625007211563
+  1764	  1764	HasFirstSubevent	commit murder	kill person	2.321928094887362
+  1765	  1765	UsedFor	pass class	gain future success	2.0
+  1766	  1766	IsA	bed	one place person make love	1.5849625007211563
+  1767	  1767	HasSubevent	picture be paint of someone	it be call portrait	1.5849625007211563
+  1768	  1768	HasPrerequisite	sleigh ride	dress warm	2.0
+  1769	  1769	CapableOf	church	welcome homeless	1.5849625007211563
+  1770	  1770	UsedFor	store shelf	display grocery item	2.321928094887362
+  1771	  1771	HasProperty	eraser	soft	1.5849625007211563
+  1772	  1772	HasA	pig	curly tail	2.584962500721156
+  1773	  1773	CapableOf	water	kill you	1.5849625007211563
+  1774	  1774	HasPrerequisite	dress nice	buy expensive clothe	1.5849625007211563
+  1775	  1775	HasSubevent	animal jump	it come down afterwards	1.5849625007211563
+  1776	  1776	DefinedAs	grevy zebra	equus grevyi	1.5849625007211563
+  1777	  1777	CapableOf	airplane	land	2.0
+  1778	  1778	UsedFor	lamp	read	1.5849625007211563
+  1779	  1779	HasA	a	coke	1.5849625007211563
+  1780	  1780	Causes	speak without think	others harm	1.5849625007211563
+  1781	  1781	CapableOf	flower	be nice table decoration	1.5849625007211563
+  1782	  1782	UsedFor	swim pool	fun	2.584962500721156
+  1783	  1783	HasA	syringe	plunger	1.5849625007211563
+  1784	  1784	UsedFor	delicatessen	sell cheese	2.321928094887362
+  1785	  1785	HasProperty	service industry	very competitive	2.321928094887362
+  1786	  1786	UsedFor	ink	dye	1.5849625007211563
+  1787	  1787	HasSubevent	play basketball	trip	1.5849625007211563
+  1788	  1788	HasProperty	tall thing	impressive	1.5849625007211563
+  1789	  1789	AtLocation	seat	bike	1.5849625007211563
+  1790	  1790	HasA	this bottle	diamond pattern on outside	1.5849625007211563
+  1791	  1791	IsA	again this	horse shoe	1.5849625007211563
+  1792	  1792	IsA	red	lucky color for chinese	1.5849625007211563
+  1793	  1793	HasSubevent	pay bill	worry	2.584962500721156
+  1794	  1794	CapableOf	something	heat up	2.584962500721156
+  1795	  1795	IsA	choir	group of singer	2.321928094887362
+  1796	  1796	HasSubevent	grow vegetable	water vegetable	2.584962500721156
+  1797	  1797	IsA	president and mayor	both elect official	1.5849625007211563
+  1798	  1798	UsedFor	have examination	test	2.0
+  1799	  1799	UsedFor	chaimois	dry off your car	1.5849625007211563
+  1800	  1800	IsA	michael jordan	sportsman	1.5849625007211563
+  1801	  1801	IsA	two person	do aerobics	1.5849625007211563
+  1802	  1802	CapableOf	animal	move	3.1699250014423126
+  1803	  1803	CausesDesire	fatigue	sleep	2.0
+  1804	  1804	Causes	make friend	have friend	2.807354922057604
+  1805	  1805	DefinedAs	dark pigtoe	pleurobema furvum	1.5849625007211563
+  1806	  1806	CapableOf	men	ride bike	1.5849625007211563
+  1807	  1807	CausesDesire	birthday	mail letter	1.5849625007211563
+  1808	  1808	UsedFor	hang out at bar	watch sport on tv	2.321928094887362
+  1809	  1809	IsA	this	game	1.5849625007211563
+  1810	  1810	AtLocation	milky way	in space	2.0
+  1811	  1811	CapableOf	person	communicate through music	1.5849625007211563
+  1812	  1812	UsedFor	knife	kill person	2.321928094887362
+  1813	  1813	MadeOf	electricity	electron	2.321928094887362
+  1814	  1814	HasA	botswana	92 airport	1.5849625007211563
+  1815	  1815	HasPrerequisite	go on internet	boot up your computer	2.321928094887362
+  1816	  1816	IsA	drill	tool	2.321928094887362
+  1817	  1817	IsA	mall	collection of store	1.5849625007211563
+  1818	  1818	HasPrerequisite	bathe	have bathtub	2.0
+  1819	  1819	AtLocation	something	gym locker	1.5849625007211563
+  1820	  1820	UsedFor	talk with someone far away	solve problem	2.321928094887362
+  1821	  1821	HasProperty	play dart	fun	2.807354922057604
+  1822	  1822	HasPrerequisite	join religion	think critically	1.5849625007211563
+  1823	  1823	IsA	this	compact disc or cd	1.5849625007211563
+  1824	  1824	ReceivesAction	swiss cheese	characterize by it large hole	1.5849625007211563
+  1825	  1825	AtLocation	pollution	street	2.584962500721156
+  1826	  1826	AtLocation	triangle	math	2.807354922057604
+  1827	  1827	AtLocation	denture	your mouth	2.807354922057604
+  1828	  1828	HasA	every sport seem to	fault or penalty	1.5849625007211563
+  1829	  1829	UsedFor	driveway	truck	2.321928094887362
+  1830	  1830	HasPrerequisite	be healthy	not smoke	1.5849625007211563
+  1831	  1831	CapableOf	car	rush through traffic	2.0
+  1832	  1832	AtLocation	snake	pet store	2.321928094887362
+  1833	  1833	PartOf	time	space-time continuum	1.5849625007211563
+  1834	  1834	PartOf	winnipeg	manitoba	1.8073549220576042
+  1835	  1835	UsedFor	eat vegetable	health	3.0
+  1836	  1836	HasPrerequisite	go for run	go to park	3.0
+  1837	  1837	HasPrerequisite	write letter	get piece of paper	2.321928094887362
+  1838	  1838	IsA	jockey	person that race and jump horse	2.321928094887362
+  1839	  1839	AtLocation	interior area	enclosure	2.321928094887362
+  1840	  1840	Causes	not get enough sleep	feel sleepy	1.5849625007211563
+  1841	  1841	AtLocation	verb	any sentence	2.584962500721156
+  1842	  1842	Desires	men	gold	1.5849625007211563
+  1843	  1843	AtLocation	number	statistic	2.0
+  1844	  1844	InheritsFrom	car	bicycle	2.0
+  1845	  1845	DefinedAs	spider monkey	ateles geoffroyi frontatus	1.5849625007211563
+  1846	  1846	HasProperty	pen	black	2.0
+  1847	  1847	Causes	look good	one to feel good	2.0
+  1848	  1848	HasProperty	good pie crust	flaky	1.5849625007211563
+  1849	  1849	IsA	medicine	often	1.5849625007211563
+  1850	  1850	CapableOf	disposable razor	become dull	2.0
+  1851	  1851	HasProperty	vegetarian meal	healthy and fill	1.5849625007211563
+  1852	  1852	CapableOf	whorehouse	be fun	2.0
+  1853	  1853	CapableOf	something	go to ymca	2.321928094887362
+  1854	  1854	UsedFor	watch tv	fun	2.0
+  1855	  1855	UsedFor	type	write legibly	1.5849625007211563
+  1856	  1856	HasSubevent	see band	get excite	1.5849625007211563
+  1857	  1857	DefinedAs	everyone	best at something	2.321928094887362
+  1858	  1858	AtLocation	dark glass	store	2.0
+  1859	  1859	CapableOf	coffee	stumulate you	1.5849625007211563
+  1860	  1860	AtLocation	cold	refrigerator	1.5849625007211563
+  1861	  1861	AtLocation	money	vault	2.0
+  1862	  1862	DefinedAs	live room	place where you relax	1.5849625007211563
+  1863	  1863	UsedFor	floor	dance on	1.5849625007211563
+  1864	  1864	HasSubevent	cheat in exam	get high score	1.5849625007211563
+  1865	  1865	CapableOf	programmer	program	2.0
+  1866	  1866	IsA	work of childhood	play	1.5849625007211563
+  1867	  1867	IsA	self	illusion	3.0
+  1868	  1868	AtLocation	ring	bath tub	2.584962500721156
+  1869	  1869	NotCapableOf	some person	keep pet	2.321928094887362
+  1870	  1870	NotDesires	person	be rude	3.0
+  1871	  1871	IsA	low point in tonga	pacific ocean 0 m	1.5849625007211563
+  1872	  1872	CapableOf	something	amble	2.321928094887362
+  1873	  1873	IsA	this	paint of thomas jefferson	2.321928094887362
+  1874	  1874	CapableOf	dog	suck	1.5849625007211563
+  1875	  1875	UsedFor	have shower	get clean	2.321928094887362
+  1876	  1876	Causes	see particular program	be entertain	2.321928094887362
+  1877	  1877	IsA	high point in europa island	unnamed location 24 m	1.5849625007211563
+  1878	  1878	UsedFor	ranch	work with livestock	2.321928094887362
+  1879	  1879	AtLocation	intersection	any city	2.0
+  1880	  1880	UsedFor	five and dime	find antique soda-fountain	2.321928094887362
+  1881	  1881	HasSubevent	buy something for love one	emotion	1.5849625007211563
+  1882	  1882	HasProperty	these be hot-air balloon that	very large	1.5849625007211563
+  1883	  1883	AtLocation	shark	indian ocean	2.321928094887362
+  1884	  1884	CapableOf	boy	stick apple with knife	2.0
+  1885	  1885	HasProperty	very nice old pocket watch	open	1.5849625007211563
+  1886	  1886	HasProperty	hourglass	archaic	1.5849625007211563
+  1887	  1887	IsA	volleyball	sport	3.0874628412503395
+  1888	  1888	HasPrerequisite	study	concentrate	2.807354922057604
+  1889	  1889	CausesDesire	be dead	play harp	1.5849625007211563
+  1890	  1890	CapableOf	boy	call name	1.5849625007211563
+  1891	  1891	IsA	opposite of proponent	antagonist	2.0
+  1892	  1892	NotCapableOf	human	breath in outer space	1.5849625007211563
+  1893	  1893	IsA	nut and bolt	fasten device	2.0
+  1894	  1894	AtLocation	mammoth	glacial ice	2.321928094887362
+  1895	  1895	HasProperty	wheel	easy to set in motion	1.5849625007211563
+  1896	  1896	CapableOf	meditation	make you feel peaceful and calm	1.5849625007211563
+  1897	  1897	HasPrerequisite	drive your car	start car	2.0
+  1898	  1898	NotCapableOf	most woman	grow beard	1.5849625007211563
+  1899	  1899	UsedFor	mail letter	send mail-bomb	1.5849625007211563
+  1900	  1900	AtLocation	candle	church	2.584962500721156
+  1901	  1901	HasSubevent	wage war	engage deception	1.5849625007211563
+  1902	  1902	HasA	movie theatre	terrible security for most part	1.5849625007211563
+  1903	  1903	HasFirstSubevent	wait on table	take food or drink order	2.321928094887362
+  1904	  1904	IsA	this	set of brass balance	1.5849625007211563
+  1905	  1905	UsedFor	sound	communicate	2.807354922057604
+  1906	  1906	HasA	fish	bone	2.807354922057604
+  1907	  1907	UsedFor	metal detector	find thing at beach	1.5849625007211563
+  1908	  1908	HasProperty	christian	religious	2.0
+  1909	  1909	NotCapableOf	doctor	look happy	1.5849625007211563
+  1910	  1910	UsedFor	go for jog	exercise	2.321928094887362
+  1911	  1911	DefinedAs	mutt	mixed-breed dog	2.0
+  1912	  1912	HasProperty	there	water in air	1.5849625007211563
+  1913	  1913	DefinedAs	flower	sexual organ of plant	2.584962500721156
+  1914	  1914	AtLocation	company	build	2.0
+  1915	  1915	UsedFor	air pump	pump-up tire and ball	1.5849625007211563
+  1916	  1916	AtLocation	caffeine	restaurant	1.5849625007211563
+  1917	  1917	CapableOf	sword	parry	2.0
+  1918	  1918	CapableOf	you	repair engine	1.5849625007211563
+  1919	  1919	CapableOf	this book	shift your paradigm	1.5849625007211563
+  1920	  1920	HasProperty	shiny thing	new	1.5849625007211563
+  1921	  1921	UsedFor	conduct trial	determine guilt or innocence	2.321928094887362
+  1922	  1922	UsedFor	toy ball	play with your dog	2.0
+  1923	  1923	IsA	gossamer	fabric	2.0
+  1924	  1924	UsedFor	hair shape gel	shape your hair	2.321928094887362
+  1925	  1925	IsA	cappucino	delicious drink	2.0
+  1926	  1926	IsA	music	form of think	1.5849625007211563
+  1927	  1927	MotivatedByGoal	hike	excercise	1.5849625007211563
+  1928	  1928	HasProperty	hummingbird	small	3.0
+  1929	  1929	UsedFor	sew	make clothe	3.4594316186372978
+  1930	  1930	AtLocation	art	museum	2.321928094887362
+  1931	  1931	AtLocation	ring	gym	1.5849625007211563
+  1932	  1932	IsA	bushbaby	mammal	2.0
+  1933	  1933	HasProperty	silicon dioxide and dihydrogen monoxide	both clear	1.5849625007211563
+  1934	  1934	HasSubevent	release your energy	sweat	2.584962500721156
+  1935	  1935	IsA	time	money	2.807354922057604
+  1936	  1936	AtLocation	map	gas-station	2.321928094887362
+  1937	  1937	Desires	person	ridicule	2.321928094887362
+  1938	  1938	IsA	dollar	currency	2.321928094887362
+  1939	  1939	AtLocation	space junk	orbit around earth	1.5849625007211563
+  1940	  1940	HasPrerequisite	get some physical activity	exercise	2.321928094887362
+  1941	  1941	DefinedAs	decurrent false aster	boltonia decurrens	1.5849625007211563
+  1942	  1942	PartOf	udder	cow	2.321928094887362
+  1943	  1943	UsedFor	have party	increase your stature with your peer	2.321928094887362
+  1944	  1944	UsedFor	fur	make clothe	2.0
+  1945	  1945	AtLocation	swamp	river delta	2.321928094887362
+  1946	  1946	IsA	bono	singer	2.0
+  1947	  1947	IsA	famous phrase	home sweet home	1.5849625007211563
+  1948	  1948	CausesDesire	insanity	run in marathon	2.0
+  1949	  1949	HasA	animal	eye	2.0
+  1950	  1950	IsA	funny face	joke	1.5849625007211563
+  1951	  1951	HasA	classical music	piano piece	2.0
+  1952	  1952	HasLastSubevent	buy fresh fruit and vegetable	pay for them	2.0
+  1953	  1953	HasProperty	pear	delicious	1.5849625007211563
+  1954	  1954	UsedFor	bicycle	provide most of your transportation	1.5849625007211563
+  1955	  1955	AtLocation	weight lifter	gym	2.321928094887362
+  1956	  1956	AtLocation	on college campus	internet cafe	1.5849625007211563
+  1957	  1957	HasLastSubevent	kill someone	go to jail	2.321928094887362
+  1958	  1958	MotivatedByGoal	avoid kick dead dog	spend your time good	2.0
+  1959	  1959	MotivatedByGoal	knit	make handmade clothe	2.0
+  1960	  1960	UsedFor	bazooka	disable tank in world war ii	1.5849625007211563
+  1961	  1961	AtLocation	too few cashier	supermarket	2.584962500721156
+  1962	  1962	MotivatedByGoal	cook dinner	eat it	2.321928094887362
+  1963	  1963	HasFirstSubevent	taste something sweet	savor it	1.5849625007211563
+  1964	  1964	MotivatedByGoal	be in charge of project	take charge	1.5849625007211563
+  1965	  1965	CapableOf	human	celebrate when specific group be dead	1.5849625007211563
+  1966	  1966	AtLocation	bald eagle	south lake tahoe	2.321928094887362
+  1967	  1967	IsA	sean p-diddy comb	rapper	1.5849625007211563
+  1968	  1968	HasProperty	capital build	model in roman or greek style	1.5849625007211563
+  1969	  1969	AtLocation	pig	fairground	2.321928094887362
+  1970	  1970	HasPrerequisite	have democracy	declare equality for everyone	2.0
+  1971	  1971	Causes	learn about subject	change	2.0
+  1972	  1972	AtLocation	wheel	auto part store	1.5849625007211563
+  1973	  1973	Desires	woman	attention from her partner	2.0
+  1974	  1974	HasProperty	water in river	cold	2.0
+  1975	  1975	HasProperty	universe	endless	1.5849625007211563
+  1976	  1976	IsA	this	hour-glass	1.5849625007211563
+  1977	  1977	CapableOf	person with bad vision	wear glass	1.5849625007211563
+  1978	  1978	UsedFor	power screwdriver	gift	2.321928094887362
+  1979	  1979	HasSubevent	see particular program	you learn something new	2.321928094887362
+  1980	  1980	UsedFor	go for jog	get in shape	3.0
+  1981	  1981	HasFirstSubevent	urinate	put toilet lid up	1.5849625007211563
+  1982	  1982	IsA	see see	playground equipment	2.0
+  1983	  1983	PartOf	new england	unite state	2.321928094887362
+  1984	  1984	IsA	this	pc	1.5849625007211563
+  1985	  1985	HasA	shower	effect of clean body	1.5849625007211563
+  1986	  1986	CapableOf	this	fine music	1.5849625007211563
+  1987	  1987	DefinedAs	razor-billed curassow	mitu mitu mitu	1.5849625007211563
+  1988	  1988	Causes	see artifact	doubt self	1.5849625007211563
+  1989	  1989	UsedFor	linen chest	store your sheet	2.0
+  1990	  1990	IsA	piece of information	abstract concept	1.5849625007211563
+  1991	  1991	AtLocation	placemat	table	2.584962500721156
+  1992	  1992	HasProperty	dog	alert	2.321928094887362
+  1993	  1993	HasProperty	most person think sunset	beautiful	1.5849625007211563
+  1994	  1994	HasProperty	clean supply under sink	dangerous to child	1.5849625007211563
+  1995	  1995	MotivatedByGoal	run in marathon	you enjoy challenge yourself	2.0
+  1996	  1996	UsedFor	bake cake	joy of bake	2.0
+  1997	  1997	IsA	be from shoes	use in west	1.5849625007211563
+  1998	  1998	MotivatedByGoal	wait your turn	other person deserve to go first	2.321928094887362
+  1999	  1999	AtLocation	magnetic pickup	electric guitar	1.5849625007211563
+  2000	  2000	HasPrerequisite	swim	be in water	1.5849625007211563
