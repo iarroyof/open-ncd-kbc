@@ -458,9 +458,6 @@ parser.add_argument("-ev", "--evaluateFlag", action='store_true',
 parser.add_argument("-s", "--seqLen", type=int,
     default=30, help = "Per-sample sequence length")
 
-parser.add_argument("-f", "--nFeatures", type=int,
-    default=15000, help = "Maximum vocabulary size")
-
 parser.add_argument("-b", "--batchSize", type=int,
     default=64, help = "Batch size")
 
@@ -477,6 +474,9 @@ parser.add_argument("-l", "--latentDim", type=int,
 parser.add_argument("-H", "--nHeads", type=int,
     default=8, help = "Number of attention heads") # h = 8
 """
+parser.add_argument("-f", "--nFeatures", type=int,
+    default=15000, help = "Maximum vocabulary size")
+
 parser.add_argument("-e", "--nEpochs", type=int,
     default=100, help = "Number of training epochs (training can stop earlier"
         " as improvements do not overmoce 0.005*loss within 10 epochs.)") # base = 30
@@ -525,7 +525,6 @@ eval = True
 to_predict = args.predictFlag
 """
 sequence_length = args.seqLen
-max_features = args.nFeatures
 batch_size = args.batchSize
 n_epochs = args.nEpochs
 stack_size= args.stackSize
@@ -536,6 +535,7 @@ model_dim = args.modelDim
 latent_dim = args.latentDim
 num_heads = args.nHeads
 """
+max_features = args.nFeatures
 n_epochs = args.nEpochs
 #key_dim = (int(args.modelDim/args.nHeads)
 #            if args.keyDim <= 0 or isinstance(args.keyDim, str)
@@ -575,8 +575,6 @@ for line in lines[args.index:]:
     # Other settings
     n_demo = args.nDemo
     key_dim = int(model_dim/num_heads)
-
-    st()
 # -----------------------------------------------------------------------------
     if to_predict and train_flag:
         logging.warning("Train (-tf) and make predictions (-mp) flags activated"
@@ -584,7 +582,8 @@ for line in lines[args.index:]:
             " your city downtown for a cofe, return and take a sit...")
 
     checkpoint_path = ("results_final/{}-transformer_epochs"
-        "-{}_stackSize-{}_seqlen-{}_maxfeat-{}_batch-{}_keydim-{}_modeldim-{}_latent-{}_heads-{}/cp.ckpt".format(
+        "-{}_stackSize-{}_seqlen-{}_maxfeat-{}_batch-{}_keydim"
+        "-{}_modeldim-{}_latent-{}_heads-{}/cp.ckpt".format(
         dataset_name,
         n_epochs,
         stack_size,
@@ -600,12 +599,12 @@ for line in lines[args.index:]:
     logging.info(checkpoint_path)
     checkpoint_dir = os.path.dirname(checkpoint_path)
     out_dir = '/'.join(checkpoint_path.split('/')[:2]) + '/'
+    vectorizer_dir = out_dir.split('_e')[0] + '_vectorizer/'
     # Create a callback that saves the model's weights
 
     strip_chars = string.punctuation
     strip_chars = strip_chars.replace("[", "")
     strip_chars = strip_chars.replace("]", "")
-
     if train_flag:
         with open(training_data) as f:
             train_text = f.readlines()
@@ -641,26 +640,38 @@ for line in lines[args.index:]:
         else:
             train_out_texts = [pair[1] for pair in train_pairs]
 
-        input_vectorizer = layers.experimental.preprocessing.TextVectorization(
-            output_mode="int", max_tokens=max_features,
-            # ragged=False, # only for TF v2.7
-            output_sequence_length=sequence_length,
-            standardize=custom_standardization)
+        if (os.path.isdir(vectorizer_dir)
+                and os.path.isfile(vectorizer_dir+'in_vect_model')
+                and os.path.isfile(vectorizer_dir+'out_vect_model')):
+            input_vectorizer =  load_vectorizer(vectorizer_dir+'in_vect_model')
+            output_vectorizer = load_vectorizer(vectorizer_dir+'out_vect_model')
+        else:
+            input_vectorizer = layers.experimental\
+                                     .preprocessing\
+                                     .TextVectorization(
+                output_mode="int", max_tokens=max_features,
+                # ragged=False, # only for TF v2.7
+                output_sequence_length=sequence_length,
+                standardize=custom_standardization)
 
-        output_vectorizer = layers.experimental.preprocessing.TextVectorization(
-            output_mode="int", max_tokens=max_features, # ragged=False,
-            output_sequence_length=sequence_length+1,
-            standardize=custom_standardization)
+            output_vectorizer = layers.experimental\
+                                      .preprocessing\
+                                      .TextVectorization(
+                output_mode="int", max_tokens=max_features, # ragged=False,
+                output_sequence_length=sequence_length+1,
+                standardize=custom_standardization)
 
-        input_vectorizer.adapt(train_in_texts)
-        output_vectorizer.adapt(train_out_texts)
+            input_vectorizer.adapt(train_in_texts)
+            output_vectorizer.adapt(train_out_texts)
 
-        #saving the vectorizers also
-        save_vectorizer(
-            vectorizer=input_vectorizer, to_file=out_dir+'in_vect_model')
-        save_vectorizer(
-            vectorizer=output_vectorizer, to_file=out_dir+'out_vect_model')
-
+            #saving the vectorizers also
+            save_vectorizer(
+                vectorizer=input_vectorizer,
+                to_file=vectorizer_dir+'in_vect_model')
+            save_vectorizer(
+                vectorizer=output_vectorizer,
+                to_file=vectorizer_dir+'out_vect_model')
+        st()
         train_ds = make_dataset(train_pairs)
         test_ds = make_dataset(
             test_pairs, include_pmid=pmid_val_labels)
