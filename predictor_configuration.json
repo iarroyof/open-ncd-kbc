@@ -1,0 +1,11 @@
+{
+    "dataset_name": "Dummy",
+    "n_epochs": "1",
+    "stack_size": "1",
+    "sequence_length": "30",
+    "max_features": "15000",
+    "batch_size": "64",
+    "model_dim": "512",
+    "latent_dim": "2048",
+    "num_heads": "8"
+}
