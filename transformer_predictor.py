@@ -71,3 +71,13 @@ else:
     prediction = prediction.replace("[start] ", '').replace(" [end]", '')
     print(f"\n\n\n\nGiven sentence: {Subject_Predicate} {Object}")
     print(f"Generated sentence: {Subject_Predicate} {prediction}")
+
+# TODO: Ask the user if the information provided by the predictor was valid
+# or not. In the case single prediction selected suggest the user using multiple
+# prediction mode. If multiple prediction mode is selected, ask the user mark 
+# valid, invalid and undecided predictions. This should be a prerequisite to 
+# allow the user to copy or download the results of the query. Of course, the
+# query, results and user's annotations should be added to a dataset.
+# TODO: Achieving open vocabulary models for actual open vocabulary reasoning:
+# https://nlp.stanford.edu/pubs/luong2016acl_hybrid.pdf
+# https://arxiv.org/abs/2112.10508
