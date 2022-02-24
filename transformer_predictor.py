@@ -42,8 +42,9 @@ model_dim,
 latent_dim,
 num_heads,
 out_dir) = get_config(config_file)
-n_demo = 10
-#n_demo = -1
+
+#n_demo = 10
+n_demo = -1
 
 if os.path.isdir(out_dir):
     logging.info("Loading Vectorizers")
@@ -60,6 +61,7 @@ The inputs 'Subject_Predicate' and 'Object' should be provided by a function
 implementing the Allen AI's Semantic Role Labeling method. I set their values
 for testing purposes:
 """
+
 Subject_Predicate = "The cause of lung cancer can be"
 Object = "DNA methylation"
 
