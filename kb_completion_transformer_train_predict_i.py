@@ -505,9 +505,11 @@ parser.add_argument("-dN", "--datasetName", type=str,
     default="OIEGP",
     help = "Prefix name used for output directory naming")
 
-parser.add_argument("-tN", "--testName", type=str,
-    default="SD",
-    help="Prefix name used for the generated csv prediction file")
+parser.add_argument("-gf", "--gridFile", type=str,
+    default="/home/vitrion/transformerGrid.csv",
+    help="Hyperparameter grid must have the following columns:"
+    " (i, stack_size, batch_size, sequence_length, "
+        "model_dim, embedding_dim, latent_dim, num_heads)")
 
 parser.add_argument("-i", "--index", type=int,
     default=0, help = "Start index")
@@ -552,7 +554,7 @@ test_name = args.testName
 # --------------------------------- MALLA -------------------------------------
 
 #with open('/home/vitrion/transformerGrid.csv') as f:
-with open('dummyTransformerGrid.csv') as f:
+with open(args.gridFile) as f:
     lines = f.readlines()
 lines = np.array(lines)
 #onlyIdxs = [318, 319, 320, 321, 322, 323]
@@ -671,7 +673,6 @@ for line in lines[args.index:]:
             save_vectorizer(
                 vectorizer=output_vectorizer,
                 to_file=vectorizer_dir+'out_vect_model')
-        st()
         train_ds = make_dataset(train_pairs)
         test_ds = make_dataset(
             test_pairs, include_pmid=pmid_val_labels)

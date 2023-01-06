@@ -1,3 +1,20 @@
+"""
+Dataset names for results_final:
+                ncd-conceptnet
+                    data/ncd_conceptnet/ncd_conceptnet_train.tsv
+                    data/ncd_conceptnet/ncd_conceptnet_valid.tsv
+                ncd-gp            DONE
+                    data/ncd_gp/ncd_gp_train.tsv
+                    data/ncd_gp/ncd_gp_valid.tsv
+                ncd-gp-conceptnet
+                    data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv
+                    data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv
+                ncd           DONE
+                OK    data/ncd/openie5/ncd_oie5_train.tsv
+                    data/ncd/openie5/ncd_oie5_valid.tsv
+                OK    data/ncd/openie5/ncd_oie5_test.tsv
+"""
+
 import numpy as np
 import pandas as pd
 import typing
@@ -551,7 +568,7 @@ class Translator(tf.Module):
         vocabulary=output_text_processor.get_vocabulary(), mask_token='')
     token_mask_ids = index_from_string(['', '[UNK]', '[start]']).numpy()
 
-    token_mask = np.zeros([index_from_string.vocabulary_size()], dtype=np.bool)
+    token_mask = np.zeros([index_from_string.vocabulary_size()], dtype=bool)
     token_mask[np.array(token_mask_ids)] = True
     self.token_mask = token_mask
 
@@ -844,9 +861,17 @@ inp_ = [
     inp for inp, targ in val_pairs]
 targ_ = [
     targ for inp, targ in val_pairs]
-inp = tf.constant(inp_)
 
-result = translator.tf_translate(inp)
-result = pd.DataFrame({'Subj_Pred': inp, 'Obj': result['text'].numpy(), 'Obj_true': targ_})
+#inp = tf.constant(inp_)
+
+results = []
+for chunk in np.array_split(inp_, batch_size):
+    result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+    results.append(result.tolist())
+#st()
+result = sum(results, [])
+#result = translator.translate(inp)
+#result = pd.DataFrame({'Subj_Pred': inp, 'Obj': result['text'].numpy(), 'Obj_true': targ_})
+result = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
 result.to_csv(out_dir + 'predictions.csv')
 print(result)
