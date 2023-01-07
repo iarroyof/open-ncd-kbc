@@ -4,15 +4,15 @@ Dataset names for results_final:
                     data/ncd_conceptnet/ncd_conceptnet_train.tsv
                     data/ncd_conceptnet/ncd_conceptnet_valid.tsv
                 ncd-gp            DONE
-                    data/ncd_gp/ncd_gp_train.tsv
-                    data/ncd_gp/ncd_gp_valid.tsv
+                OK_lap_iaf    data/ncd_gp/ncd_gp_train.tsv 
+                OK_lap_iaf    data/ncd_gp/ncd_gp_valid.tsv
                 ncd-gp-conceptnet
                     data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv
                     data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv
                 ncd           DONE
-                OK    data/ncd/openie5/ncd_oie5_train.tsv
+                OK_espectro    data/ncd/openie5/ncd_oie5_train.tsv
                     data/ncd/openie5/ncd_oie5_valid.tsv
-                OK    data/ncd/openie5/ncd_oie5_test.tsv
+                OK_espectro    data/ncd/openie5/ncd_oie5_test.tsv
 """
 
 import numpy as np
@@ -28,6 +28,13 @@ import matplotlib.ticker as ticker
 import functools, re, string, os, time, random
 import argparse
 from pdb import set_trace as st
+import logging
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(message)s',
+    datefmt='%m/%d/%Y %I:%M:%S %p')
 
 cs_labels = False
 
@@ -744,7 +751,7 @@ with open(training_data) as f:
 with open(testing_data) as f:
     val_text = f.readlines()
 
-
+logging.info("Preparing train and test data")
 train_pairs = list(
     map(functools.partial(
         prepare_data,
@@ -789,7 +796,9 @@ if cs_labels:
 else:
     train_out_texts = [pair[1] for pair in train_pairs]
 
+logging.info("Training input text vectorizer")
 input_vectorizer.adapt(train_in_texts)
+logging.info("Training output text vectorizer")
 output_vectorizer.adapt(train_out_texts)
 
 max_vocab = max([
@@ -839,10 +848,11 @@ train_translator.compile(
     loss=MaskedLoss()
 )
 
+logging.info("Training neural reasoning model...")
 history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
                      callbacks=[train_loss, train_accu, cp_callback])
-
-
+logging.info("NOW Trained :)")
+logging.info("Saving evaluation results...")
 rdf = pd.DataFrame(history.history)
 rdf.to_csv(out_dir + "history.csv")
 
@@ -850,8 +860,6 @@ fig, axes = plt.subplots(2, 1)
 rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
 rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
 plt.savefig(out_dir + 'history_plot.pdf')
-
-#plot_model(train_translator, to_file=out_dir + "architecture.pdf", show_shapes=True)
 
 if not (n_demo < 0 or isinstance(n_demo, str)):
     random.shuffle(val_pairs)
@@ -862,16 +870,15 @@ inp_ = [
 targ_ = [
     targ for inp, targ in val_pairs]
 
-#inp = tf.constant(inp_)
-
 results = []
-for chunk in np.array_split(inp_, batch_size):
+logging.info("Now performing inferences using the trained model...")
+for chunk in np.array_split(inp_, len(inp_)/batch_size):
     result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
     results.append(result.tolist())
-#st()
+
 result = sum(results, [])
-#result = translator.translate(inp)
-#result = pd.DataFrame({'Subj_Pred': inp, 'Obj': result['text'].numpy(), 'Obj_true': targ_})
+
 result = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
 result.to_csv(out_dir + 'predictions.csv')
 print(result)
+logging.info(f"See the results written to {out_dir + 'predictions.csv'}")
