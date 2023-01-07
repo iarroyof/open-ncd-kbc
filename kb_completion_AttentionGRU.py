@@ -1,18 +1,18 @@
 """
 Dataset names for results_final:
-                ncd-conceptnet
-                    data/ncd_conceptnet/ncd_conceptnet_train.tsv
-                    data/ncd_conceptnet/ncd_conceptnet_valid.tsv
-                ncd-gp            DONE
-                OK_lap_iaf    data/ncd_gp/ncd_gp_train.tsv 
-                OK_lap_iaf    data/ncd_gp/ncd_gp_valid.tsv
-                ncd-gp-conceptnet
-                    data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv
-                    data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv
-                ncd           DONE
-                OK_espectro    data/ncd/openie5/ncd_oie5_train.tsv
+                ncd-conceptnet   PEND
+                  OK_lap_jarmand    data/ncd_conceptnet/ncd_conceptnet_train.tsv
+                  OK_lap_jarmand    data/ncd_conceptnet/ncd_conceptnet_valid.tsv
+                ncd-gp            DONE PEND
+                  OK_espectro    data/ncd_gp/ncd_gp_train.tsv 
+                  OK_espectro    data/ncd_gp/ncd_gp_valid.tsv
+                ncd-gp-conceptnet PEND
+                  OK_lap_iaf    data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv
+                  OK_lap_iaf    data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv
+                ncd           DONE DONE
+                  OK_espectro    data/ncd/openie5/ncd_oie5_train.tsv
                     data/ncd/openie5/ncd_oie5_valid.tsv
-                OK_espectro    data/ncd/openie5/ncd_oie5_test.tsv
+                  OK_espectro    data/ncd/openie5/ncd_oie5_test.tsv
 """
 
 import numpy as np
@@ -688,7 +688,7 @@ parser = argparse.ArgumentParser()
 
 # Adding optional argument
 parser.add_argument("-s", "--seqLen", type=int,
-    default=70, help = "Per-sample sequence length")
+    default=50, help = "Per-sample sequence length")
 parser.add_argument("-u", "--nSteps", type=int,
     default=1024, help = "Number of hidden recurrent steps (units)")
 parser.add_argument("-f", "--nFeatures", type=int,
@@ -696,16 +696,16 @@ parser.add_argument("-f", "--nFeatures", type=int,
 parser.add_argument("-b", "--batchSize", type=int,
     default=64, help = "Batch size")
 parser.add_argument("-e", "--nEpochs", type=int,
-    default=2, help = "Number of training epochs")
+    default=40, help = "Number of training epochs")
 parser.add_argument("-d", "--embeddingDim", type=int,
-    default=256, help = "Word embedding dimensionality")
+    default=1024, help = "Word embedding dimensionality")
 parser.add_argument("-D", "--nDemo", type=int,
-    default=100, help = "Number of predicted test samples to save as output")
+    default=-1, help = "Number of predicted test samples to save as output")
 parser.add_argument("-T", "--trainData", type=str,
-    default="data/ncd/openie5/ncd_oie5_conceptnet_train.tsv",
+    default="data/ncd_conceptnet/ncd_conceptnet_train.tsv",
     help = "Training data (CSV file)")
 parser.add_argument("-t", "--testData", type=str,
-    default="data/ncd/openie5/ncd_oie5_conceptnet_test.tsv",
+    default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv",
     help = "Test data (CSV file)")
 
 # Read arguments from command line
