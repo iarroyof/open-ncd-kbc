@@ -134,3 +134,4 @@ cp.ckpt.data-*
 *.py.save*
 *.pb
 *.data-*
+ncd-conceptnet-transformer_epochs-*heads-*.pdf

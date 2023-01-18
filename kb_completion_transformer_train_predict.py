@@ -544,8 +544,9 @@ if to_predict and train_flag:
         " require a LONG TIME if --nDemo is not set to small integer. Go to"
         " your city downtown for a cofe, return and take a sit...")
 
-checkpoint_path = ("results_final/{}-transformer_epochs"
-    "-{}_stackSize-{}_seqlen-{}_maxfeat-{}_batch-{}_keydim-{}_modeldim-{}_latent-{}_heads-{}/cp.ckpt".format(
+checkpoint_path = ("results_final"+os.sep+"{}-transformer_epochs"
+    "-{}_stackSize-{}_seqlen-{}_maxfeat-{}_batch-{}_keydim-{}_modeldim"
+    "-{}_latent-{}_heads-{}"+os.sep+"cp.ckpt".format(
     dataset_name,
     n_epochs,
     stack_size,
@@ -560,7 +561,7 @@ checkpoint_path = ("results_final/{}-transformer_epochs"
 
 logging.info(checkpoint_path)
 checkpoint_dir = os.path.dirname(checkpoint_path)
-out_dir = '/'.join(checkpoint_path.split('/')[:2]) + '/'
+out_dir = os.sep.join(checkpoint_path.split(os.sep)[:2]) + os.sep
 # Create a callback that saves the model's weights
 
 strip_chars = string.punctuation
@@ -698,12 +699,12 @@ if train_flag:
     - if you specify a directory, you will save them without a prefix
     """
     logging.info("Saving learned weights to {}\n".format(
-        out_dir+'transformer_model_weights/model'))
-    transformer.save_weights(out_dir+'transformer_model_weights/model')
+        out_dir+"transformer_model_weights"+os.sep+"model"))
+    transformer.save_weights(out_dir+"transformer_model_weights"+os.sep+"model")
 
 else:
     # vectorizers have been loaded previously
-    transformer.load_weights(out_dir+'transformer_model_weights/model')
+    transformer.load_weights(out_dir+"transformer_model_weights"+os.sep+"model")
 
 val_file = out_dir + 'evaluation_on_validation_data.txt'
 out_phr_vocab = output_vectorizer.get_vocabulary()

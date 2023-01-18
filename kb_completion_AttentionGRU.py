@@ -77,8 +77,13 @@ def prepare_data(
         sample_i = ' '.join([sample[0], sample[2], sample[1]])
 
     return  sample_i, sample_o
-
-
+"""
+In the case of immiting the following decorator 'keras serializable', this error
+is going to raise:
+raise RuntimeError(
+RuntimeError: Unable to restore a layer of class TextVectorization. Layers of class TextVectorization require that the class be provided to the model loading code, either by registering the class using @keras.utils.register_keras_serializable on the class def and including that file in your program, or by passing the class in a keras.utils.CustomObjectScope that wraps this load call.
+"""
+@tf.keras.utils.register_keras_serializable()
 def custom_standardization(input_string):
     lowercase = tf.strings.lower(input_string)
     return tf.strings.regex_replace(
@@ -682,6 +687,29 @@ def sort_cols(columns):
                 new_cols.append(c)
     return new_cols
 
+def load_vectorizer(from_file):
+    loaded_vectorizer_model =  tf.keras.models.load_model(from_file)
+    lvocab = loaded_vectorizer_model.layers[0].get_vocabulary()
+    lconfig = loaded_vectorizer_model.layers[0].get_config()
+    """ PASSING THIS parameter destrois the output tensor becoming it either into a
+        Ragged Tensor or an unpadded Eager Tensor. No aparent reason for that,
+        so a bug in TF2.6 TextVectorization class. Delete it before continue"""
+    del(lconfig['output_mode'])
+    vectorizer = layers.experimental.preprocessing.TextVectorization(**lconfig)
+
+    vectorizer.adapt(['Creating new TextVectorization for Python function'])
+    vectorizer.set_vocabulary(lvocab)
+
+    return vectorizer
+
+def save_vectorizer(vectorizer, to_file):
+    vectorizer_model = tf.keras.models.Sequential()
+    vectorizer_model.add(tf.keras.Input(shape=(1,), dtype=tf.string))
+    vectorizer_model.add(vectorizer)
+    vectorizer_model.compile()
+
+    vectorizer_model.save(to_file, save_format='tf')
+
 
 # MAIN
 parser = argparse.ArgumentParser()
@@ -707,6 +735,10 @@ parser.add_argument("-T", "--trainData", type=str,
 parser.add_argument("-t", "--testData", type=str,
     default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv",
     help = "Test data (CSV file)")
+parser.add_argument("-rp", "--resPath", type=str,
+    #default="/media/vitrion/ST1000-VTR/",
+    default=os.getcwd(),
+    help = "Path where results, vectorizer and neural network models are stored.")
 
 # Read arguments from command line
 args = parser.parse_args()
@@ -722,6 +754,7 @@ training_data = args.trainData
 testing_data = args.testData
 # Other settings
 n_demo = args.nDemo
+results_path = os.path.normpath(args.resPath) + os.sep
 
 
 train_loss = BatchLogs('loss')
@@ -798,28 +831,32 @@ else:
 
 logging.info("Training input text vectorizer")
 input_vectorizer.adapt(train_in_texts)
+save_vectorizer(vectorizer=input_vectorizer, to_file=results_path + "results"
+        + f"{os.sep}attentionGRU-CSOIEGP_seqlen-{sequence_length}_vectorizer"
+        + f"{os.sep}in_vect_model")
 logging.info("Training output text vectorizer")
 output_vectorizer.adapt(train_out_texts)
-
+save_vectorizer(vectorizer=input_vectorizer, to_file=results_path + "results"
+        + f"{os.sep}attentionGRU-CSOIEGP_seqlen-{sequence_length}_vectorizer"
+        + f"{os.sep}out_vect_model")
+logging.info("Saved text vectorizers to "
+    + results_path + f"results{os.sep}"
+    + f"attentionGRU-CSOIEGP_seqlen-{sequence_length}_vectorizer{os.sep}")
+     
 max_vocab = max([
         len(input_vectorizer.get_vocabulary()),
         len(output_vectorizer.get_vocabulary())])
 if max_features > max_vocab:
     max_features = max_vocab
 
-checkpoint_path = ("results/CSRncdKBC-attentionGRU_epochs"
-    "-{}_seqlen-{}_maxfeat-{}_batch-{}_embdim-{}_steps-{}/cp.ckpt".format(
-    n_epochs,
-    sequence_length,
-    max_features,
-    batch_size,
-    embedding_dim,
-    units
-))
+checkpoint_path = ("results"+os.sep+"CSRncdKBC-attentionGRU_epochs"
+    f"-{n_epochs}_seqlen-{sequence_length}_maxfeat-{max_features}_batch"
+    f"-{batch_size}_embdim-{embedding_dim}_steps-{units}"+os.sep+"cp.ckpt")
 
-print(checkpoint_path)
+print("Working results directory: " + checkpoint_path)
+
 checkpoint_dir = os.path.dirname(checkpoint_path)
-out_dir = '/'.join(checkpoint_path.split('/')[:2]) + '/'
+out_dir = results_path + os.sep.join(checkpoint_path.split(os.sep)[:2]) + os.sep
 # Create a callback that saves the model's weights
 cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                  save_weights_only=True,
