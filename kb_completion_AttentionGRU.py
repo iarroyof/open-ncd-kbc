@@ -710,6 +710,14 @@ def save_vectorizer(vectorizer, to_file):
 
     vectorizer_model.save(to_file, save_format='tf')
 
+def parse_dataset_name(training_data):
+    training_data =  training_data.split(os.sep)[-1].lower()
+    names_dic = {
+        "NCD": 'ncd' in training_data,
+        "GP": 'gp' in training_data,
+        "CN": 'conceptnet' in training_data}
+    
+    return '-'.join([k for k, v in names_dic.items() if v])
 
 # MAIN
 parser = argparse.ArgumentParser()
@@ -755,6 +763,7 @@ testing_data = args.testData
 # Other settings
 n_demo = args.nDemo
 results_path = os.path.normpath(args.resPath) + os.sep
+dataset_name = parse_dataset_name(training_data)
 
 
 train_loss = BatchLogs('loss')
@@ -832,16 +841,16 @@ else:
 logging.info("Training input text vectorizer")
 input_vectorizer.adapt(train_in_texts)
 save_vectorizer(vectorizer=input_vectorizer, to_file=results_path + "results"
-        + f"{os.sep}attentionGRU-CSOIEGP_seqlen-{sequence_length}_vectorizer"
+        + f"{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer"
         + f"{os.sep}in_vect_model")
 logging.info("Training output text vectorizer")
 output_vectorizer.adapt(train_out_texts)
 save_vectorizer(vectorizer=input_vectorizer, to_file=results_path + "results"
-        + f"{os.sep}attentionGRU-CSOIEGP_seqlen-{sequence_length}_vectorizer"
+        + f"{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer"
         + f"{os.sep}out_vect_model")
 logging.info("Saved text vectorizers to "
     + results_path + f"results{os.sep}"
-    + f"attentionGRU-CSOIEGP_seqlen-{sequence_length}_vectorizer{os.sep}")
+    + f"attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}")
      
 max_vocab = max([
         len(input_vectorizer.get_vocabulary()),
@@ -849,7 +858,7 @@ max_vocab = max([
 if max_features > max_vocab:
     max_features = max_vocab
 
-checkpoint_path = ("results"+os.sep+"CSRncdKBC-attentionGRU_epochs"
+checkpoint_path = ("results" + os.sep + f"attentionGRU_{dataset_name}_epochs"
     f"-{n_epochs}_seqlen-{sequence_length}_maxfeat-{max_features}_batch"
     f"-{batch_size}_embdim-{embedding_dim}_steps-{units}"+os.sep+"cp.ckpt")
 

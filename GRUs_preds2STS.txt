@@ -1,0 +1,15 @@
+input data: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv
+model: A-GRU_S10_B128_D256_U2048 (A-GRU_a)
+Results: https://github.com/iarroyof/open-ncd-kbc/blob/main/results/attentionGRU-CSOIEGP_index-023_epochs-100_seqlen-10_maxfeat-15000_batch-128_modeldim-256_units-2048/predictions.csv
+
+input data: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv
+model: A-GRU_S30_B32_D1024_U1024 (A-GRU_b)
+Results: https://github.com/iarroyof/open-ncd-kbc/blob/main/results/attentionGRU-CSOIEGP_index-034_epochs-100_seqlen-30_maxfeat-15000_batch-32_modeldim-1024_units-1024/predictions.csv
+
+input data: data/ncd_gp/ncd_gp_valid.tsv
+model: A-GRU_S10_B128_D256_U2048 (A-GRU_a)
+Results: https://github.com/iarroyof/open-ncd-kbc/blob/main/results/CSRncdKBC-attentionGRU_epochs-40_seqlen-10_maxfeat-15000_batch-128_embdim-256_steps-2048/predictions.csv
+
+input data: data/ncd_gp/ncd_gp_valid.tsv
+model: A-GRU_S30_B32_D1024_U1024 (A-GRU_b)
+Results: PEND
