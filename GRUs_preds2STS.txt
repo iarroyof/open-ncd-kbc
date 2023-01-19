@@ -12,4 +12,4 @@ Results: https://github.com/iarroyof/open-ncd-kbc/blob/main/results/CSRncdKBC-at
 
 input data: data/ncd_gp/ncd_gp_valid.tsv
 model: A-GRU_S30_B32_D1024_U1024 (A-GRU_b)
-Results: PEND
+Results: https://github.com/iarroyof/open-ncd-kbc/blob/main/results/CSRncdKBC-attentionGRU_epochs-40_seqlen-30_maxfeat-15000_batch-32_embdim-1024_steps-1024/predictions.csv
