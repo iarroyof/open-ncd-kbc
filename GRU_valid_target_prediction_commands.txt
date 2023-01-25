@@ -1,0 +1,4 @@
+python kb_completion_AttentionGRU_predict.py -e 100 -b 128 -s 10 -d 256 -u 2048 -D -1 -t data/ncd/openie5/ncd_oie5_test.tsv
+python kb_completion_AttentionGRU_predict.py -e 40 -b 128 -s 10 -d 256 -u 2048 -D -1 -t data/ncd/openie5/ncd_oie5_test.tsv
+python kb_completion_AttentionGRU_predict.py -e 100 -b 32 -s 30 -d 1024 -u 1024 -D -1 -t data/ncd/openie5/ncd_oie5_test.tsv
+python kb_completion_AttentionGRU_predict.py -e 40 -b 32 -s 30 -d 1024 -u 1024 -D -1 -t data/ncd/openie5/ncd_oie5_test.tsv

@@ -1,0 +1,4 @@
+type results\CSRncdKBC-attentionGRU_epochs-40_seqlen-10_maxfeat-15000_batch-128_embdim-256_steps-2048\history.csv
+type results\CSRncdKBC-attentionGRU_epochs-100_seqlen-10_maxfeat-15000_batch-128_embdim-256_steps-2048\history.csv
+type results\CSRncdKBC-attentionGRU_epochs-40_seqlen-30_maxfeat-15000_batch-32_embdim-1024_steps-1024\history.csv
+type results\CSRncdKBC-attentionGRU_epochs-100_seqlen-30_maxfeat-15000_batch-32_embdim-1024_steps-1024\history.csv

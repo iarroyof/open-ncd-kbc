@@ -737,8 +737,8 @@ parser.add_argument("-rp", "--resPath", type=str,
     #default="/media/vitrion/ST1000-VTR/",
     default=os.getcwd(),
     help = "Path where results, vectorizer and neural network models are stored.")
-parser.add_argument("-i", "--index", type=str,
-    default="023", help = "Number of experiment in the grid.")
+#parser.add_argument("-i", "--index", type=str,
+#    default="023", help = "Number of experiment in the grid.")
 # Read arguments from command line
 args = parser.parse_args()
 # Hyperparameters
@@ -754,7 +754,7 @@ testing_data = args.testData
 n_demo = args.nDemo
 #train_flag = args.trainFlag
 results_path = os.path.normpath(args.resPath) + os.sep
-idx = args.index
+#idx = args.index
 
 train_loss = BatchLogs('loss')
 train_accu = BatchLogs('accuracy')
@@ -785,11 +785,11 @@ val_pairs = list(
         prepare_data,
         include_labels=cs_labels, all_start_end=True), val_text))
 
-#checkpoint_path = ("results"+os.sep+"CSRncdKBC-attentionGRU_"
-checkpoint_path = ("results"+os.sep+ f"attentionGRU-CSOIEGP_index-{idx}_"
+checkpoint_path = ("results"+os.sep+"CSRncdKBC-attentionGRU_"
+#checkpoint_path = ("results"+os.sep+ f"attentionGRU-CSOIEGP_index-{idx}_"
     f"epochs-{n_epochs}_seqlen-{sequence_length}_maxfeat-{max_features}_batch"
- #   f"-{batch_size}_embdim-{embedding_dim}_steps-{units}"+os.sep+"cp.ckpt") # results/CSRncdKBC-..._steps{}/cp.ckpt
-    f"-{batch_size}_modeldim-{embedding_dim}_units-{units}"+os.sep+"cp.ckpt")
+    f"-{batch_size}_embdim-{embedding_dim}_steps-{units}"+os.sep+"cp.ckpt") # results/CSRncdKBC-..._steps{}/cp.ckpt
+#  f"-{batch_size}_modeldim-{embedding_dim}_units-{units}"+os.sep+"cp.ckpt")
 #st()
 print("Working results directory: " + checkpoint_path)
 checkpoint_dir = os.path.dirname(checkpoint_path)
@@ -840,12 +840,16 @@ inp_, targ_ = zip(*val_pairs)
 
 results = []
 logging.info("Now performing inferences using the trained model...")
-for chunk in tqdm(np.array_split(inp_, len(inp_)/batch_size),
-        desc='Reasoning…', ascii=False, ncols=int(len(inp_)/batch_size)):
-    result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-    results.append(result.tolist())
+try: 
+    for chunk in tqdm(np.array_split(inp_, len(inp_)/batch_size),
+            desc='Reasoning…', ascii=False, ncols=int(len(inp_)/batch_size)):
+        result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+        results.append(result.tolist())
 
-result = sum(results, [])
+    result = sum(results, [])
+
+except ValueError:
+    result = translator.tf_translate(tf.constant(inp_))['text'].numpy()
 
 result = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
 result.to_csv(out_dir + 'predictions.csv')
