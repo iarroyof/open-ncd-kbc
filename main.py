@@ -29,7 +29,7 @@ if __name__ == "__main__":
     # Example data configuration for files without headers
     data_configs = [
         ColumnConfig(
-            file_path="train_data.tsv",
+            file_path="data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv",
             source_columns=[0],  # First column contains source text
             target_columns=[1],  # Second column contains target text
             has_header=False,
