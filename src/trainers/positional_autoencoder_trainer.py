@@ -8,8 +8,8 @@ import wandb
 from tqdm import tqdm
 
 # Import our custom implementations
-from tsv_dataset import TSVText2TextDataset, ColumnConfig, collate_fn
-from text2text_autoencoders import PositionalAutoencoder
+from ..data.tsv_text2text_dataset import TSVText2TextDataset, ColumnConfig, collate_fn
+from ..models.text2text_autoencoders import PositionalAutoencoder
 
 class AutoencoderTrainer:
     def __init__(
