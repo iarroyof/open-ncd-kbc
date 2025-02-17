@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 import wandb
 from tqdm import tqdm
-from ..data.tsv_text2text_dataset import ColumnConfig
+from ..data.tsv_text2text_dataset import *
 
 class AutoencoderTrainer:
     def __init__(
