@@ -4,6 +4,7 @@ from src.data.tsv_text2text_dataset import ColumnConfig
 if __name__ == "__main__":
     # Example configuration
     model_config = {
+        'vocab_size': 32000,
         'target_seq_len': 3,
         'd_model': 512,
         'hidden_dim': 256,
