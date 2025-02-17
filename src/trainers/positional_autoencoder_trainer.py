@@ -1,14 +1,21 @@
+# Standard library imports
+import os
+import logging
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+
+# Third-party imports
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-import logging
-from pathlib import Path
-from typing import List, Optional
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import OneCycleLR
 import wandb
 from tqdm import tqdm
-from ..data.tsv_text2text_dataset import *
+
+# Local application imports
+from ..data.tsv_text2text_dataset import TSVText2TextDataset, ColumnConfig, collate_fn
 from ..models.text2text_autoencoders import PositionalAutoencoder
-import os
 
 # Set tokenizers parallelism
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -64,14 +71,14 @@ class AutoencoderTrainer:
         self.model = PositionalAutoencoder(**self.model_config).to(self.device)
         
         # Initialize optimizer and scheduler
-        self.optimizer = torch.optim.AdamW(
+        self.optimizer = AdamW(
             self.model.parameters(),
             lr=training_config['learning_rate'],
             weight_decay=training_config.get('weight_decay', 0.01)
         )
         
         # Cosine annealing scheduler with warmup
-        self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        self.scheduler = OneCycleLR(
             self.optimizer,
             max_lr=training_config['learning_rate'],
             epochs=training_config['num_epochs'],
@@ -113,33 +120,37 @@ class AutoencoderTrainer:
                 # Forward pass
                 outputs = self.model(source_ids)
                 
-            # Calculate loss
-            batch_size, seq_len, vocab_size = outputs.shape
-            # Ensure target_ids is the right shape and length
-            target_ids = target_ids[:, :seq_len].contiguous()
-            # Reshape for loss calculation
-            outputs = outputs.view(-1, vocab_size)
-            target_ids = target_ids.view(-1)
-            # Calculate loss
-            loss = nn.CrossEntropyLoss()(outputs, target_ids)
-            
-            # Backward pass
-            self.optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-            self.optimizer.step()
-            self.scheduler.step()
-            
-            # Update metrics
-            total_loss += loss.item()
-            avg_loss = total_loss / (batch_idx + 1)
-            progress_bar.set_postfix({'loss': f'{avg_loss:.4f}'})
-            
-            if self.use_wandb:
-                wandb.log({
-                    'batch_loss': loss.item(),
-                    'learning_rate': self.scheduler.get_last_lr()[0]
-                })
+                # Calculate loss
+                batch_size, seq_len, vocab_size = outputs.shape
+                # Ensure target_ids is the right shape and length
+                target_ids = target_ids[:, :seq_len].contiguous()
+                # Reshape for loss calculation
+                outputs = outputs.view(-1, vocab_size)
+                target_ids = target_ids.view(-1)
+                # Calculate loss
+                loss = nn.CrossEntropyLoss()(outputs, target_ids)
+                
+                # Backward pass
+                self.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.optimizer.step()
+                self.scheduler.step()
+                
+                # Update metrics
+                total_loss += loss.item()
+                avg_loss = total_loss / (batch_idx + 1)
+                progress_bar.set_postfix({'loss': f'{avg_loss:.4f}'})
+                
+                if self.use_wandb:
+                    wandb.log({
+                        'batch_loss': loss.item(),
+                        'learning_rate': self.scheduler.get_last_lr()[0]
+                    })
+                    
+            except Exception as e:
+                print(f"Error in batch {batch_idx}: {str(e)}")
+                continue
         
         epoch_loss = total_loss / len(self.dataloader)
         return epoch_loss
