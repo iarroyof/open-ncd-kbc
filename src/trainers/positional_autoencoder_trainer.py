@@ -96,17 +96,32 @@ class AutoencoderTrainer:
         progress_bar = tqdm(self.dataloader, desc=f"Epoch {epoch}")
         
         for batch_idx, batch in enumerate(progress_bar):
-            source_ids = batch['source_text'].to(self.device)
-            target_ids = batch['target_text'][:, :self.model.target_seq_len].to(self.device)
-            
-            # Forward pass
-            outputs = self.model(source_ids)
-            
+            try:
+                # Move data to device
+                source_ids = batch['source_text'].to(self.device)
+                target_ids = batch['target_text'].to(self.device)
+                
+                # Ensure target sequence length matches model's expected length
+                if target_ids.size(1) < self.model.target_seq_len:
+                    # If target is too short, pad it
+                    pad_length = self.model.target_seq_len - target_ids.size(1)
+                    target_ids = torch.nn.functional.pad(target_ids, (0, pad_length), value=0)
+                else:
+                    # If target is too long, truncate it
+                    target_ids = target_ids[:, :self.model.target_seq_len]
+                
+                # Forward pass
+                outputs = self.model(source_ids)
+                
             # Calculate loss
-            loss = nn.CrossEntropyLoss()(
-                outputs.view(-1, outputs.size(-1)),
-                target_ids.view(-1)
-            )
+            batch_size, seq_len, vocab_size = outputs.shape
+            # Ensure target_ids is the right shape and length
+            target_ids = target_ids[:, :seq_len].contiguous()
+            # Reshape for loss calculation
+            outputs = outputs.view(-1, vocab_size)
+            target_ids = target_ids.view(-1)
+            # Calculate loss
+            loss = nn.CrossEntropyLoss()(outputs, target_ids)
             
             # Backward pass
             self.optimizer.zero_grad()
