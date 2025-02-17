@@ -51,6 +51,42 @@ class PositionalAutoencoder(nn.Module):
     Simple Autoencoder with positional embedding and normalization layers
     
     # Example usage
+    # Training function
+    def train_positional_autoencoder(
+            model,
+            dataloader,
+            num_epochs=10,
+            learning_rate=1e-4,
+            device='cuda' if torch.cuda.is_available() else 'cpu'
+        ):
+            model = model.to(device)
+            criterion = nn.CrossEntropyLoss()
+            optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+            
+            for epoch in range(num_epochs):
+                total_loss = 0
+                for src, tgt in dataloader:
+                    src = src.to(device)
+                    tgt = tgt.to(device)
+                    
+                    # Forward pass
+                    output = model(src)
+                    
+                    # Compute loss (output should match target)
+                    loss = criterion(output.reshape(-1, output.size(-1)), tgt.reshape(-1))
+                    
+                    # Backward pass
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    
+                    total_loss += loss.item()
+                    
+                avg_loss = total_loss / len(dataloader)
+                print(f"Epoch {epoch+1}, Average Loss: {avg_loss:.4f}")
+        
+        return model
+        
     if __name__ == "__main__":
         # Dataset setup (using the toy dataset)
         vocab_size = 100
@@ -70,6 +106,8 @@ class PositionalAutoencoder(nn.Module):
             use_normalization=True,
             norm_type='batch'
         )    
+            # Train the model
+        trained_model = train_positional_autoencoder(model, dataloader)
     """
   
     def __init__(
@@ -192,42 +230,3 @@ class PositionalAutoencoder(nn.Module):
         # Final projection
         return self.fc(x)
 
-# Training function
-def train_positional_autoencoder(
-    model,
-    dataloader,
-    num_epochs=10,
-    learning_rate=1e-4,
-    device='cuda' if torch.cuda.is_available() else 'cpu'
-):
-    model = model.to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
-    for epoch in range(num_epochs):
-        total_loss = 0
-        for src, tgt in dataloader:
-            src = src.to(device)
-            tgt = tgt.to(device)
-            
-            # Forward pass
-            output = model(src)
-            
-            # Compute loss (output should match target)
-            loss = criterion(output.reshape(-1, output.size(-1)), tgt.reshape(-1))
-            
-            # Backward pass
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            
-            total_loss += loss.item()
-            
-        avg_loss = total_loss / len(dataloader)
-        print(f"Epoch {epoch+1}, Average Loss: {avg_loss:.4f}")
-
-    return model
-
-    
-    # Train the model
-    trained_model = train_positional_autoencoder(model, dataloader)
