@@ -39,6 +39,7 @@ class AutoencoderTrainer:
         self.dataset = TSVText2TextDataset(
             configs=data_configs,
             tokenizer_path=tokenizer_path,
+            vocab_size=model_config.get('vocab_size', 32000),  # Get vocab_size from model_config
             cache_dir=cache_dir,
             seed=training_config.get('seed', 42),
             chunk_size=training_config.get('chunk_size', 10000)
@@ -54,9 +55,12 @@ class AutoencoderTrainer:
             pin_memory=True
         )
         
-        # Initialize model
+        # Get vocab size from dataset
+        vocab_size = self.dataset.get_vocab_size()
+        
+        # Initialize model with vocab size
         self.model = PositionalAutoencoder(
-            vocab_size=len(self.dataset.tokenizer),
+            vocab_size=vocab_size,  # Use the retrieved vocab size
             **model_config
         ).to(self.device)
         
@@ -82,7 +86,7 @@ class AutoencoderTrainer:
             wandb.init(
                 project="positional-autoencoder",
                 config={
-                    "model_config": model_config,
+                    "model_config": {**model_config, "vocab_size": vocab_size},
                     "training_config": training_config
                 }
             )
