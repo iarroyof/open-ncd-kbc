@@ -30,8 +30,8 @@ if __name__ == "__main__":
     data_configs = [
         ColumnConfig(
             file_path="data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv",
-            source_columns=[0],  # First column contains source text
-            target_columns=[1],  # Second column contains target text
+            source_columns=[3, 2],  # First column contains source text
+            target_columns=[4],  # Second column contains target text
             has_header=False,
             separator="\t"
         )
