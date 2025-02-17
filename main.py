@@ -1,4 +1,4 @@
-from src.trainers import AutoencoderTrainer
+from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
 
 if __name__ == "__main__":
