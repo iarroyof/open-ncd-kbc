@@ -8,6 +8,10 @@ import wandb
 from tqdm import tqdm
 from ..data.tsv_text2text_dataset import *
 from ..models.text2text_autoencoders import PositionalAutoencoder
+import os
+
+# Set tokenizers parallelism
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class AutoencoderTrainer:
     def __init__(
