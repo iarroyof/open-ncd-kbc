@@ -55,7 +55,7 @@ class AutoencoderTrainer:
         )
         
         # Initialize model
-        self.model = SummarizingAutoencoder(
+        self.model = PositionalAutoencoder(
             vocab_size=len(self.dataset.tokenizer),
             **model_config
         ).to(self.device)
@@ -80,7 +80,7 @@ class AutoencoderTrainer:
         self.use_wandb = use_wandb
         if use_wandb:
             wandb.init(
-                project="summarizing-autoencoder",
+                project="positional-autoencoder",
                 config={
                     "model_config": model_config,
                     "training_config": training_config
