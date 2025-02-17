@@ -9,11 +9,14 @@ from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 import itertools
 import re
+import csv
 from typing import List, Dict, Optional, Union
 from dataclasses import dataclass
 
 def convert_camel_case(text: str) -> str:
     """Convert CamelCase to space-separated lowercase text"""
+    if not isinstance(text, str):
+        text = str(text)
     # Handle special cases first (e.g., XMLHTTPRequest)
     text = re.sub(r'([A-Z]{2,})', lambda m: ' ' + m.group(1).lower() + ' ', text)
     # Handle regular CamelCase
@@ -47,6 +50,7 @@ class TSVText2TextDataset(Dataset):
         self.cache_dir = Path(cache_dir) if cache_dir else Path("./cache")
         self.cache_dir.mkdir(exist_ok=True)
         self.chunk_size = chunk_size
+        self.vocab_size = vocab_size  # Store vocab_size for later use
         
         np.random.seed(seed)
         
@@ -75,12 +79,14 @@ class TSVText2TextDataset(Dataset):
                 file_path,
                 sep=separator,
                 header=0 if has_header else None,
-                usecols=columns,  # Only read needed columns
-                names=columns,    # Use column indices as names
-                engine='python',  # More flexible engine for handling messy data
+                usecols=columns,
+                names=columns,
+                engine='python',
                 on_bad_lines='skip',
                 dtype=str,
-                chunksize=chunk_size
+                chunksize=chunk_size,
+                quoting=csv.QUOTE_NONE,  # Disable quote handling
+                encoding='utf-8'
             ):
                 yield chunk
         except Exception as e:
@@ -107,17 +113,19 @@ class TSVText2TextDataset(Dataset):
 
     def _process_text(self, text: str) -> str:
         """Process text by converting CamelCase and cleaning"""
-        # Convert to string if not already
-        text = str(text)
-        # Convert CamelCase
-        text = convert_camel_case(text)
-        # Remove extra whitespace
-        text = ' '.join(text.split())
-        return text
+        return convert_camel_case(text)
+
+    def _process_dataframe_text(self, df: pd.DataFrame, columns: List[int]) -> pd.DataFrame:
+        """Process text in specified columns of a dataframe"""
+        result = df.copy()
+        for col in columns:
+            result[col] = result[col].map(self._process_text)
+        return result
 
     def _setup_tokenizer(self, tokenizer_path: Optional[str], vocab_size: int) -> Tokenizer:
         if tokenizer_path and Path(tokenizer_path).exists():
-            return Tokenizer.from_file(tokenizer_path)
+            tokenizer = Tokenizer.from_file(tokenizer_path)
+            return tokenizer
         
         tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
         tokenizer.pre_tokenizer = Whitespace()
@@ -145,9 +153,9 @@ class TSVText2TextDataset(Dataset):
                     
                     all_text = []
                     for cols in [config.source_columns, config.target_columns]:
-                        # Process each column's text
-                        processed_cols = chunk[cols].applymap(self._process_text)
-                        text = processed_cols.agg(config.join_token.join, axis=1)
+                        # Process each column's text using the new method
+                        processed_chunk = self._process_dataframe_text(chunk[cols], cols)
+                        text = processed_chunk.agg(config.join_token.join, axis=1)
                         all_text.extend(text.tolist())
                     
                     if all_text:
@@ -159,6 +167,10 @@ class TSVText2TextDataset(Dataset):
             tokenizer.save(str(self.cache_dir / "tokenizer.json"))
         
         return tokenizer
+
+    def get_vocab_size(self) -> int:
+        """Get the vocabulary size of the tokenizer"""
+        return self.vocab_size
 
     def __len__(self) -> int:
         return self.total_size
@@ -191,17 +203,14 @@ class TSVText2TextDataset(Dataset):
             if local_idx >= len(chunk):
                 raise IndexError("Invalid local index after filtering")
             
-            # Process source and target text
-            source_text = config.join_token.join(
-                chunk.iloc[local_idx][config.source_columns]
-                .apply(self._process_text)
-                .tolist()
-            )
-            target_text = config.join_token.join(
-                chunk.iloc[local_idx][config.target_columns]
-                .apply(self._process_text)
-                .tolist()
-            )
+            # Process source and target text using the new method
+            source_chunk = self._process_dataframe_text(
+                chunk[config.source_columns], config.source_columns)
+            target_chunk = self._process_dataframe_text(
+                chunk[config.target_columns], config.target_columns)
+            
+            source_text = config.join_token.join(source_chunk.iloc[local_idx].tolist())
+            target_text = config.join_token.join(target_chunk.iloc[local_idx].tolist())
             
             # Tokenize
             source_encoding = self.tokenizer.encode(source_text)
