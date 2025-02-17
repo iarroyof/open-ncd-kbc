@@ -61,7 +61,8 @@ class AutoencoderTrainer:
             shuffle=True,
             collate_fn=collate_fn,
             num_workers=training_config.get('num_workers', 4),
-            pin_memory=True
+            pin_memory=True,
+            prefetch_factor=2
         )
         
         # Update model_config with vocab_size from dataset
