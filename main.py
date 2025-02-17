@@ -14,7 +14,7 @@ if __name__ == "__main__":
         'pe_mode': 'fixed',
         'use_normalization': True,
         'norm_type': 'batch',
-        'max_seq_len': 5000
+        'max_seq_len': 30
     }
     
     training_config = {
