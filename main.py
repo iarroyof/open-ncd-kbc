@@ -5,10 +5,10 @@ if __name__ == "__main__":
     # Example configuration
     model_config = {
         'vocab_size': 32000,
-        'target_seq_len': 3,
-        'd_model': 512,
-        'hidden_dim': 256,
-        'num_encoder_layers': 3,
+        'target_seq_len': 64,
+        'd_model': 2048,
+        'hidden_dim': 1024,
+        'num_encoder_layers': 2,
         'dropout': 0.1,
         'activation': 'ReLU',
         'pe_mode': 'fixed',
