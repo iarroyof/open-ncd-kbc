@@ -7,6 +7,7 @@ from typing import List, Optional
 import wandb
 from tqdm import tqdm
 from ..data.tsv_text2text_dataset import *
+from ..models.text2text_autoencoders import PositionalAutoencoder
 
 class AutoencoderTrainer:
     def __init__(
