@@ -1,37 +1,31 @@
-# Standard library imports
-import os
-import logging
-from pathlib import Path
-from typing import List, Optional, Dict, Any
-
-# Third-party imports
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import OneCycleLR
+import logging
+from pathlib import Path
+from typing import List, Optional, Dict
 import wandb
 from tqdm import tqdm
+import gc
+import os
 
-# Local application imports
-from ..data.tsv_text2text_dataset import TSVText2TextDataset, ColumnConfig, collate_fn
+from ..data.tsv_text2text_dataset import CachedTSVDataset, ColumnConfig, CacheConfig
 from ..models.text2text_autoencoders import PositionalAutoencoder
-
-# Set tokenizers parallelism
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+from ..utils.metrics import TextGenerationMetrics
 
 class AutoencoderTrainer:
     def __init__(
         self,
         model_config: dict,
         training_config: dict,
-        data_configs: List[ColumnConfig],
+        train_configs: List[ColumnConfig],
+        valid_configs: List[ColumnConfig],
         tokenizer_path: Optional[str] = None,
         cache_dir: str = "./cache",
         log_dir: str = "./logs",
         use_wandb: bool = False
     ):
-        self.model_config = model_config.copy()  # Make a copy to avoid modifying original
+        self.model_config = model_config.copy()
         self.training_config = training_config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
@@ -44,50 +38,74 @@ class AutoencoderTrainer:
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
         
-        # Initialize dataset with vocab_size from model_config
-        self.dataset = TSVText2TextDataset(
-            configs=data_configs,
-            tokenizer_path=tokenizer_path,
-            vocab_size=self.model_config.get('vocab_size', 32000),
+        # Cache configuration
+        cache_config = CacheConfig(
+            enable_cache=True,
             cache_dir=cache_dir,
-            seed=training_config.get('seed', 42),
-            chunk_size=training_config.get('chunk_size', 10000)
+            cache_format='h5'
         )
         
-        # Initialize dataloader
-        self.dataloader = DataLoader(
-            self.dataset,
+        # Initialize datasets with caching
+        logging.info("Initializing train dataset (will cache if not cached)")
+        self.train_dataset = CachedTSVDataset(
+            configs=train_configs,
+            cache_config=cache_config,
+            tokenizer_path=tokenizer_path,
+            vocab_size=self.model_config.get('vocab_size', 32000)
+        )
+        
+        logging.info("Initializing validation dataset (will cache if not cached)")
+        self.valid_dataset = CachedTSVDataset(
+            configs=valid_configs,
+            cache_config=cache_config,
+            tokenizer_path=tokenizer_path,
+            vocab_size=self.model_config.get('vocab_size', 32000)
+        )
+        
+        # Initialize dataloaders
+        self.train_loader = DataLoader(
+            self.train_dataset,
             batch_size=training_config['batch_size'],
             shuffle=True,
-            collate_fn=collate_fn,
+            num_workers=training_config.get('num_workers', 4),
+            pin_memory=True,
+            prefetch_factor=2
+        )
+        
+        self.valid_loader = DataLoader(
+            self.valid_dataset,
+            batch_size=training_config['batch_size'],
+            shuffle=False,
             num_workers=training_config.get('num_workers', 4),
             pin_memory=True,
             prefetch_factor=2
         )
         
         # Update model_config with vocab_size from dataset
-        self.model_config['vocab_size'] = self.dataset.get_vocab_size()
+        self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
         
-        # Initialize model with updated config
+        # Initialize model
         self.model = PositionalAutoencoder(**self.model_config).to(self.device)
         
         # Initialize optimizer and scheduler
-        self.optimizer = AdamW(
+        self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=training_config['learning_rate'],
             weight_decay=training_config.get('weight_decay', 0.01)
         )
         
-        # Cosine annealing scheduler with warmup
-        self.scheduler = OneCycleLR(
+        self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
             self.optimizer,
             max_lr=training_config['learning_rate'],
             epochs=training_config['num_epochs'],
-            steps_per_epoch=len(self.dataloader),
-            pct_start=0.1  # 10% warmup
+            steps_per_epoch=len(self.train_loader),
+            pct_start=0.1
         )
         
-        # Initialize wandb if requested
+        # Initialize metrics calculator
+        self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
+        
+        # Initialize wandb
         self.use_wandb = use_wandb
         if use_wandb:
             wandb.init(
@@ -101,7 +119,7 @@ class AutoencoderTrainer:
     def train_epoch(self, epoch: int) -> float:
         self.model.train()
         total_loss = 0
-        progress_bar = tqdm(self.dataloader, desc=f"Epoch {epoch}")
+        progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         
         for batch_idx, batch in enumerate(progress_bar):
             try:
@@ -109,27 +127,14 @@ class AutoencoderTrainer:
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Ensure target sequence length matches model's expected length
-                if target_ids.size(1) < self.model.target_seq_len:
-                    # If target is too short, pad it
-                    pad_length = self.model.target_seq_len - target_ids.size(1)
-                    target_ids = torch.nn.functional.pad(target_ids, (0, pad_length), value=0)
-                else:
-                    # If target is too long, truncate it
-                    target_ids = target_ids[:, :self.model.target_seq_len]
-                
                 # Forward pass
                 outputs = self.model(source_ids)
                 
                 # Calculate loss
-                batch_size, seq_len, vocab_size = outputs.shape
-                # Ensure target_ids is the right shape and length
-                target_ids = target_ids[:, :seq_len].contiguous()
-                # Reshape for loss calculation
-                outputs = outputs.view(-1, vocab_size)
-                target_ids = target_ids.view(-1)
-                # Calculate loss
-                loss = nn.CrossEntropyLoss()(outputs, target_ids)
+                loss = nn.CrossEntropyLoss()(
+                    outputs.view(-1, outputs.size(-1)),
+                    target_ids.view(-1)
+                )
                 
                 # Backward pass
                 self.optimizer.zero_grad()
@@ -149,46 +154,108 @@ class AutoencoderTrainer:
                         'learning_rate': self.scheduler.get_last_lr()[0]
                     })
                     
+                # Clear cache periodically
+                if batch_idx % 100 == 0 and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
             except Exception as e:
                 print(f"Error in batch {batch_idx}: {str(e)}")
                 continue
         
-        epoch_loss = total_loss / len(self.dataloader)
-        return epoch_loss
+        return total_loss / len(self.train_loader)
 
-    def save_checkpoint(self, epoch: int, loss: float):
+    @torch.no_grad()
+    def evaluate(self) -> Dict[str, float]:
+        """Evaluate model on validation set"""
+        self.model.eval()
+        total_loss = 0
+        all_predictions = []
+        all_references = []
+        
+        for batch in tqdm(self.valid_loader, desc="Evaluating"):
+            try:
+                # Move data to device
+                source_ids = batch['source_text'].to(self.device)
+                target_ids = batch['target_text'].to(self.device)
+                
+                # Forward pass
+                outputs = self.model(source_ids)
+                
+                # Calculate loss
+                loss = nn.CrossEntropyLoss()(
+                    outputs.view(-1, outputs.size(-1)),
+                    target_ids.view(-1)
+                )
+                total_loss += loss.item()
+                
+                # Get predictions
+                predictions = outputs.argmax(dim=-1)
+                all_predictions.append(predictions.cpu())
+                all_references.append(target_ids.cpu())
+                
+            except Exception as e:
+                print(f"Error in evaluation batch: {str(e)}")
+                continue
+        
+        # Compute metrics
+        all_predictions = torch.cat(all_predictions, dim=0)
+        all_references = torch.cat(all_references, dim=0)
+        
+        metrics = self.metrics.compute_metrics(all_predictions, all_references)
+        metrics['val_loss'] = total_loss / len(self.valid_loader)
+        
+        # Clear memory
+        del all_predictions, all_references
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return metrics
+
+    def train(self):
+        logging.info("Starting training")
+        best_metrics = {'val_loss': float('inf'), 'bleu': 0}
+        
+        for epoch in range(self.training_config['num_epochs']):
+            # Train
+            train_loss = self.train_epoch(epoch)
+            
+            # Evaluate
+            val_metrics = self.evaluate()
+            
+            # Log metrics
+            log_msg = f"Epoch {epoch} - Train Loss: {train_loss:.4f}, Val Loss: {val_metrics['val_loss']:.4f}"
+            log_msg += f", BLEU: {val_metrics['bleu']:.4f}"
+            log_msg += f", ROUGE-L: {val_metrics['rougeL']:.4f}"
+            log_msg += f", METEOR: {val_metrics['meteor']:.4f}"
+            logging.info(log_msg)
+            
+            if self.use_wandb:
+                wandb.log({
+                    'epoch': epoch,
+                    'train_loss': train_loss,
+                    **val_metrics
+                })
+            
+            # Save best model
+            if val_metrics['val_loss'] < best_metrics['val_loss'] or \
+               val_metrics['bleu'] > best_metrics['bleu']:
+                best_metrics = val_metrics
+                self.save_checkpoint(epoch, val_metrics)
+                logging.info(f"Saved new best model with metrics: {val_metrics}")
+
+        logging.info("Training completed")
+        if self.use_wandb:
+            wandb.finish()
+
+    def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-            'loss': loss,
+            'metrics': metrics,
             'model_config': self.model_config,
             'training_config': self.training_config
         }
         torch.save(checkpoint, self.log_dir / f'checkpoint_epoch_{epoch}.pt')
-
-    def train(self):
-        logging.info("Starting training")
-        best_loss = float('inf')
-        
-        for epoch in range(self.training_config['num_epochs']):
-            epoch_loss = self.train_epoch(epoch)
-            
-            # Log metrics
-            logging.info(f"Epoch {epoch} - Loss: {epoch_loss:.4f}")
-            if self.use_wandb:
-                wandb.log({
-                    'epoch': epoch,
-                    'epoch_loss': epoch_loss
-                })
-            
-            # Save checkpoint if best loss
-            if epoch_loss < best_loss:
-                best_loss = epoch_loss
-                self.save_checkpoint(epoch, epoch_loss)
-                logging.info(f"Saved new best model with loss: {epoch_loss:.4f}")
-
-        logging.info("Training completed")
-        if self.use_wandb:
-            wandb.finish()
