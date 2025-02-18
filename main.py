@@ -4,6 +4,7 @@ from src.data.tsv_text2text_dataset import ColumnConfig, CacheConfig
 import logging
 import os
 from pathlib import Path
+import torch
 
 if __name__ == "__main__":
     # Setup logging
@@ -16,7 +17,7 @@ if __name__ == "__main__":
     # Model configuration
     model_config = {
         'vocab_size': 32000,
-        'target_seq_len': 64,
+        'target_seq_len': 128,
         'd_model': 2048,
         'hidden_dim': 1024,
         'num_encoder_layers': 2,
@@ -25,7 +26,7 @@ if __name__ == "__main__":
         'pe_mode': 'fixed',
         'use_normalization': True,
         'norm_type': 'batch',
-        'max_seq_len': 30
+        'max_seq_len': 64
     }
     
     # Training configuration
