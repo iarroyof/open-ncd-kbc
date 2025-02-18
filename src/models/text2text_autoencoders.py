@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 import math
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 class PositionalEncoding(nn.Module):
     def __init__(
