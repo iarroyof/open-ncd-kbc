@@ -17,7 +17,7 @@ from ..data.tsv_text2text_dataset import (
     collate_fn
 )
 from ..models.text2text_autoencoders import PositionalAutoencoder
-from ..metrics import TextGenerationMetrics
+from ..metrics.evaluation import TextGenerationMetrics
 
 class AutoencoderTrainer:
     def __init__(
