@@ -348,25 +348,66 @@ class CachedTSVDataset(Dataset):
                     logging.error(f"Error closing cache file: {str(e)}")
                     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """Get a single item from the dataset"""
         try:
             if self.cache_config.cache_format == 'h5':
-                source_ids = self.data_cache['source_ids'][idx].copy()  # Make a copy to avoid HDF5 issues
+                source_ids = self.data_cache['source_ids'][idx].copy()
                 target_ids = self.data_cache['target_ids'][idx].copy()
             else:
                 source_ids, target_ids = self.data_cache[idx]
 
+            # Convert to tensors
+            source_tensor = torch.tensor(source_ids, dtype=torch.long)
+            target_tensor = torch.tensor(target_ids, dtype=torch.long)
+            
+            # Verify shapes
+            if source_tensor.size(0) != self.data_cache.attrs['max_source_len']:
+                source_tensor = self._adjust_sequence(
+                    source_tensor, 
+                    self.data_cache.attrs['max_source_len'],
+                    pad_left=True  # Pad from left for source
+                )
+            
+            if target_tensor.size(0) != self.data_cache.attrs['max_target_len']:
+                target_tensor = self._adjust_sequence(
+                    target_tensor, 
+                    self.data_cache.attrs['max_target_len'],
+                    pad_left=False  # Pad from right for target
+                )
+
             return {
-                'source_text': torch.tensor(source_ids, dtype=torch.long),
-                'target_text': torch.tensor(target_ids, dtype=torch.long)
+                'source_text': source_tensor,
+                'target_text': target_tensor
             }
+            
         except Exception as e:
             logging.error(f"Error reading item {idx}: {str(e)}")
-            # Return a zero tensor of appropriate shape as fallback
-            shape = (self.model_config.get('max_seq_len', 512),)
+            # Return zero tensors of correct shape
             return {
-                'source_text': torch.zeros(shape, dtype=torch.long),
-                'target_text': torch.zeros(shape, dtype=torch.long)
+                'source_text': torch.zeros(self.data_cache.attrs['max_source_len'], dtype=torch.long),
+                'target_text': torch.zeros(self.data_cache.attrs['max_target_len'], dtype=torch.long)
             }
+            
+    def _adjust_sequence(self, tensor: torch.Tensor, desired_length: int, pad_left: bool = False) -> torch.Tensor:
+        """Adjust sequence length by padding or truncating"""
+        current_length = tensor.size(0)
+        
+        if current_length == desired_length:
+            return tensor
+            
+        if current_length > desired_length:
+            # Truncate
+            if pad_left:
+                return tensor[-desired_length:]  # Keep right side
+            else:
+                return tensor[:desired_length]  # Keep left side
+        else:
+            # Pad
+            padding_size = desired_length - current_length
+            if pad_left:
+                return torch.cat([torch.zeros(padding_size, dtype=tensor.dtype), tensor])
+            else:
+                return torch.cat([tensor, torch.zeros(padding_size, dtype=tensor.dtype)])
 
 def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     """Custom collate function for padding sequences"""
