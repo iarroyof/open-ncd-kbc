@@ -146,4 +146,196 @@ class AutoencoderTrainer:
                 
                 # Ensure target has correct sequence length
                 if target_ids.size(1) != self.model_config['target_seq_len']:
-                    target_ids = target_ids[:, :self.model_config['target_seq_
+                    if target_ids.size(1) > self.model_config['target_seq_len']:
+                        target_ids = target_ids[:, :self.model_config['target_seq_len']]
+                    else:
+                        pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
+                        target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
+                
+                # Forward pass
+                outputs = self.model(source_ids)  # [batch_size, target_seq_len, vocab_size]
+                
+                # Calculate loss
+                outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
+                targets_flat = target_ids.contiguous().view(-1)
+                loss = nn.CrossEntropyLoss(ignore_index=0)(outputs_flat, targets_flat)
+                
+                # Backward pass
+                self.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                self.optimizer.step()
+                self.scheduler.step()
+                
+                # Update metrics
+                total_loss += loss.item()
+                valid_batches += 1
+                avg_loss = total_loss / valid_batches
+                
+                progress_bar.set_postfix({'loss': f'{avg_loss:.4f}'})
+                
+                if self.use_wandb:
+                    wandb.log({
+                        'batch_loss': loss.item(),
+                        'learning_rate': self.scheduler.get_last_lr()[0]
+                    })
+                
+                # Periodic memory cleanup
+                if batch_idx % 100 == 0:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    
+            except Exception as e:
+                logging.warning(f"Error in training batch {batch_idx}: {str(e)}")
+                continue
+        
+        return total_loss / valid_batches if valid_batches > 0 else float('inf')
+
+    @torch.no_grad()
+    def evaluate(self) -> Dict[str, float]:
+        """Evaluate model on validation set"""
+        self.model.eval()
+        total_loss = 0
+        all_predictions = []
+        all_references = []
+        valid_batches = 0
+        
+        for batch in tqdm(self.valid_loader, desc="Evaluating"):
+            try:
+                # Move data to device
+                source_ids = batch['source_text'].to(self.device)
+                target_ids = batch['target_text'].to(self.device)
+                
+                # Ensure target has correct sequence length
+                if target_ids.size(1) != self.model_config['target_seq_len']:
+                    if target_ids.size(1) > self.model_config['target_seq_len']:
+                        target_ids = target_ids[:, :self.model_config['target_seq_len']]
+                    else:
+                        pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
+                        target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
+                
+                # Forward pass
+                outputs = self.model(source_ids)  # [batch_size, target_seq_len, vocab_size]
+                
+                # Calculate loss
+                outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
+                targets_flat = target_ids.contiguous().view(-1)
+                loss = nn.CrossEntropyLoss(ignore_index=0)(outputs_flat, targets_flat)
+                
+                total_loss += loss.item()
+                valid_batches += 1
+                
+                # Get predictions
+                predictions = outputs.argmax(dim=-1)  # [batch_size, target_seq_len]
+                
+                # Store predictions and references
+                all_predictions.append(predictions.cpu())
+                all_references.append(target_ids.cpu())
+                
+            except Exception as e:
+                logging.warning(f"Error in evaluation batch: {str(e)}")
+                continue
+        
+        if not all_predictions:
+            logging.error("No valid predictions during evaluation")
+            return {
+                'val_loss': float('inf'),
+                'bleu': 0.0,
+                'rouge1': 0.0,
+                'rouge2': 0.0,
+                'rougeL': 0.0,
+                'meteor': 0.0
+            }
+        
+        try:
+            # Compute average loss
+            avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
+            
+            # Concatenate all predictions and references
+            all_predictions = torch.cat(all_predictions, dim=0)
+            all_references = torch.cat(all_references, dim=0)
+            
+            # Compute metrics
+            metrics = self.metrics.compute_metrics(all_predictions, all_references)
+            metrics['val_loss'] = avg_loss
+            
+        except Exception as e:
+            logging.error(f"Error computing metrics: {str(e)}")
+            metrics = {
+                'val_loss': avg_loss if 'avg_loss' in locals() else float('inf'),
+                'bleu': 0.0,
+                'rouge1': 0.0,
+                'rouge2': 0.0,
+                'rougeL': 0.0,
+                'meteor': 0.0
+            }
+        
+        # Clear memory
+        del all_predictions, all_references
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return metrics
+
+    def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
+        """Save model checkpoint"""
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'metrics': metrics,
+            'model_config': self.model_config,
+            'training_config': self.training_config
+        }
+        torch.save(checkpoint, self.log_dir / f'checkpoint_epoch_{epoch}.pt')
+
+    def train(self):
+        """Complete training loop"""
+        logging.info("Starting training")
+        best_metrics = {'val_loss': float('inf'), 'bleu': 0}
+        
+        try:
+            for epoch in range(self.training_config['num_epochs']):
+                # Train
+                train_loss = self.train_epoch(epoch)
+                
+                # Evaluate
+                val_metrics = self.evaluate()
+                
+                # Log metrics
+                log_msg = f"Epoch {epoch} - Train Loss: {train_loss:.4f}, Val Loss: {val_metrics['val_loss']:.4f}"
+                log_msg += f", BLEU: {val_metrics['bleu']:.4f}"
+                log_msg += f", ROUGE-L: {val_metrics['rougeL']:.4f}"
+                log_msg += f", METEOR: {val_metrics['meteor']:.4f}"
+                logging.info(log_msg)
+                
+                if self.use_wandb:
+                    wandb.log({
+                        'epoch': epoch,
+                        'train_loss': train_loss,
+                        **val_metrics
+                    })
+                
+                # Save best model
+                if val_metrics['val_loss'] < best_metrics['val_loss'] or \
+                   val_metrics['bleu'] > best_metrics['bleu']:
+                    best_metrics = val_metrics
+                    self.save_checkpoint(epoch, val_metrics)
+                    logging.info(f"Saved new best model with metrics: {val_metrics}")
+                    
+        except KeyboardInterrupt:
+            logging.info("Training interrupted by user")
+        except Exception as e:
+            logging.error(f"Training failed with error: {str(e)}")
+            raise
+        finally:
+            logging.info("Training completed")
+            if self.use_wandb:
+                wandb.finish()
+
+    def __del__(self):
+        """Cleanup resources"""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
