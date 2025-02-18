@@ -12,7 +12,125 @@ import re
 import csv
 from typing import List, Dict, Optional, Union
 from dataclasses import dataclass
+import h5py
+import hashlib
+import logging
 
+@dataclass
+class CacheConfig:
+    """Configuration for dataset caching"""
+    enable_cache: bool = True
+    cache_dir: str = "./cache"
+    cache_format: str = "h5"  # 'h5' or 'mmap'
+    preload_cache: bool = False  # Whether to load entire cache into memory
+
+class CachedTSVDataset(Dataset):
+    def __init__(
+        self,
+        configs: List[ColumnConfig],
+        cache_config: CacheConfig,
+        tokenizer_path: Optional[str] = None,
+        vocab_size: int = 32000,
+        max_length: int = 512,
+        seed: int = 42
+    ):
+        self.configs = configs
+        self.cache_config = cache_config
+        self.max_length = max_length
+        
+        # Setup caching
+        self.cache_dir = Path(cache_config.cache_dir)
+        self.cache_dir.mkdir(exist_ok=True)
+        
+        # Initialize tokenizer
+        self.tokenizer = self._setup_tokenizer(tokenizer_path, vocab_size)
+        
+        # Create or load cache
+        self.cache_path = self._get_cache_path()
+        self.data_cache = self._setup_cache()
+        
+        # Initialize indices
+        self._setup_indices()
+
+    def _get_cache_path(self) -> Path:
+        """Generate unique cache path based on dataset configuration"""
+        config_str = str(sorted([
+            (c.file_path, c.source_columns, c.target_columns) 
+            for c in self.configs
+        ]))
+        cache_hash = hashlib.md5(config_str.encode()).hexdigest()
+        return self.cache_dir / f"dataset_cache_{cache_hash}.{self.cache_config.cache_format}"
+
+    def _setup_cache(self) -> Union[h5py.File, np.memmap]:
+        """Setup cache file based on configuration"""
+        if self.cache_path.exists():
+            if self.cache_config.cache_format == 'h5':
+                return h5py.File(self.cache_path, 'r')
+            else:  # mmap
+                return np.load(self.cache_path, mmap_mode='r')
+        else:
+            return self._create_cache()
+
+    def _create_cache(self) -> Union[h5py.File, np.memmap]:
+        """Create and populate cache file"""
+        logging.info(f"Creating cache file at {self.cache_path}")
+        
+        # Process all data first to get dimensions
+        all_source_ids = []
+        all_target_ids = []
+        
+        for config in self.configs:
+            for chunk in self._read_chunks(config):
+                source_encodings = self.tokenizer.encode_batch(chunk['source'])
+                target_encodings = self.tokenizer.encode_batch(chunk['target'])
+                
+                for src, tgt in zip(source_encodings, target_encodings):
+                    all_source_ids.append(src.ids[:self.max_length])
+                    all_target_ids.append(tgt.ids[:self.max_length])
+        
+        # Create cache file
+        if self.cache_config.cache_format == 'h5':
+            with h5py.File(self.cache_path, 'w') as f:
+                f.create_dataset('source_ids', data=np.array(all_source_ids, dtype=np.int32))
+                f.create_dataset('target_ids', data=np.array(all_target_ids, dtype=np.int32))
+                f.create_dataset('lengths', data=np.array(
+                    [(len(src), len(tgt)) for src, tgt in zip(all_source_ids, all_target_ids)],
+                    dtype=np.int32
+                ))
+            return h5py.File(self.cache_path, 'r')
+        
+        else:  # mmap
+            data = np.array(list(zip(all_source_ids, all_target_ids)), dtype=np.int32)
+            np.save(self.cache_path, data)
+            return np.load(self.cache_path, mmap_mode='r')
+
+    def _setup_indices(self):
+        """Setup indices for dataset access"""
+        if self.cache_config.cache_format == 'h5':
+            self.length = len(self.data_cache['source_ids'])
+        else:
+            self.length = len(self.data_cache)
+
+    def __len__(self) -> int:
+        return self.length
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        if self.cache_config.cache_format == 'h5':
+            source_ids = self.data_cache['source_ids'][idx]
+            target_ids = self.data_cache['target_ids'][idx]
+        else:
+            source_ids, target_ids = self.data_cache[idx]
+
+        return {
+            'source_text': torch.tensor(source_ids, dtype=torch.long),
+            'target_text': torch.tensor(target_ids, dtype=torch.long)
+        }
+
+    def __del__(self):
+        """Cleanup cache file handles"""
+        if hasattr(self, 'data_cache'):
+            if isinstance(self.data_cache, h5py.File):
+                self.data_cache.close()
 def convert_camel_case(text: str) -> str:
     """Convert CamelCase to space-separated lowercase text"""
     if not isinstance(text, str):
