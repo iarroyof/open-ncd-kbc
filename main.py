@@ -1,5 +1,6 @@
+# main.py
 from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
-from src.data.tsv_text2text_dataset import ColumnConfig
+from src.data.tsv_text2text_dataset import ColumnConfig, CacheConfig
 import logging
 import os
 from pathlib import Path
