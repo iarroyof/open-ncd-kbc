@@ -64,23 +64,37 @@ class CachedTSVDataset(Dataset):
     def _read_chunks(self, config: ColumnConfig):
         """Read data in chunks"""
         try:
+            # Create column names mapping
+            source_cols = [f'col_{i}' for i in config.source_columns]
+            target_cols = [f'col_{i}' for i in config.target_columns]
+            all_cols = source_cols + target_cols
+            col_mapping = dict(zip(range(len(all_cols)), all_cols))
+            
             for chunk in pd.read_csv(
                 config.file_path,
                 sep=config.separator,
                 usecols=config.source_columns + config.target_columns,
-                header=0 if config.has_header else None,
+                header=None,  # Always treat as no header
+                names=all_cols,  # Use our generated column names
                 chunksize=10000,
-                dtype=str
+                dtype=str,
+                on_bad_lines='skip'
             ):
-                source_text = chunk[config.source_columns].agg(config.join_token.join, axis=1)
-                target_text = chunk[config.target_columns].agg(config.join_token.join, axis=1)
-                yield pd.DataFrame({
-                    'source': source_text,
-                    'target': target_text
+                # Process source and target text
+                source_text = chunk[source_cols].astype(str).agg(config.join_token.join, axis=1)
+                target_text = chunk[target_cols].astype(str).agg(config.join_token.join, axis=1)
+                
+                # Create DataFrame with processed text
+                processed_chunk = pd.DataFrame({
+                    'source': source_text.values,
+                    'target': target_text.values
                 })
+                
+                yield processed_chunk
+                
         except Exception as e:
             logging.error(f"Error reading file {config.file_path}: {str(e)}")
-            yield pd.DataFrame()
+            yield pd.DataFrame(columns=['source', 'target'])
 
     def _get_cache_path(self) -> Path:
         """Generate unique cache path based on dataset configuration"""
@@ -144,28 +158,40 @@ class CachedTSVDataset(Dataset):
     def _setup_tokenizer(self, tokenizer_path: Optional[str], vocab_size: int) -> Tokenizer:
         """Initialize or load tokenizer"""
         if tokenizer_path and Path(tokenizer_path).exists():
+            logging.info(f"Loading tokenizer from {tokenizer_path}")
             return Tokenizer.from_file(tokenizer_path)
         
+        logging.info("Creating and training new tokenizer")
         # Create new tokenizer
         tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
         tokenizer.pre_tokenizer = Whitespace()
         trainer = trainers.BpeTrainer(
             vocab_size=vocab_size,
             special_tokens=["[PAD]", "[UNK]", "[BOS]", "[EOS]"],
+            min_frequency=2
         )
         
         # Train tokenizer on dataset
         def text_iterator():
+            all_texts = []
             for config in self.configs:
                 for chunk in self._read_chunks(config):
-                    yield from chunk['source'].tolist()
-                    yield from chunk['target'].tolist()
+                    if not chunk.empty:
+                        # Combine source and target texts
+                        texts = chunk['source'].tolist() + chunk['target'].tolist()
+                        # Filter out None or empty strings
+                        texts = [str(text) for text in texts if text is not None and str(text).strip()]
+                        all_texts.extend(texts)
+            return all_texts
         
+        # Train the tokenizer
         tokenizer.train_from_iterator(text_iterator(), trainer=trainer)
         
         # Save tokenizer
         if self.cache_dir:
-            tokenizer.save(str(self.cache_dir / "tokenizer.json"))
+            tokenizer_save_path = self.cache_dir / "tokenizer.json"
+            tokenizer.save(str(tokenizer_save_path))
+            logging.info(f"Saved tokenizer to {tokenizer_save_path}")
         
         return tokenizer
 
