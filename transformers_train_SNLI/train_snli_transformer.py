@@ -113,9 +113,16 @@ class VanillaTransformer(nn.Module):
         return self.fc(out)
 
 class DataLoader_custom(Dataset):
-    def __init__(self, data_dir, split):
-        with open(data_dir, 'r') as file:
-            dic_data = json.load(file)
+    def __init__(self, data_dir_part1, data_dir_part2, split):
+        with open(data_dir_part1, 'r') as file1, open(data_dir_part2, 'r') as file2:
+            dic_data_part1 = json.load(file1)
+            dic_data_part2 = json.load(file2)
+        
+        # Combinar las dos partes
+        dic_data = {
+            split: dic_data_part1[split] + dic_data_part2[split]
+        }
+        
         self.X, self.y = self.separar(dic_data, split)
         self.samples = len(self.X)
     
@@ -134,8 +141,6 @@ class DataLoader_custom(Dataset):
         return X, y
 
     def tokenize(self, text):
-        # Tokenize the text by splitting on spaces and converting to indices
-        # Here, we use a simple approach, but you may want to use a more sophisticated tokenizer
         return [ord(char) for char in text]
 
 def collate_fn(batch):
@@ -157,9 +162,10 @@ def train_transformer():
     print(f"DEVICE: {device}")
     model = model.to(device)
     
-    data_dir = "SNLI_procesados_tuplas.json"
+    data_dir_part1 = "SNLI_procesados_tuplas_part1.json"
+    data_dir_part2 = "SNLI_procesados_tuplas_part2.json"
     split = "dev"
-    dataset = DataLoader_custom(data_dir, split)
+    dataset = DataLoader_custom(data_dir_part1, data_dir_part2, split)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate_fn)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
