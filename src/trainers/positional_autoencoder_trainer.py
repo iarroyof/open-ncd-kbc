@@ -9,7 +9,13 @@ from tqdm import tqdm
 import gc
 import os
 
-from ..data.tsv_text2text_dataset import CachedTSVDataset, ColumnConfig, CacheConfig
+# src/trainers/positional_autoencoder_trainer.py
+from ..data.tsv_text2text_dataset import (
+    CachedTSVDataset, 
+    ColumnConfig, 
+    CacheConfig,
+    collate_fn
+)
 from ..models.text2text_autoencoders import PositionalAutoencoder
 from ..utils.metrics import TextGenerationMetrics
 
