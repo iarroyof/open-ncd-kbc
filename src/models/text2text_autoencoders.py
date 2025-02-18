@@ -201,6 +201,10 @@ class PositionalAutoencoder(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def forward(self, src: torch.Tensor) -> torch.Tensor:
+        # Truncate input if needed (keeping right side for source)
+        if src.size(1) > self.max_seq_len:
+            src = src[:, -self.max_seq_len:]
+        
         # Embedding and positional encoding
         x = self.embedding(src) * math.sqrt(self.d_model)
         x = self.pos_encoder(x)
