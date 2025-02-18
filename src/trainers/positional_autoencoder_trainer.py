@@ -117,8 +117,10 @@ class AutoencoderTrainer:
             )
 
     def train_epoch(self, epoch: int) -> float:
+        """Train for one epoch"""
         self.model.train()
         total_loss = 0
+        valid_batches = 0
         progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         
         for batch_idx, batch in enumerate(progress_bar):
@@ -128,13 +130,21 @@ class AutoencoderTrainer:
                 target_ids = batch['target_text'].to(self.device)
                 
                 # Forward pass
-                outputs = self.model(source_ids)
+                outputs = self.model(source_ids)  # [batch_size, seq_len, vocab_size]
+                
+                # Ensure outputs and targets have matching dimensions
+                if outputs.size(1) != target_ids.size(1):
+                    min_len = min(outputs.size(1), target_ids.size(1))
+                    outputs = outputs[:, :min_len, :]
+                    target_ids = target_ids[:, :min_len]
+                
+                # Reshape for loss calculation
+                vocab_size = outputs.size(-1)
+                outputs_flat = outputs.contiguous().view(-1, vocab_size)
+                targets_flat = target_ids.contiguous().view(-1)
                 
                 # Calculate loss
-                loss = nn.CrossEntropyLoss()(
-                    outputs.view(-1, outputs.size(-1)),
-                    target_ids.view(-1)
-                )
+                loss = nn.CrossEntropyLoss(ignore_index=0)(outputs_flat, targets_flat)
                 
                 # Backward pass
                 self.optimizer.zero_grad()
@@ -145,7 +155,9 @@ class AutoencoderTrainer:
                 
                 # Update metrics
                 total_loss += loss.item()
-                avg_loss = total_loss / (batch_idx + 1)
+                valid_batches += 1
+                avg_loss = total_loss / valid_batches
+                
                 progress_bar.set_postfix({'loss': f'{avg_loss:.4f}'})
                 
                 if self.use_wandb:
@@ -153,16 +165,17 @@ class AutoencoderTrainer:
                         'batch_loss': loss.item(),
                         'learning_rate': self.scheduler.get_last_lr()[0]
                     })
-                    
-                # Clear cache periodically
-                if batch_idx % 100 == 0 and torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                
+                # Periodic memory cleanup
+                if batch_idx % 100 == 0:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                     
             except Exception as e:
-                print(f"Error in batch {batch_idx}: {str(e)}")
+                logging.warning(f"Error in training batch {batch_idx}: {str(e)}")
                 continue
         
-        return total_loss / len(self.train_loader)
+        return total_loss / valid_batches if valid_batches > 0 else float('inf')
 
     @torch.no_grad()
     def evaluate(self) -> Dict[str, float]:
