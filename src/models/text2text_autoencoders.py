@@ -1,5 +1,6 @@
 # src/models/text2text_autoencoders.py
 
+import torch.nn.functional as F
 import torch
 import torch.nn as nn
 import math
@@ -202,3 +203,306 @@ class PositionalAutoencoder(nn.Module):
         logits = self.fc(x)  # (batch_size, target_seq_len, vocab_size)
         
         return logits
+
+class Attention(nn.Module):
+    """Bahdanau attention mechanism"""
+    def __init__(self, hidden_size: int, attention_size: Optional[int] = None):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.attention_size = attention_size or hidden_size
+        
+        # Attention layers
+        self.attention_hidden = nn.Linear(hidden_size, self.attention_size, bias=False)
+        self.attention_context = nn.Linear(hidden_size, self.attention_size, bias=False)
+        self.attention_vector = nn.Linear(self.attention_size, 1, bias=False)
+        
+    def forward(
+        self, 
+        hidden: torch.Tensor,      # [batch_size, hidden_size]
+        encoder_outputs: torch.Tensor,  # [batch_size, seq_len, hidden_size]
+        mask: Optional[torch.Tensor] = None  # [batch_size, seq_len]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute attention weights and weighted context vector.
+        Returns:
+            context: Weighted sum of encoder outputs
+            attention_weights: Attention distribution over encoder outputs
+        """
+        seq_len = encoder_outputs.size(1)
+        
+        # Prepare hidden state
+        hidden_expanded = hidden.unsqueeze(1).expand(-1, seq_len, -1)  # [batch_size, seq_len, hidden_size]
+        
+        # Calculate attention scores
+        attention_hidden = self.attention_hidden(hidden_expanded)  # [batch_size, seq_len, attention_size]
+        attention_context = self.attention_context(encoder_outputs)  # [batch_size, seq_len, attention_size]
+        attention_sum = torch.tanh(attention_hidden + attention_context)  # [batch_size, seq_len, attention_size]
+        attention_scores = self.attention_vector(attention_sum).squeeze(-1)  # [batch_size, seq_len]
+        
+        # Apply mask if provided
+        if mask is not None:
+            attention_scores = attention_scores.masked_fill(~mask, float('-inf'))
+        
+        # Get attention weights and context vector
+        attention_weights = F.softmax(attention_scores, dim=1)  # [batch_size, seq_len]
+        context = torch.bmm(
+            attention_weights.unsqueeze(1),  # [batch_size, 1, seq_len]
+            encoder_outputs  # [batch_size, seq_len, hidden_size]
+        ).squeeze(1)  # [batch_size, hidden_size]
+        
+        return context, attention_weights
+
+class AttentionGRUEncoder(nn.Module):
+    """GRU encoder with embeddings"""
+    def __init__(
+        self,
+        vocab_size: int,
+        embed_size: int,
+        hidden_size: int,
+        num_layers: int = 1,
+        dropout: float = 0.1,
+        bidirectional: bool = True
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.num_directions = 2 if bidirectional else 1
+        
+        # Layers
+        self.embedding = nn.Embedding(vocab_size, embed_size)
+        self.gru = nn.GRU(
+            input_size=embed_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0,
+            bidirectional=bidirectional
+        )
+        
+        # Initialize weights
+        self._init_weights()
+        
+    def _init_weights(self):
+        """Initialize weights using Xavier uniform initialization"""
+        for name, param in self.named_parameters():
+            if 'weight' in name:
+                nn.init.xavier_uniform_(param)
+            elif 'bias' in name:
+                nn.init.zeros_(param)
+                
+    def forward(
+        self, 
+        src: torch.Tensor,  # [batch_size, seq_len]
+        src_lengths: Optional[torch.Tensor] = None  # [batch_size]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns:
+            outputs: Encoder outputs
+            hidden: Final hidden state
+        """
+        # Embed input
+        embedded = self.embedding(src)  # [batch_size, seq_len, embed_size]
+        
+        # Pack sequence if lengths provided
+        if src_lengths is not None:
+            embedded = nn.utils.rnn.pack_padded_sequence(
+                embedded, src_lengths.cpu(), batch_first=True, enforce_sorted=False
+            )
+        
+        # Pass through GRU
+        outputs, hidden = self.gru(embedded)  # outputs: [batch_size, seq_len, hidden_size*num_directions]
+        
+        # Unpack sequence if packed
+        if src_lengths is not None:
+            outputs, _ = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=True)
+            
+        # Combine directions if bidirectional
+        if self.gru.bidirectional:
+            # Combine directions in outputs
+            outputs = outputs.view(outputs.size(0), outputs.size(1), 2, -1)
+            outputs = outputs.sum(dim=2)  # [batch_size, seq_len, hidden_size]
+            
+            # Combine directions in hidden state
+            hidden = hidden.view(self.num_layers, 2, hidden.size(1), -1)
+            hidden = hidden.sum(dim=1)  # [num_layers, batch_size, hidden_size]
+            
+        return outputs, hidden
+
+class AttentionGRUDecoder(nn.Module):
+    """GRU decoder with attention mechanism"""
+    def __init__(
+        self,
+        vocab_size: int,
+        embed_size: int,
+        hidden_size: int,
+        num_layers: int = 1,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
+        # Layers
+        self.embedding = nn.Embedding(vocab_size, embed_size)
+        self.attention = Attention(hidden_size)
+        self.gru = nn.GRU(
+            input_size=embed_size + hidden_size,  # Concatenate embedding and context
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0
+        )
+        self.out = nn.Linear(hidden_size * 2, vocab_size)  # Use both hidden state and context
+        
+        # Initialize weights
+        self._init_weights()
+        
+    def _init_weights(self):
+        """Initialize weights using Xavier uniform initialization"""
+        for name, param in self.named_parameters():
+            if 'weight' in name:
+                nn.init.xavier_uniform_(param)
+            elif 'bias' in name:
+                nn.init.zeros_(param)
+                
+    def forward(
+        self,
+        input_step: torch.Tensor,  # [batch_size, 1]
+        last_hidden: torch.Tensor,  # [num_layers, batch_size, hidden_size]
+        encoder_outputs: torch.Tensor,  # [batch_size, src_seq_len, hidden_size]
+        src_mask: Optional[torch.Tensor] = None  # [batch_size, src_seq_len]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Single decoder step with attention.
+        Returns:
+            output: Vocabulary distribution
+            hidden: New hidden state
+            attention_weights: Attention weights for visualization
+        """
+        # Get batch size and last hidden state
+        batch_size = input_step.size(0)
+        last_hidden_top = last_hidden[-1]  # Use top layer hidden state for attention
+        
+        # Embed input
+        embedded = self.embedding(input_step)  # [batch_size, 1, embed_size]
+        
+        # Calculate attention
+        context, attention_weights = self.attention(
+            last_hidden_top,
+            encoder_outputs,
+            src_mask
+        )  # context: [batch_size, hidden_size]
+        
+        # Combine embedding and context
+        gru_input = torch.cat([
+            embedded,
+            context.unsqueeze(1)  # Add sequence dimension
+        ], dim=2)  # [batch_size, 1, embed_size + hidden_size]
+        
+        # GRU step
+        output, hidden = self.gru(gru_input, last_hidden)  # output: [batch_size, 1, hidden_size]
+        
+        # Calculate vocabulary distribution
+        output_combined = torch.cat([
+            output.squeeze(1),  # Remove sequence dimension
+            context
+        ], dim=1)  # [batch_size, hidden_size * 2]
+        
+        # Project to vocabulary size
+        output = self.out(output_combined)  # [batch_size, vocab_size]
+        
+        return output, hidden, attention_weights
+
+class AttentionGRUModel(nn.Module):
+    """Complete encoder-decoder model with attention"""
+    def __init__(
+        self,
+        vocab_size: int,
+        embed_size: int = 256,
+        hidden_size: int = 512,
+        num_layers: int = 2,
+        dropout: float = 0.1,
+        target_seq_len: int = 64,
+        max_seq_len: int = 512,
+        bidirectional_encoder: bool = True
+    ):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.target_seq_len = target_seq_len
+        self.max_seq_len = max_seq_len
+        
+        # Initialize encoder and decoder
+        self.encoder = AttentionGRUEncoder(
+            vocab_size=vocab_size,
+            embed_size=embed_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            bidirectional=bidirectional_encoder
+        )
+        
+        self.decoder = AttentionGRUDecoder(
+            vocab_size=vocab_size,
+            embed_size=embed_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout
+        )
+        
+    def forward(
+        self,
+        src: torch.Tensor,
+        tgt: Optional[torch.Tensor] = None,
+        teacher_forcing_ratio: float = 1.0
+    ) -> torch.Tensor:
+        """
+        Forward pass with optional teacher forcing.
+        Args:
+            src: Source sequence [batch_size, src_seq_len]
+            tgt: Target sequence (optional) [batch_size, tgt_seq_len]
+            teacher_forcing_ratio: Probability of using teacher forcing
+        Returns:
+            outputs: Sequence of vocabulary distributions [batch_size, tgt_seq_len, vocab_size]
+        """
+        batch_size = src.size(0)
+        device = src.device
+        
+        # Truncate source sequence if needed
+        if src.size(1) > self.max_seq_len:
+            src = src[:, -self.max_seq_len:]
+            
+        # Create source mask (1 for non-pad tokens)
+        src_mask = (src != 0).bool()
+        
+        # Encode source sequence
+        encoder_outputs, encoder_hidden = self.encoder(src)
+        
+        # Initialize decoder input with SOS token (assumed to be 1)
+        decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
+        
+        # Initialize decoder hidden state with encoder's final hidden state
+        decoder_hidden = encoder_hidden
+        
+        # Prepare storage for decoder outputs
+        outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
+        
+        # Generate target sequence
+        for t in range(self.target_seq_len):
+            # Decoder forward pass
+            output, decoder_hidden, _ = self.decoder(
+                decoder_input,
+                decoder_hidden,
+                encoder_outputs,
+                src_mask
+            )
+            
+            # Store output
+            outputs[:, t] = output
+            
+            # Determine next input
+            if tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
+                decoder_input = tgt[:, t:t+1]  # Teacher forcing
+            else:
+                decoder_input = output.argmax(dim=1, keepdim=True)  # Use own prediction
+                
+        return outputs
