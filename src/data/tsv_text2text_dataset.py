@@ -119,13 +119,14 @@ class CachedTSVDataset(Dataset):
         """Create and populate cache file"""
         logging.info(f"Creating cache file at {self.cache_path}")
         
-        # Process all data first to get dimensions
+        # Initialize lists for storage
         all_source_ids = []
         all_target_ids = []
         max_source_len = 0
         max_target_len = 0
         
-        # First pass: get maximum lengths
+        # Process all data and track lengths
+        logging.info("First pass: calculating maximum sequence lengths")
         for config in self.configs:
             for chunk in self._read_chunks(config):
                 if chunk.empty:
@@ -135,8 +136,9 @@ class CachedTSVDataset(Dataset):
                 target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
                 
                 for src, tgt in zip(source_encodings, target_encodings):
-                    max_source_len = max(max_source_len, len(src.ids))
-                    max_target_len = max(max_target_len, len(tgt.ids))
+                    if src and tgt:  # Ensure both sequences exist
+                        max_source_len = max(max_source_len, len(src.ids))
+                        max_target_len = max(max_target_len, len(tgt.ids))
 
         # Clip maximum lengths to model's max_length
         max_source_len = min(max_source_len, self.max_length)
@@ -146,6 +148,7 @@ class CachedTSVDataset(Dataset):
         logging.info(f"Maximum target length: {max_target_len}")
         
         # Second pass: create padded arrays
+        logging.info("Second pass: creating padded sequences")
         for config in self.configs:
             for chunk in self._read_chunks(config):
                 if chunk.empty:
@@ -155,51 +158,60 @@ class CachedTSVDataset(Dataset):
                 target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
                 
                 for src, tgt in zip(source_encodings, target_encodings):
-                    # Pad or truncate source sequence
-                    src_ids = src.ids[:max_source_len]  # Truncate if too long
-                    src_ids.extend([0] * (max_source_len - len(src_ids)))  # Pad if too short
-                    
-                    # Pad or truncate target sequence
-                    tgt_ids = tgt.ids[:max_target_len]  # Truncate if too long
-                    tgt_ids.extend([0] * (max_target_len - len(tgt_ids)))  # Pad if too short
-                    
-                    all_source_ids.append(src_ids)
-                    all_target_ids.append(tgt_ids)
+                    if src and tgt:  # Ensure both sequences exist
+                        # Pad or truncate source sequence
+                        src_ids = src.ids[:max_source_len]
+                        src_ids = src_ids + [0] * (max_source_len - len(src_ids))
+                        
+                        # Pad or truncate target sequence
+                        tgt_ids = tgt.ids[:max_target_len]
+                        tgt_ids = tgt_ids + [0] * (max_target_len - len(tgt_ids))
+                        
+                        all_source_ids.append(src_ids)
+                        all_target_ids.append(tgt_ids)
+        
+        # Convert to numpy arrays
+        logging.info("Converting to numpy arrays")
+        source_array = np.array(all_source_ids, dtype=np.int32)
+        target_array = np.array(all_target_ids, dtype=np.int32)
+        
+        logging.info(f"Final arrays shape - Source: {source_array.shape}, Target: {target_array.shape}")
         
         # Create cache file
         if self.cache_config.cache_format == 'h5':
+            logging.info("Creating HDF5 cache file")
             with h5py.File(self.cache_path, 'w') as f:
                 # Store the sequences
-                f.create_dataset('source_ids', data=np.array(all_source_ids, dtype=np.int32))
-                f.create_dataset('target_ids', data=np.array(all_target_ids, dtype=np.int32))
-                
-                # Store the original lengths
-                f.create_dataset('source_lengths', data=np.array(
-                    [len(src.ids) for src in source_encodings],
-                    dtype=np.int32
-                ))
-                f.create_dataset('target_lengths', data=np.array(
-                    [len(tgt.ids) for tgt in target_encodings],
-                    dtype=np.int32
-                ))
+                f.create_dataset('source_ids', data=source_array)
+                f.create_dataset('target_ids', data=target_array)
                 
                 # Store metadata
                 f.attrs['max_source_len'] = max_source_len
                 f.attrs['max_target_len'] = max_target_len
+                f.attrs['num_sequences'] = len(all_source_ids)
             
+            logging.info("Cache file created successfully")
             return h5py.File(self.cache_path, 'r')
-        
-        else:  # mmap
+        else:
+            logging.info("Creating numpy memory-mapped cache file")
             data = np.array(list(zip(all_source_ids, all_target_ids)), dtype=np.int32)
             np.save(self.cache_path, data)
             return np.load(self.cache_path, mmap_mode='r')
 
     def _setup_indices(self):
         """Setup indices for dataset access"""
-        if self.cache_config.cache_format == 'h5':
-            self.length = len(self.data_cache['source_ids'])
-        else:
-            self.length = len(self.data_cache)
+        try:
+            if self.cache_config.cache_format == 'h5':
+                if 'num_sequences' in self.data_cache.attrs:
+                    self.length = self.data_cache.attrs['num_sequences']
+                else:
+                    self.length = len(self.data_cache['source_ids'])
+            else:
+                self.length = len(self.data_cache)
+            logging.info(f"Dataset contains {self.length} sequences")
+        except Exception as e:
+            logging.error(f"Error setting up indices: {str(e)}")
+            self.length = 0  # Set a default length
 
     def _setup_tokenizer(self, tokenizer_path: Optional[str], vocab_size: int) -> Tokenizer:
         """Initialize or load tokenizer"""
