@@ -1,3 +1,5 @@
+# src/trainers/positional_autoencoder_trainer.py
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -9,9 +11,17 @@ from tqdm import tqdm
 import gc
 import os
 
-from ..data.tsv_text2text_dataset import CachedTSVDataset, ColumnConfig, CacheConfig
+from ..data.tsv_text2text_dataset import (
+    CachedTSVDataset, 
+    ColumnConfig, 
+    CacheConfig,
+    collate_fn
+)
 from ..models.text2text_autoencoders import PositionalAutoencoder
 from ..metrics.evaluation import TextGenerationMetrics
+
+# Set tokenizers parallelism
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 class AutoencoderTrainer:
     def __init__(
@@ -45,21 +55,23 @@ class AutoencoderTrainer:
             cache_format='h5'
         )
         
-        # Initialize datasets with caching
-        logging.info("Initializing train dataset (will cache if not cached)")
+        # Initialize datasets
+        logging.info("Initializing train dataset")
         self.train_dataset = CachedTSVDataset(
             configs=train_configs,
             cache_config=cache_config,
             tokenizer_path=tokenizer_path,
-            vocab_size=self.model_config.get('vocab_size', 32000)
+            vocab_size=self.model_config.get('vocab_size', 32000),
+            max_length=self.model_config.get('max_seq_len', 512)
         )
         
-        logging.info("Initializing validation dataset (will cache if not cached)")
+        logging.info("Initializing validation dataset")
         self.valid_dataset = CachedTSVDataset(
             configs=valid_configs,
             cache_config=cache_config,
             tokenizer_path=tokenizer_path,
-            vocab_size=self.model_config.get('vocab_size', 32000)
+            vocab_size=self.model_config.get('vocab_size', 32000),
+            max_length=self.model_config.get('max_seq_len', 512)
         )
         
         # Initialize dataloaders
@@ -67,6 +79,7 @@ class AutoencoderTrainer:
             self.train_dataset,
             batch_size=training_config['batch_size'],
             shuffle=True,
+            collate_fn=collate_fn,
             num_workers=training_config.get('num_workers', 4),
             pin_memory=True,
             prefetch_factor=2
@@ -76,6 +89,7 @@ class AutoencoderTrainer:
             self.valid_dataset,
             batch_size=training_config['batch_size'],
             shuffle=False,
+            collate_fn=collate_fn,
             num_workers=training_config.get('num_workers', 4),
             pin_memory=True,
             prefetch_factor=2
@@ -94,6 +108,7 @@ class AutoencoderTrainer:
             weight_decay=training_config.get('weight_decay', 0.01)
         )
         
+        # Cosine annealing scheduler with warmup
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
             self.optimizer,
             max_lr=training_config['learning_rate'],
@@ -129,146 +144,6 @@ class AutoencoderTrainer:
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Forward pass
-                outputs = self.model(source_ids)  # [batch_size, seq_len, vocab_size]
-                
-                # Ensure outputs and targets have matching dimensions
-                if outputs.size(1) != target_ids.size(1):
-                    min_len = min(outputs.size(1), target_ids.size(1))
-                    outputs = outputs[:, :min_len, :]
-                    target_ids = target_ids[:, :min_len]
-                
-                # Reshape for loss calculation
-                vocab_size = outputs.size(-1)
-                outputs_flat = outputs.contiguous().view(-1, vocab_size)
-                targets_flat = target_ids.contiguous().view(-1)
-                
-                # Calculate loss
-                loss = nn.CrossEntropyLoss(ignore_index=0)(outputs_flat, targets_flat)
-                
-                # Backward pass
-                self.optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                self.optimizer.step()
-                self.scheduler.step()
-                
-                # Update metrics
-                total_loss += loss.item()
-                valid_batches += 1
-                avg_loss = total_loss / valid_batches
-                
-                progress_bar.set_postfix({'loss': f'{avg_loss:.4f}'})
-                
-                if self.use_wandb:
-                    wandb.log({
-                        'batch_loss': loss.item(),
-                        'learning_rate': self.scheduler.get_last_lr()[0]
-                    })
-                
-                # Periodic memory cleanup
-                if batch_idx % 100 == 0:
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                    
-            except Exception as e:
-                logging.warning(f"Error in training batch {batch_idx}: {str(e)}")
-                continue
-        
-        return total_loss / valid_batches if valid_batches > 0 else float('inf')
-
-    @torch.no_grad()
-    def evaluate(self) -> Dict[str, float]:
-        """Evaluate model on validation set"""
-        self.model.eval()
-        total_loss = 0
-        all_predictions = []
-        all_references = []
-        
-        for batch in tqdm(self.valid_loader, desc="Evaluating"):
-            try:
-                # Move data to device
-                source_ids = batch['source_text'].to(self.device)
-                target_ids = batch['target_text'].to(self.device)
-                
-                # Forward pass
-                outputs = self.model(source_ids)
-                
-                # Calculate loss
-                loss = nn.CrossEntropyLoss()(
-                    outputs.view(-1, outputs.size(-1)),
-                    target_ids.view(-1)
-                )
-                total_loss += loss.item()
-                
-                # Get predictions
-                predictions = outputs.argmax(dim=-1)
-                all_predictions.append(predictions.cpu())
-                all_references.append(target_ids.cpu())
-                
-            except Exception as e:
-                print(f"Error in evaluation batch: {str(e)}")
-                continue
-        
-        # Compute metrics
-        all_predictions = torch.cat(all_predictions, dim=0)
-        all_references = torch.cat(all_references, dim=0)
-        
-        metrics = self.metrics.compute_metrics(all_predictions, all_references)
-        metrics['val_loss'] = total_loss / len(self.valid_loader)
-        
-        # Clear memory
-        del all_predictions, all_references
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
-        return metrics
-
-    def train(self):
-        logging.info("Starting training")
-        best_metrics = {'val_loss': float('inf'), 'bleu': 0}
-        
-        for epoch in range(self.training_config['num_epochs']):
-            # Train
-            train_loss = self.train_epoch(epoch)
-            
-            # Evaluate
-            val_metrics = self.evaluate()
-            
-            # Log metrics
-            log_msg = f"Epoch {epoch} - Train Loss: {train_loss:.4f}, Val Loss: {val_metrics['val_loss']:.4f}"
-            log_msg += f", BLEU: {val_metrics['bleu']:.4f}"
-            log_msg += f", ROUGE-L: {val_metrics['rougeL']:.4f}"
-            log_msg += f", METEOR: {val_metrics['meteor']:.4f}"
-            logging.info(log_msg)
-            
-            if self.use_wandb:
-                wandb.log({
-                    'epoch': epoch,
-                    'train_loss': train_loss,
-                    **val_metrics
-                })
-            
-            # Save best model
-            if val_metrics['val_loss'] < best_metrics['val_loss'] or \
-               val_metrics['bleu'] > best_metrics['bleu']:
-                best_metrics = val_metrics
-                self.save_checkpoint(epoch, val_metrics)
-                logging.info(f"Saved new best model with metrics: {val_metrics}")
-
-        logging.info("Training completed")
-        if self.use_wandb:
-            wandb.finish()
-
-    def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'metrics': metrics,
-            'model_config': self.model_config,
-            'training_config': self.training_config
-        }
-        torch.save(checkpoint, self.log_dir / f'checkpoint_epoch_{epoch}.pt')
+                # Ensure target has correct sequence length
+                if target_ids.size(1) != self.model_config['target_seq_len']:
+                    target_ids = target_ids[:, :self.model_config['target_seq_
