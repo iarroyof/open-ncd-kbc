@@ -170,7 +170,7 @@ def train_transformer():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-    for epoch in range(7):
+    for epoch in range(10):
         total_loss = 0
         for batch_idx, (src, tgt) in enumerate(dataloader):
             src, tgt = src.to(device), tgt.to(device)
@@ -189,7 +189,7 @@ def train_transformer():
                 print(f"Epoch [{epoch+1}/10], Batch [{batch_idx+1}/{len(dataloader)}], Loss: {loss.item():.4f}")
 
         avg_loss = total_loss / len(dataloader)
-        print(f"Epoch [{epoch+1}/7], Average Loss: {avg_loss:.4f}")
+        print(f"Epoch [{epoch+1}/10], Average Loss: {avg_loss:.4f}")
 
 if __name__ == "__main__":
     start_time = time.time()
