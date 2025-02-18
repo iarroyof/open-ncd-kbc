@@ -17,7 +17,7 @@ from ..data.tsv_text2text_dataset import (
     CacheConfig,
     collate_fn
 )
-from ..models.attention_gru import AttentionGRUModel
+from ..models.text2text_autoencoders import AttentionGRUModel
 from ..metrics.evaluation import TextGenerationMetrics
 
 # Set tokenizers parallelism
