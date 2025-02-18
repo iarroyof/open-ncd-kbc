@@ -7,14 +7,8 @@ import math
 from typing import Dict, Optional, Tuple
 
 class PositionalEncoding(nn.Module):
-    def __init__(
-        self, 
-        d_model: int, 
-        max_len: int = 5000, 
-        mode: str = 'fixed',
-        fixed_scale: float = 1.0, 
-        learned_scale: float = 1.0
-    ):
+    def __init__(self, d_model: int, max_len: int = 5000, mode: str = 'fixed', 
+                 fixed_scale: float = 1.0, learned_scale: float = 1.0):
         super().__init__()
         self.d_model = d_model
         self.max_len = max_len
@@ -54,6 +48,153 @@ class PositionalEncoding(nn.Module):
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
+class VanillaTransformer(nn.Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        target_seq_len: int = 64,
+        d_model: int = 512,
+        nhead: int = 8,
+        num_encoder_layers: int = 6,
+        num_decoder_layers: int = 6,
+        dim_feedforward: int = 2048,
+        dropout: float = 0.1,
+        activation: str = "relu",
+        max_seq_len: int = 512,
+        pe_mode: str = 'fixed',
+        fixed_scale: float = 1.0,
+        learned_scale: float = 1.0
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.target_seq_len = target_seq_len
+        self.max_seq_len = max_seq_len
+
+        # Embedding layer
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        
+        # Positional encoding
+        self.pos_encoder = PositionalEncoding(
+            d_model=d_model,
+            max_len=max_seq_len,
+            mode=pe_mode,
+            fixed_scale=fixed_scale,
+            learned_scale=learned_scale
+        )
+        
+        # Transformer core
+        self.transformer = nn.Transformer(
+            d_model=d_model,
+            nhead=nhead,
+            num_encoder_layers=num_encoder_layers,
+            num_decoder_layers=num_decoder_layers,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation=activation,
+            batch_first=True
+        )
+        
+        # Final projection layer
+        self.fc = nn.Linear(d_model, vocab_size)
+
+        # Initialize weights
+        self._init_weights()
+
+    def _init_weights(self):
+        """Initialize weights using Xavier uniform initialization"""
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
+        """Generate causal mask for decoder"""
+        return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
+
+    def forward(
+        self,
+        src: torch.Tensor,
+        tgt: Optional[torch.Tensor] = None,
+        teacher_forcing_ratio: float = 1.0
+    ) -> torch.Tensor:
+        # Truncate source sequence if needed (keeping right side)
+        if src.size(1) > self.max_seq_len:
+            src = src[:, -self.max_seq_len:]
+            
+        # Create source mask for padding tokens
+        src_key_padding_mask = (src == 0).to(src.device)
+        
+        # Embed and add positional encoding to source
+        src_emb = self.embedding(src) * math.sqrt(self.d_model)
+        src_emb = self.pos_encoder(src_emb)
+        
+        # For training with teacher forcing
+        if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
+            # Prepare target sequence
+            if tgt.size(1) > self.target_seq_len:
+                tgt = tgt[:, :self.target_seq_len]
+            elif tgt.size(1) < self.target_seq_len:
+                tgt = torch.nn.functional.pad(tgt, (0, self.target_seq_len - tgt.size(1)), value=0)
+            
+            # Create target masks
+            tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.size(1)).to(tgt.device)
+            tgt_key_padding_mask = (tgt == 0).to(tgt.device)
+            
+            # Embed and add positional encoding to target
+            tgt_emb = self.embedding(tgt) * math.sqrt(self.d_model)
+            tgt_emb = self.pos_encoder(tgt_emb)
+            
+            # Transformer forward pass
+            out = self.transformer(
+                src=src_emb,
+                tgt=tgt_emb,
+                tgt_mask=tgt_mask,
+                src_key_padding_mask=src_key_padding_mask,
+                tgt_key_padding_mask=tgt_key_padding_mask
+            )
+            
+        # For inference or when not using teacher forcing
+        else:
+            batch_size = src.size(0)
+            device = src.device
+            
+            # Initialize decoder input with SOS token (assumed to be 1)
+            decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
+            outputs = []
+            
+            for t in range(self.target_seq_len):
+                # Create target mask
+                tgt_mask = self.transformer.generate_square_subsequent_mask(decoder_input.size(1)).to(device)
+                tgt_key_padding_mask = (decoder_input == 0).to(device)
+                
+                # Embed and add positional encoding
+                tgt_emb = self.embedding(decoder_input) * math.sqrt(self.d_model)
+                tgt_emb = self.pos_encoder(tgt_emb)
+                
+                # Transformer forward pass
+                out = self.transformer(
+                    src=src_emb,
+                    tgt=tgt_emb,
+                    tgt_mask=tgt_mask,
+                    src_key_padding_mask=src_key_padding_mask,
+                    tgt_key_padding_mask=tgt_key_padding_mask
+                )
+                
+                # Get next token prediction
+                next_token = self.fc(out[:, -1:])  # Only take last position
+                outputs.append(next_token)
+                
+                # Update decoder input
+                if not self.training:
+                    decoder_input = torch.cat([
+                        decoder_input,
+                        next_token.argmax(dim=-1)
+                    ], dim=1)
+            
+            # Combine all outputs
+            out = torch.cat(outputs, dim=1)
+        
+        # Project to vocabulary size
+        return self.fc(out)
 class PositionalAutoencoder(nn.Module):
     def __init__(
         self,
