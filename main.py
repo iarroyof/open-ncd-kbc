@@ -1,4 +1,5 @@
 # main.py
+
 import torch
 import logging
 import argparse
@@ -8,6 +9,7 @@ from typing import Dict
 # Import all model trainers
 from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
 from src.trainers.attention_gru_trainer import AttentionGRUTrainer
+from src.trainers.transformer_trainer import TransformerTrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
 
 def get_model_config(model_type: str) -> Dict:
@@ -39,27 +41,54 @@ def get_model_config(model_type: str) -> Dict:
             'num_layers': 2,
             'bidirectional_encoder': True
         }
+        
+    elif model_type == 'transformer':
+        return {
+            **base_config,
+            'd_model': 512,
+            'nhead': 8,
+            'num_encoder_layers': 6,
+            'num_decoder_layers': 6,
+            'dim_feedforward': 2048,
+            'activation': 'relu',
+            'pe_mode': 'fixed',
+            'fixed_scale': 1.0,
+            'learned_scale': 1.0
+        }
     
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
 def get_training_config(model_type: str) -> Dict:
     """Get training configuration, can be model-specific if needed"""
-    return {
+    base_config = {
         'batch_size': 128,
-        'learning_rate': 1e-3,
         'num_epochs': 10,
         'weight_decay': 0.01,
         'num_workers': 4,
         'chunk_size': 10000,
         'seed': 42
     }
+    
+    if model_type == 'transformer':
+        return {
+            **base_config,
+            'learning_rate': 1e-4,  # Lower learning rate for transformer
+            'warmup_steps': 4000,   # Warmup steps for transformer
+            'label_smoothing': 0.1  # Label smoothing for transformer
+        }
+    else:
+        return {
+            **base_config,
+            'learning_rate': 1e-3
+        }
 
 def get_trainer_class(model_type: str):
     """Get the appropriate trainer class"""
     trainers = {
         'autoencoder': AutoencoderTrainer,
-        'attention_gru': AttentionGRUTrainer
+        'attention_gru': AttentionGRUTrainer,
+        'transformer': TransformerTrainer
     }
     
     if model_type not in trainers:
@@ -79,11 +108,25 @@ def setup_data_configs(data_path: str, split: str = 'train') -> list:
         )
     ]
 
+def setup_logging(log_dir: str):
+    """Setup logging configuration"""
+    log_path = Path(log_dir)
+    log_path.mkdir(exist_ok=True)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_path / "main.log"),
+            logging.StreamHandler()  # Also print to console
+        ]
+    )
+
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Train various sequence-to-sequence models')
     parser.add_argument('--model_type', type=str, default='autoencoder',
-                      choices=['autoencoder', 'attention_gru'],
+                      choices=['autoencoder', 'attention_gru', 'transformer'],
                       help='Type of model to train')
     parser.add_argument('--data_path', type=str, default='data/ncd_gp_conceptnet',
                       help='Path to data directory')
@@ -99,28 +142,50 @@ def main():
                       help='Run only evaluation on validation set')
     parser.add_argument('--checkpoint_path', type=str, default=None,
                       help='Path to model checkpoint for evaluation')
+    parser.add_argument('--batch_size', type=int, default=None,
+                      help='Override default batch size')
+    parser.add_argument('--learning_rate', type=float, default=None,
+                      help='Override default learning rate')
+    parser.add_argument('--num_epochs', type=int, default=None,
+                      help='Override default number of epochs')
+    parser.add_argument('--target_seq_len', type=int, default=None,
+                      help='Override default target sequence length')
     
     args = parser.parse_args()
     
     # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    setup_logging(args.log_dir)
+    
+    # Log start of script with configuration
+    logging.info(f"Starting script with model type: {args.model_type}")
+    logging.info(f"Arguments: {vars(args)}")
     
     # Create necessary directories
     Path(args.cache_dir).mkdir(exist_ok=True)
     Path(args.log_dir).mkdir(exist_ok=True)
     
-    # Get configurations
-    model_config = get_model_config(args.model_type)
-    training_config = get_training_config(args.model_type)
-    
-    # Setup data configurations
-    train_configs = setup_data_configs(args.data_path, 'train')
-    valid_configs = setup_data_configs(args.data_path, 'valid')
-    
-    # Get appropriate trainer class
-    TrainerClass = get_trainer_class(args.model_type)
-    
     try:
+        # Get configurations
+        model_config = get_model_config(args.model_type)
+        training_config = get_training_config(args.model_type)
+        
+        # Override configurations with command line arguments if provided
+        if args.batch_size:
+            training_config['batch_size'] = args.batch_size
+        if args.learning_rate:
+            training_config['learning_rate'] = args.learning_rate
+        if args.num_epochs:
+            training_config['num_epochs'] = args.num_epochs
+        if args.target_seq_len:
+            model_config['target_seq_len'] = args.target_seq_len
+        
+        # Setup data configurations
+        train_configs = setup_data_configs(args.data_path, 'train')
+        valid_configs = setup_data_configs(args.data_path, 'valid')
+        
+        # Get appropriate trainer class
+        TrainerClass = get_trainer_class(args.model_type)
+        
         # Initialize trainer
         trainer = TrainerClass(
             model_config=model_config,
