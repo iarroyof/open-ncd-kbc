@@ -11,7 +11,7 @@ import os
 
 from ..data.tsv_text2text_dataset import CachedTSVDataset, ColumnConfig, CacheConfig
 from ..models.text2text_autoencoders import PositionalAutoencoder
-from ..utils.metrics import TextGenerationMetrics
+from ..metrics.evaluation import TextGenerationMetrics
 
 class AutoencoderTrainer:
     def __init__(
