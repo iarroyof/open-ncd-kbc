@@ -3,7 +3,6 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import math
 
-# Reuse the PositionalEncoding class from before
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model: int, max_len: int = 5000, mode: str = 'fixed', 
                  fixed_scale: float = 1.0, learned_scale: float = 1.0):
@@ -47,73 +46,10 @@ class PositionalEncoding(nn.Module):
             raise ValueError(f"Invalid mode: {self.mode}")
 
 class PositionalAutoencoder(nn.Module):
-    """
-    Simple Autoencoder with positional embedding and normalization layers
-    
-    # Example usage
-    # Training function
-    def train_positional_autoencoder(
-            model,
-            dataloader,
-            num_epochs=10,
-            learning_rate=1e-4,
-            device='cuda' if torch.cuda.is_available() else 'cpu'
-        ):
-            model = model.to(device)
-            criterion = nn.CrossEntropyLoss()
-            optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-            
-            for epoch in range(num_epochs):
-                total_loss = 0
-                for src, tgt in dataloader:
-                    src = src.to(device)
-                    tgt = tgt.to(device)
-                    
-                    # Forward pass
-                    output = model(src)
-                    
-                    # Compute loss (output should match target)
-                    loss = criterion(output.reshape(-1, output.size(-1)), tgt.reshape(-1))
-                    
-                    # Backward pass
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
-                    
-                    total_loss += loss.item()
-                    
-                avg_loss = total_loss / len(dataloader)
-                print(f"Epoch {epoch+1}, Average Loss: {avg_loss:.4f}")
-        
-        return model
-        
-    if __name__ == "__main__":
-        # Dataset setup (using the toy dataset)
-        vocab_size = 100
-        dataset = ToyDataset(vocab_size=vocab_size)  # Uses your original ToyDataset
-        dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-        
-        # Model initialization
-        model = PositionalAutoencoder(
-            vocab_size=vocab_size,
-            target_seq_len=3,  # Output first 3 tokens
-            d_model=256,
-            hidden_dim=128,
-            num_encoder_layers=3,
-            dropout=0.1,
-            activation="ReLU",
-            pe_mode='fixed',
-            use_normalization=True,
-            norm_type='batch'
-        )    
-            # Train the model
-        trained_model = train_positional_autoencoder(model, dataloader)
-    """
-  
     def __init__(
         self,
         vocab_size: int,
-        target_seq_len: int = 3,  # Length of the target sequence (3 for first 3 tokens)
+        target_seq_len: int = 3,
         d_model: int = 512,
         hidden_dim: int = 256,
         num_encoder_layers: int = 3,
@@ -129,6 +65,7 @@ class PositionalAutoencoder(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.target_seq_len = target_seq_len
+        self.max_seq_len = max_seq_len
 
         # Input embedding
         self.embedding = nn.Embedding(vocab_size, d_model)
@@ -233,4 +170,3 @@ class PositionalAutoencoder(nn.Module):
         
         # Final projection
         return self.fc(x)
-
