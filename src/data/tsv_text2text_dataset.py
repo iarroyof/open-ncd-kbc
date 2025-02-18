@@ -107,96 +107,127 @@ class CachedTSVDataset(Dataset):
 
     def _setup_cache(self) -> Union[h5py.File, np.memmap]:
         """Setup cache file based on configuration"""
-        if self.cache_path.exists():
-            if self.cache_config.cache_format == 'h5':
-                return h5py.File(self.cache_path, 'r')
-            else:  # mmap
-                return np.load(self.cache_path, mmap_mode='r')
-        else:
-            return self._create_cache()
+        try:
+            if self.cache_path.exists():
+                logging.info(f"Loading existing cache from {self.cache_path}")
+                if self.cache_config.cache_format == 'h5':
+                    cache = h5py.File(self.cache_path, 'r')
+                    # Verify cache structure
+                    if 'source_ids' not in cache or 'target_ids' not in cache:
+                        raise ValueError("Cache file is corrupted or incomplete")
+                    return cache
+                else:  # mmap
+                    return np.load(self.cache_path, mmap_mode='r')
+            else:
+                cache = self._create_cache()
+                # Verify cache was created successfully
+                if self.cache_config.cache_format == 'h5':
+                    if 'source_ids' not in cache or 'target_ids' not in cache:
+                        raise ValueError("Failed to create cache properly")
+                return cache
+                
+        except Exception as e:
+            logging.error(f"Error setting up cache: {str(e)}")
+            # If cache exists but is corrupted, remove it
+            if self.cache_path.exists():
+                logging.info(f"Removing corrupted cache file: {self.cache_path}")
+                self.cache_path.unlink()
+            raise RuntimeError(f"Failed to setup cache: {str(e)}") from e
 
     def _create_cache(self) -> Union[h5py.File, np.memmap]:
         """Create and populate cache file"""
         logging.info(f"Creating cache file at {self.cache_path}")
         
-        # Initialize lists for storage
-        all_source_ids = []
-        all_target_ids = []
-        max_source_len = 0
-        max_target_len = 0
-        
-        # Process all data and track lengths
-        logging.info("First pass: calculating maximum sequence lengths")
-        for config in self.configs:
-            for chunk in self._read_chunks(config):
-                if chunk.empty:
-                    continue
-                    
-                source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
-                target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
-                
-                for src, tgt in zip(source_encodings, target_encodings):
-                    if src and tgt:  # Ensure both sequences exist
-                        max_source_len = max(max_source_len, len(src.ids))
-                        max_target_len = max(max_target_len, len(tgt.ids))
-
-        # Clip maximum lengths to model's max_length
-        max_source_len = min(max_source_len, self.max_length)
-        max_target_len = min(max_target_len, self.max_length)
-        
-        logging.info(f"Maximum source length: {max_source_len}")
-        logging.info(f"Maximum target length: {max_target_len}")
-        
-        # Second pass: create padded arrays
-        logging.info("Second pass: creating padded sequences")
-        for config in self.configs:
-            for chunk in self._read_chunks(config):
-                if chunk.empty:
-                    continue
-                    
-                source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
-                target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
-                
-                for src, tgt in zip(source_encodings, target_encodings):
-                    if src and tgt:  # Ensure both sequences exist
-                        # Pad or truncate source sequence
-                        src_ids = src.ids[:max_source_len]
-                        src_ids = src_ids + [0] * (max_source_len - len(src_ids))
-                        
-                        # Pad or truncate target sequence
-                        tgt_ids = tgt.ids[:max_target_len]
-                        tgt_ids = tgt_ids + [0] * (max_target_len - len(tgt_ids))
-                        
-                        all_source_ids.append(src_ids)
-                        all_target_ids.append(tgt_ids)
-        
-        # Convert to numpy arrays
-        logging.info("Converting to numpy arrays")
-        source_array = np.array(all_source_ids, dtype=np.int32)
-        target_array = np.array(all_target_ids, dtype=np.int32)
-        
-        logging.info(f"Final arrays shape - Source: {source_array.shape}, Target: {target_array.shape}")
-        
-        # Create cache file
-        if self.cache_config.cache_format == 'h5':
-            logging.info("Creating HDF5 cache file")
-            with h5py.File(self.cache_path, 'w') as f:
-                # Store the sequences
-                f.create_dataset('source_ids', data=source_array)
-                f.create_dataset('target_ids', data=target_array)
-                
-                # Store metadata
-                f.attrs['max_source_len'] = max_source_len
-                f.attrs['max_target_len'] = max_target_len
-                f.attrs['num_sequences'] = len(all_source_ids)
+        try:
+            # Initialize lists for storage
+            all_source_ids = []
+            all_target_ids = []
+            max_source_len = 0
+            max_target_len = 0
             
-            logging.info("Cache file created successfully")
-            return h5py.File(self.cache_path, 'r')
-        else:
-            logging.info("Creating numpy memory-mapped cache file")
-            data = np.array(list(zip(all_source_ids, all_target_ids)), dtype=np.int32)
-            np.save(self.cache_path, data)
-            return np.load(self.cache_path, mmap_mode='r')
+            # Process all data and track lengths
+            logging.info("First pass: calculating maximum sequence lengths")
+            for config in self.configs:
+                for chunk in self._read_chunks(config):
+                    if chunk.empty:
+                        continue
+                        
+                    source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
+                    target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
+                    
+                    for src, tgt in zip(source_encodings, target_encodings):
+                        if src and tgt:  # Ensure both sequences exist
+                            max_source_len = max(max_source_len, len(src.ids))
+                            max_target_len = max(max_target_len, len(tgt.ids))
+
+            # Clip maximum lengths to model's max_length
+            max_source_len = min(max_source_len, self.max_length)
+            max_target_len = min(max_target_len, self.max_length)
+            
+            logging.info(f"Maximum source length: {max_source_len}")
+            logging.info(f"Maximum target length: {max_target_len}")
+            
+            # Second pass: create padded arrays
+            logging.info("Second pass: creating padded sequences")
+            for config in self.configs:
+                for chunk in self._read_chunks(config):
+                    if chunk.empty:
+                        continue
+                        
+                    source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
+                    target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
+                    
+                    for src, tgt in zip(source_encodings, target_encodings):
+                        if src and tgt:  # Ensure both sequences exist
+                            # Pad or truncate source sequence
+                            src_ids = src.ids[:max_source_len]
+                            src_ids = src_ids + [0] * (max_source_len - len(src_ids))
+                            
+                            # Pad or truncate target sequence
+                            tgt_ids = tgt.ids[:max_target_len]
+                            tgt_ids = tgt_ids + [0] * (max_target_len - len(tgt_ids))
+                            
+                            all_source_ids.append(src_ids)
+                            all_target_ids.append(tgt_ids)
+            
+            if not all_source_ids or not all_target_ids:
+                raise ValueError("No valid sequences found in the dataset")
+            
+            # Convert to numpy arrays
+            logging.info("Converting to numpy arrays")
+            source_array = np.array(all_source_ids, dtype=np.int32)
+            target_array = np.array(all_target_ids, dtype=np.int32)
+            
+            logging.info(f"Final arrays shape - Source: {source_array.shape}, Target: {target_array.shape}")
+            
+            # Create cache file
+            if self.cache_config.cache_format == 'h5':
+                logging.info("Creating HDF5 cache file")
+                with h5py.File(self.cache_path, 'w') as f:
+                    # Store the sequences
+                    f.create_dataset('source_ids', data=source_array)
+                    f.create_dataset('target_ids', data=target_array)
+                    
+                    # Store metadata
+                    f.attrs['max_source_len'] = max_source_len
+                    f.attrs['max_target_len'] = max_target_len
+                    f.attrs['num_sequences'] = len(all_source_ids)
+                
+                logging.info("Cache file created successfully")
+                return h5py.File(self.cache_path, 'r')  # Reopen in read mode
+                
+            else:
+                logging.info("Creating numpy memory-mapped cache file")
+                data = np.array(list(zip(all_source_ids, all_target_ids)), dtype=np.int32)
+                np.save(self.cache_path, data)
+                return np.load(self.cache_path, mmap_mode='r')
+                
+        except Exception as e:
+            logging.error(f"Error creating cache: {str(e)}")
+            # Clean up partial cache file if it exists
+            if self.cache_path.exists():
+                self.cache_path.unlink()
+            raise RuntimeError(f"Failed to create cache: {str(e)}") from e
 
     def _setup_indices(self):
         """Setup indices for dataset access"""
@@ -208,10 +239,15 @@ class CachedTSVDataset(Dataset):
                     self.length = len(self.data_cache['source_ids'])
             else:
                 self.length = len(self.data_cache)
+                
+            if self.length == 0:
+                raise ValueError("Dataset contains no sequences")
+                
             logging.info(f"Dataset contains {self.length} sequences")
+            
         except Exception as e:
             logging.error(f"Error setting up indices: {str(e)}")
-            self.length = 0  # Set a default length
+            raise RuntimeError(f"Failed to initialize dataset: {str(e)}") from e
 
     def _setup_tokenizer(self, tokenizer_path: Optional[str], vocab_size: int) -> Tokenizer:
         """Initialize or load tokenizer"""
