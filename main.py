@@ -17,7 +17,7 @@ if __name__ == "__main__":
     # Model configuration
     model_config = {
         'vocab_size': 32000,
-        'target_seq_len': 128,
+        'target_seq_len': 256,
         'd_model': 2048,
         'hidden_dim': 1024,
         'num_encoder_layers': 2,
@@ -26,7 +26,7 @@ if __name__ == "__main__":
         'pe_mode': 'fixed',
         'use_normalization': True,
         'norm_type': 'batch',
-        'max_seq_len': 64
+        'max_seq_len': 128
     }
     
     # Training configuration
