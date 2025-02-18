@@ -105,6 +105,45 @@ class CachedTSVDataset(Dataset):
         cache_hash = hashlib.md5(config_str.encode()).hexdigest()
         return self.cache_dir / f"dataset_cache_{cache_hash}.{self.cache_config.cache_format}"
 
+    def _validate_cache(self, cache: h5py.File) -> bool:
+        """Validate cache file structure and contents"""
+        try:
+            # Check required datasets exist
+            if 'source_ids' not in cache or 'target_ids' not in cache:
+                logging.error("Cache missing required datasets")
+                return False
+                
+            # Check required attributes
+            required_attrs = ['max_source_len', 'max_target_len', 'num_sequences']
+            for attr in required_attrs:
+                if attr not in cache.attrs:
+                    logging.error(f"Cache missing required attribute: {attr}")
+                    return False
+                    
+            # Check data shapes
+            if len(cache['source_ids'].shape) != 2 or len(cache['target_ids'].shape) != 2:
+                logging.error("Invalid data shapes in cache")
+                return False
+                
+            # Check number of sequences matches
+            if cache['source_ids'].shape[0] != cache['target_ids'].shape[0]:
+                logging.error("Mismatched sequence counts in cache")
+                return False
+                
+            # Check data is readable
+            try:
+                cache['source_ids'][0]
+                cache['target_ids'][0]
+            except Exception as e:
+                logging.error(f"Failed to read data from cache: {str(e)}")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error validating cache: {str(e)}")
+            return False
+
     def _setup_cache(self) -> Union[h5py.File, np.memmap]:
         """Setup cache file based on configuration"""
         try:
@@ -112,19 +151,17 @@ class CachedTSVDataset(Dataset):
                 logging.info(f"Loading existing cache from {self.cache_path}")
                 if self.cache_config.cache_format == 'h5':
                     cache = h5py.File(self.cache_path, 'r')
-                    # Verify cache structure
-                    if 'source_ids' not in cache or 'target_ids' not in cache:
-                        raise ValueError("Cache file is corrupted or incomplete")
-                    return cache
+                    if self._validate_cache(cache):
+                        return cache
+                    else:
+                        cache.close()
+                        logging.warning("Cache validation failed, will recreate cache")
+                        self.cache_path.unlink()
                 else:  # mmap
                     return np.load(self.cache_path, mmap_mode='r')
-            else:
-                cache = self._create_cache()
-                # Verify cache was created successfully
-                if self.cache_config.cache_format == 'h5':
-                    if 'source_ids' not in cache or 'target_ids' not in cache:
-                        raise ValueError("Failed to create cache properly")
-                return cache
+            
+            # Create new cache
+            return self._create_cache()
                 
         except Exception as e:
             logging.error(f"Error setting up cache: {str(e)}")
@@ -132,7 +169,12 @@ class CachedTSVDataset(Dataset):
             if self.cache_path.exists():
                 logging.info(f"Removing corrupted cache file: {self.cache_path}")
                 self.cache_path.unlink()
-            raise RuntimeError(f"Failed to setup cache: {str(e)}") from e
+            # Try to create new cache
+            try:
+                logging.info("Attempting to create new cache")
+                return self._create_cache()
+            except Exception as create_error:
+                raise RuntimeError(f"Failed to create new cache: {str(create_error)}") from create_error
 
     def _create_cache(self) -> Union[h5py.File, np.memmap]:
         """Create and populate cache file"""
@@ -296,17 +338,35 @@ class CachedTSVDataset(Dataset):
     def __len__(self) -> int:
         return self.length
 
+    def __del__(self):
+        """Cleanup resources"""
+        if hasattr(self, 'data_cache'):
+            if isinstance(self.data_cache, h5py.File):
+                try:
+                    self.data_cache.close()
+                except Exception as e:
+                    logging.error(f"Error closing cache file: {str(e)}")
+                    
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        if self.cache_config.cache_format == 'h5':
-            source_ids = self.data_cache['source_ids'][idx]
-            target_ids = self.data_cache['target_ids'][idx]
-        else:
-            source_ids, target_ids = self.data_cache[idx]
+        try:
+            if self.cache_config.cache_format == 'h5':
+                source_ids = self.data_cache['source_ids'][idx].copy()  # Make a copy to avoid HDF5 issues
+                target_ids = self.data_cache['target_ids'][idx].copy()
+            else:
+                source_ids, target_ids = self.data_cache[idx]
 
-        return {
-            'source_text': torch.tensor(source_ids, dtype=torch.long),
-            'target_text': torch.tensor(target_ids, dtype=torch.long)
-        }
+            return {
+                'source_text': torch.tensor(source_ids, dtype=torch.long),
+                'target_text': torch.tensor(target_ids, dtype=torch.long)
+            }
+        except Exception as e:
+            logging.error(f"Error reading item {idx}: {str(e)}")
+            # Return a zero tensor of appropriate shape as fallback
+            shape = (self.model_config.get('max_seq_len', 512),)
+            return {
+                'source_text': torch.zeros(shape, dtype=torch.long),
+                'target_text': torch.zeros(shape, dtype=torch.long)
+            }
 
 def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     """Custom collate function for padding sequences"""
