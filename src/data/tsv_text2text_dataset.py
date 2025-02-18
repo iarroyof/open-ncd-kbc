@@ -122,25 +122,71 @@ class CachedTSVDataset(Dataset):
         # Process all data first to get dimensions
         all_source_ids = []
         all_target_ids = []
+        max_source_len = 0
+        max_target_len = 0
         
+        # First pass: get maximum lengths
         for config in self.configs:
             for chunk in self._read_chunks(config):
+                if chunk.empty:
+                    continue
+                    
                 source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
                 target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
                 
                 for src, tgt in zip(source_encodings, target_encodings):
-                    all_source_ids.append(src.ids[:self.max_length])
-                    all_target_ids.append(tgt.ids[:self.max_length])
+                    max_source_len = max(max_source_len, len(src.ids))
+                    max_target_len = max(max_target_len, len(tgt.ids))
+
+        # Clip maximum lengths to model's max_length
+        max_source_len = min(max_source_len, self.max_length)
+        max_target_len = min(max_target_len, self.max_length)
+        
+        logging.info(f"Maximum source length: {max_source_len}")
+        logging.info(f"Maximum target length: {max_target_len}")
+        
+        # Second pass: create padded arrays
+        for config in self.configs:
+            for chunk in self._read_chunks(config):
+                if chunk.empty:
+                    continue
+                    
+                source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
+                target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
+                
+                for src, tgt in zip(source_encodings, target_encodings):
+                    # Pad or truncate source sequence
+                    src_ids = src.ids[:max_source_len]  # Truncate if too long
+                    src_ids.extend([0] * (max_source_len - len(src_ids)))  # Pad if too short
+                    
+                    # Pad or truncate target sequence
+                    tgt_ids = tgt.ids[:max_target_len]  # Truncate if too long
+                    tgt_ids.extend([0] * (max_target_len - len(tgt_ids)))  # Pad if too short
+                    
+                    all_source_ids.append(src_ids)
+                    all_target_ids.append(tgt_ids)
         
         # Create cache file
         if self.cache_config.cache_format == 'h5':
             with h5py.File(self.cache_path, 'w') as f:
+                # Store the sequences
                 f.create_dataset('source_ids', data=np.array(all_source_ids, dtype=np.int32))
                 f.create_dataset('target_ids', data=np.array(all_target_ids, dtype=np.int32))
-                f.create_dataset('lengths', data=np.array(
-                    [(len(src), len(tgt)) for src, tgt in zip(all_source_ids, all_target_ids)],
+                
+                # Store the original lengths
+                f.create_dataset('source_lengths', data=np.array(
+                    [len(src.ids) for src in source_encodings],
                     dtype=np.int32
                 ))
+                f.create_dataset('target_lengths', data=np.array(
+                    [len(tgt.ids) for tgt in target_encodings],
+                    dtype=np.int32
+                ))
+                
+                # Store metadata
+                f.attrs['max_source_len'] = max_source_len
+                f.attrs['max_target_len'] = max_target_len
+            
             return h5py.File(self.cache_path, 'r')
         
         else:  # mmap
@@ -216,11 +262,9 @@ class CachedTSVDataset(Dataset):
 
 def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     """Custom collate function for padding sequences"""
+    # All sequences in the batch should already be padded to the same length
+    # Just stack them
     return {
-        key: torch.nn.utils.rnn.pad_sequence(
-            [item[key] for item in batch],
-            batch_first=True,
-            padding_value=0  # Assuming 0 is the padding token ID
-        )
+        key: torch.stack([item[key] for item in batch])
         for key in batch[0].keys()
     }
