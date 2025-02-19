@@ -167,7 +167,7 @@ class ConvS2SEncoder(nn.Module):
         max_positions: int = 512
     ):
         super().__init__()
-        
+        self.max_positions = max_positions  # Add this line
         # Word embeddings
         self.embed_tokens = nn.Embedding(vocab_size, embed_dim)
         
@@ -232,6 +232,7 @@ class ConvS2SDecoder(nn.Module):
         max_positions: int = 512
     ):
         super().__init__()
+        self.max_positions = max_positions
         self.embed_tokens = nn.Embedding(vocab_size, embed_dim)
         self.embed_positions = nn.Embedding(max_positions, embed_dim)
         self.register_buffer('position_ids', torch.arange(max_positions).unsqueeze(0))
