@@ -146,11 +146,7 @@ class ConvS2STrainer:
         valid_batches = 0
         progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         
-        # Calculate teacher forcing ratio
-        teacher_forcing_ratio = max(
-            0.0,
-            1.0 - (epoch / self.training_config['num_epochs'])
-        )
+        teacher_forcing_ratio = max(0.0, 1.0 - (epoch / self.training_config['num_epochs']))
         
         for batch_idx, batch in enumerate(progress_bar):
             try:
@@ -158,44 +154,57 @@ class ConvS2STrainer:
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Always truncate source from the left (keep rightmost tokens)
+                # Log shapes before processing
+                logging.debug(f"Initial shapes - Source: {source_ids.shape}, Target: {target_ids.shape}")
+                
+                # Truncate source from the left (keep rightmost tokens)
                 if source_ids.size(1) > self.model_config['max_seq_len']:
                     source_ids = source_ids[:, -self.model_config['max_seq_len']:]
                 
-                # For target sequence, ensure exact length match
-                if target_ids.size(1) != self.model_config['target_seq_len']:
-                    if target_ids.size(1) > self.model_config['target_seq_len']:
-                        target_ids = target_ids[:, :self.model_config['target_seq_len']]
+                # Ensure target has exact length
+                target_seq_len = self.model_config['target_seq_len']
+                if target_ids.size(1) != target_seq_len:
+                    if target_ids.size(1) > target_seq_len:
+                        target_ids = target_ids[:, :target_seq_len]
                     else:
-                        pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
                         target_ids = torch.nn.functional.pad(
                             target_ids, 
-                            (0, pad_len), 
-                            value=0,
-                            mode='constant'
+                            (0, target_seq_len - target_ids.size(1)), 
+                            value=0
                         )
                 
-                # Forward pass with teacher forcing
+                # Log shapes after processing
+                logging.debug(f"After processing - Source: {source_ids.shape}, Target: {target_ids.shape}")
+                
+                # Forward pass
                 outputs = self.model(
                     src=source_ids,
                     tgt=target_ids,
                     teacher_forcing_ratio=teacher_forcing_ratio
                 )
                 
-                # Ensure outputs match target sequence length
-                if outputs.size(1) != target_ids.size(1):
-                    if outputs.size(1) > target_ids.size(1):
-                        outputs = outputs[:, :target_ids.size(1), :]
+                # Log output shape
+                logging.debug(f"Model output shape: {outputs.shape}")
+                
+                # Force output length to match target length
+                if outputs.size(1) != target_seq_len:
+                    logging.warning(f"Output length mismatch: got {outputs.size(1)}, expected {target_seq_len}")
+                    if outputs.size(1) > target_seq_len:
+                        outputs = outputs[:, :target_seq_len, :]
                     else:
-                        target_ids = target_ids[:, :outputs.size(1)]
+                        raise ValueError(f"Model output length {outputs.size(1)} is shorter than target length {target_seq_len}")
                 
                 # Calculate loss
                 outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
                 targets_flat = target_ids.contiguous().view(-1)
+                
+                # Log shapes before loss
+                logging.debug(f"Loss shapes - Outputs: {outputs_flat.shape}, Targets: {targets_flat.shape}")
+                
                 loss = self.criterion(outputs_flat, targets_flat)
                 
-                # Scale loss by sqrt(target_length) as per paper
-                loss = loss * math.sqrt(target_ids.size(1))
+                # Scale loss by sqrt(target_length)
+                loss = loss * math.sqrt(target_seq_len)
                 
                 # Backward pass
                 self.optimizer.zero_grad()
@@ -218,7 +227,8 @@ class ConvS2STrainer:
                     wandb.log({
                         'batch_loss': loss.item(),
                         'learning_rate': self.scheduler.get_last_lr()[0],
-                        'teacher_forcing_ratio': teacher_forcing_ratio
+                        'teacher_forcing_ratio': teacher_forcing_ratio,
+                        'output_length': outputs.size(1)
                     })
                     
             except Exception as e:
