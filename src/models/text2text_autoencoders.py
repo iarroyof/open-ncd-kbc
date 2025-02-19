@@ -254,11 +254,15 @@ class ConvS2SDecoder(nn.Module):
         self,
         prev_output_tokens: torch.Tensor,
         encoder_out: torch.Tensor,
-        encoder_padding_mask: Optional[torch.Tensor] = None
+        encoder_padding_mask: Optional[torch.Tensor] = None,
+        output_length: Optional[int] = None  # Add explicit length control
     ) -> torch.Tensor:
-        # Handle sequence length
-        if prev_output_tokens.size(1) > self.max_positions:
-            prev_output_tokens = prev_output_tokens[:, :self.max_positions]
+        # Get desired output length
+        output_length = output_length or prev_output_tokens.size(1)
+        
+        # Handle input sequence length
+        if prev_output_tokens.size(1) > output_length:
+            prev_output_tokens = prev_output_tokens[:, :output_length]
             
         # Get sequence positions
         positions = self.positions[:, :prev_output_tokens.size(1)]
@@ -266,8 +270,12 @@ class ConvS2SDecoder(nn.Module):
         # Combine token and position embeddings
         x = self.embed_tokens(prev_output_tokens) + self.embed_positions(positions)
         
-        # Apply layers
+        # Apply layers with explicit shape checking
         for i in range(0, len(self.layers), 2):
+            # Shape check
+            if x.size(1) != prev_output_tokens.size(1):
+                x = x[:, :prev_output_tokens.size(1), :]
+                
             # Apply attention
             attn_layer = self.layers[i]
             conv_layer = self.layers[i + 1]
@@ -276,15 +284,23 @@ class ConvS2SDecoder(nn.Module):
             attn_out, _ = attn_layer(x, encoder_out, encoder_padding_mask)
             x = x + attn_out
             
+            # Shape check after attention
+            if x.size(1) != prev_output_tokens.size(1):
+                x = x[:, :prev_output_tokens.size(1), :]
+                
             # Convolutional block
             x = conv_layer(x)
+            
+            # Shape check after conv
+            if x.size(1) != prev_output_tokens.size(1):
+                x = x[:, :prev_output_tokens.size(1), :]
         
         # Project to vocabulary
         x = self.output_projection(x)
         
-        # Ensure sequence length hasn't changed
-        if x.size(1) > prev_output_tokens.size(1):
-            x = x[:, :prev_output_tokens.size(1), :]
+        # Final shape check
+        if x.size(1) != output_length:
+            x = x[:, :output_length, :]
         
         return x
 
@@ -334,7 +350,10 @@ class ConvS2S(nn.Module):
         tgt: Optional[torch.Tensor] = None,
         teacher_forcing_ratio: float = 1.0
     ) -> torch.Tensor:
-        # Truncate source sequence if needed (keeping right side)
+        # Get target sequence length
+        target_seq_len = self.target_seq_len
+        
+        # Truncate source sequence if needed
         if src.size(1) > self.max_seq_len:
             src = src[:, -self.max_seq_len:]
         
@@ -347,52 +366,45 @@ class ConvS2S(nn.Module):
         # Training with teacher forcing
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
             # Prepare target sequence
-            if tgt.size(1) > self.target_seq_len:
-                tgt = tgt[:, :self.target_seq_len]
-            elif tgt.size(1) < self.target_seq_len:
-                tgt = F.pad(tgt, (0, self.target_seq_len - tgt.size(1)), value=0)
+            if tgt.size(1) > target_seq_len:
+                tgt = tgt[:, :target_seq_len]
+            elif tgt.size(1) < target_seq_len:
+                tgt = F.pad(tgt, (0, target_seq_len - tgt.size(1)), value=0)
             
-            # Decode with teacher forcing
             output = self.decoder(
                 prev_output_tokens=tgt,
                 encoder_out=encoder_out,
-                encoder_padding_mask=src_padding_mask
+                encoder_padding_mask=src_padding_mask,
+                output_length=target_seq_len
             )
-            
-            # Ensure output length matches target_seq_len
-            if output.size(1) > self.target_seq_len:
-                output = output[:, :self.target_seq_len, :]
-            
         else:
-            # Inference or no teacher forcing
             batch_size = src.size(0)
             device = src.device
-            
-            # Start with start token (assumed to be 1)
             decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
             outputs = []
             
-            # Generate up to target_seq_len tokens
-            for t in range(self.target_seq_len):
+            for _ in range(target_seq_len):
                 step_output = self.decoder(
                     prev_output_tokens=decoder_input,
                     encoder_out=encoder_out,
-                    encoder_padding_mask=src_padding_mask
+                    encoder_padding_mask=src_padding_mask,
+                    output_length=decoder_input.size(1)
                 )
                 
-                outputs.append(step_output[:, -1:, :])  # Keep only last token prediction
+                outputs.append(step_output[:, -1:, :])
                 
                 if not self.training:
-                    # Use model's prediction as next input
                     next_token = step_output[:, -1:].argmax(dim=-1)
                     decoder_input = torch.cat([decoder_input, next_token], dim=1)
             
-            # Combine all outputs
             output = torch.cat(outputs, dim=1)
             
-            # Double-check output length
-            if output.size(1) > self.target_seq_len:
-                output = output[:, :self.target_seq_len, :]
+            # Ensure final output length
+            if output.size(1) != target_seq_len:
+                if output.size(1) > target_seq_len:
+                    output = output[:, :target_seq_len, :]
+                else:
+                    output = F.pad(output, (0, 0, 0, target_seq_len - output.size(1)), value=0)
         
         return output
 
