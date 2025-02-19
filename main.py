@@ -10,6 +10,7 @@ from typing import Dict
 from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
 from src.trainers.attention_gru_trainer import AttentionGRUTrainer
 from src.trainers.transformer_trainer import TransformerTrainer
+from src.trainers.conv_s2s_trainer import ConvS2STrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
 
 def get_model_config(model_type: str) -> Dict:
@@ -56,6 +57,17 @@ def get_model_config(model_type: str) -> Dict:
             'learned_scale': 1.0
         }
     
+    elif model_type == 'conv_s2s':
+        return {
+            **base_config,
+            'embed_dim': 512,
+            'hidden_dim': 512,
+            'num_layers': 4,           # As per paper for base model
+            'kernel_size': 3,          # As per paper
+            'dropout': 0.2,            # As per paper
+            'max_positions': 1024      # Maximum sequence length
+        }
+    
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -73,9 +85,19 @@ def get_training_config(model_type: str) -> Dict:
     if model_type == 'transformer':
         return {
             **base_config,
-            'learning_rate': 1e-4,  # Lower learning rate for transformer
-            'warmup_steps': 4000,   # Warmup steps for transformer
-            'label_smoothing': 0.1  # Label smoothing for transformer
+            'learning_rate': 1e-4,
+            'warmup_steps': 4000,
+            'label_smoothing': 0.1
+        }
+    elif model_type == 'conv_s2s':
+        return {
+            **base_config,
+            'learning_rate': 0.25,     # As per paper
+            'weight_decay': 0.0,       # As per paper
+            'label_smoothing': 0.1,    # As per paper
+            'warmup_steps': 4000,
+            'lr_decay': 0.1,
+            'decay_steps': 50000
         }
     else:
         return {
@@ -88,7 +110,8 @@ def get_trainer_class(model_type: str):
     trainers = {
         'autoencoder': AutoencoderTrainer,
         'attention_gru': AttentionGRUTrainer,
-        'transformer': TransformerTrainer
+        'transformer': TransformerTrainer,
+        'conv_s2s': ConvS2STrainer
     }
     
     if model_type not in trainers:
@@ -126,7 +149,7 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Train various sequence-to-sequence models')
     parser.add_argument('--model_type', type=str, default='autoencoder',
-                      choices=['autoencoder', 'attention_gru', 'transformer'],
+                      choices=['autoencoder', 'attention_gru', 'transformer', 'conv_s2s'],
                       help='Type of model to train')
     parser.add_argument('--data_path', type=str, default='data/ncd_gp_conceptnet',
                       help='Path to data directory')
