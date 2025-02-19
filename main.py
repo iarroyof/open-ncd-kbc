@@ -18,7 +18,7 @@ def get_model_config(model_type: str) -> Dict:
     base_config = {
         'vocab_size': 32000,
         'target_seq_len': 64,
-        'max_seq_len': 512,
+        'max_seq_len': 64,
         'dropout': 0.1
     }
     
