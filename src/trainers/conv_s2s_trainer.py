@@ -141,13 +141,12 @@ class ConvS2STrainer:
             )
 
     def train_epoch(self, epoch: int) -> float:
-        """Train for one epoch"""
         self.model.train()
         total_loss = 0
         valid_batches = 0
         progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         
-        # Calculate teacher forcing ratio (can decay over epochs)
+        # Calculate teacher forcing ratio
         teacher_forcing_ratio = max(
             0.0,
             1.0 - (epoch / self.training_config['num_epochs'])
@@ -159,13 +158,22 @@ class ConvS2STrainer:
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Ensure target has correct sequence length
+                # Always truncate source from the left (keep rightmost tokens)
+                if source_ids.size(1) > self.model_config['max_seq_len']:
+                    source_ids = source_ids[:, -self.model_config['max_seq_len']:]
+                
+                # For target sequence, ensure exact length match
                 if target_ids.size(1) != self.model_config['target_seq_len']:
                     if target_ids.size(1) > self.model_config['target_seq_len']:
                         target_ids = target_ids[:, :self.model_config['target_seq_len']]
                     else:
                         pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
-                        target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
+                        target_ids = torch.nn.functional.pad(
+                            target_ids, 
+                            (0, pad_len), 
+                            value=0,
+                            mode='constant'
+                        )
                 
                 # Forward pass with teacher forcing
                 outputs = self.model(
@@ -173,6 +181,13 @@ class ConvS2STrainer:
                     tgt=target_ids,
                     teacher_forcing_ratio=teacher_forcing_ratio
                 )
+                
+                # Ensure outputs match target sequence length
+                if outputs.size(1) != target_ids.size(1):
+                    if outputs.size(1) > target_ids.size(1):
+                        outputs = outputs[:, :target_ids.size(1), :]
+                    else:
+                        target_ids = target_ids[:, :outputs.size(1)]
                 
                 # Calculate loss
                 outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
@@ -185,10 +200,7 @@ class ConvS2STrainer:
                 # Backward pass
                 self.optimizer.zero_grad()
                 loss.backward()
-                
-                # Clip gradients (paper uses 0.1)
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.1)
-                
                 self.optimizer.step()
                 self.scheduler.step()
                 
@@ -208,11 +220,6 @@ class ConvS2STrainer:
                         'learning_rate': self.scheduler.get_last_lr()[0],
                         'teacher_forcing_ratio': teacher_forcing_ratio
                     })
-                
-                # Periodic memory cleanup
-                if batch_idx % 100 == 0:
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
                     
             except Exception as e:
                 logging.warning(f"Error in training batch {batch_idx}: {str(e)}")
@@ -229,26 +236,42 @@ class ConvS2STrainer:
         all_references = []
         valid_batches = 0
         
-        for batch in tqdm(self.valid_loader, desc="Evaluating"):
+        for batch_idx, batch in enumerate(tqdm(self.valid_loader, desc="Evaluating")):
             try:
                 # Move data to device
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Ensure target has correct sequence length
+                # Handle source sequence length
+                if source_ids.size(1) > self.model_config['max_seq_len']:
+                    source_ids = source_ids[:, -self.model_config['max_seq_len']:]
+                
+                # Handle target sequence length
                 if target_ids.size(1) != self.model_config['target_seq_len']:
                     if target_ids.size(1) > self.model_config['target_seq_len']:
                         target_ids = target_ids[:, :self.model_config['target_seq_len']]
                     else:
                         pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
-                        target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
+                        target_ids = torch.nn.functional.pad(
+                            target_ids, 
+                            (0, pad_len), 
+                            value=0,
+                            mode='constant'
+                        )
                 
                 # Forward pass without teacher forcing
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
                 
+                # Ensure output and target lengths match
+                min_len = min(outputs.size(1), target_ids.size(1))
+                outputs = outputs[:, :min_len, :]
+                target_ids = target_ids[:, :min_len]
+                
                 # Calculate loss
                 outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
                 targets_flat = target_ids.contiguous().view(-1)
+                
+                # Apply loss
                 loss = self.criterion(outputs_flat, targets_flat)
                 
                 # Scale loss by sqrt(target_length) as per paper
@@ -258,16 +281,30 @@ class ConvS2STrainer:
                 valid_batches += 1
                 
                 # Get predictions
-                predictions = outputs.argmax(dim=-1)  # [batch_size, target_seq_len]
+                predictions = outputs.argmax(dim=-1)
                 
-                # Store predictions and references
-                all_predictions.append(predictions.cpu())
-                all_references.append(target_ids.cpu())
+                # Remove padding from predictions and targets for metric calculation
+                mask = target_ids != 0
+                valid_predictions = []
+                valid_references = []
+                
+                for pred, ref, m in zip(predictions, target_ids, mask):
+                    # Get valid (non-padding) tokens
+                    valid_len = m.sum().item()
+                    if valid_len > 0:
+                        valid_predictions.append(pred[:valid_len])
+                        valid_references.append(ref[:valid_len])
+                
+                # Only store if we have valid sequences
+                if valid_predictions and valid_references:
+                    all_predictions.extend(valid_predictions)
+                    all_references.extend(valid_references)
                 
             except Exception as e:
-                logging.warning(f"Error in evaluation batch: {str(e)}")
+                logging.warning(f"Error in evaluation batch {batch_idx}: {str(e)}")
                 continue
         
+        # Check if we have any valid predictions
         if not all_predictions:
             logging.error("No valid predictions during evaluation")
             return {
@@ -283,13 +320,32 @@ class ConvS2STrainer:
             # Compute average loss
             avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
             
-            # Concatenate all predictions and references
-            all_predictions = torch.cat(all_predictions, dim=0)
-            all_references = torch.cat(all_references, dim=0)
+            # Stack predictions and references
+            all_predictions = torch.stack([
+                torch.nn.functional.pad(p, (0, self.model_config['target_seq_len'] - len(p)), value=0)
+                for p in all_predictions
+            ])
+            all_references = torch.stack([
+                torch.nn.functional.pad(r, (0, self.model_config['target_seq_len'] - len(r)), value=0)
+                for r in all_references
+            ])
             
             # Compute metrics
             metrics = self.metrics.compute_metrics(all_predictions, all_references)
             metrics['val_loss'] = avg_loss
+            
+            # Log some example predictions
+            if self.use_wandb and len(all_predictions) > 0:
+                num_examples = min(5, len(all_predictions))
+                examples = []
+                for i in range(num_examples):
+                    pred_text = self.train_dataset.tokenizer.decode(all_predictions[i].tolist())
+                    ref_text = self.train_dataset.tokenizer.decode(all_references[i].tolist())
+                    examples.append({
+                        'prediction': pred_text,
+                        'reference': ref_text
+                    })
+                wandb.log({'validation_examples': examples})
             
         except Exception as e:
             logging.error(f"Error computing metrics: {str(e)}")
@@ -304,6 +360,10 @@ class ConvS2STrainer:
         
         # Clear memory
         del all_predictions, all_references
+        if 'outputs' in locals():
+            del outputs
+        if 'predictions' in locals():
+            del predictions
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
