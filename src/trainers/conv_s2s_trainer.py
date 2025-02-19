@@ -186,8 +186,8 @@ class ConvS2STrainer:
                 loss_mask = (target_ids != 0).float()
                 
                 # Reshape for cross entropy
-                outputs_flat = outputs.view(-1, outputs.size(-1))
-                targets_flat = target_ids.view(-1)
+                outputs_flat = outputs.reshape(-1, outputs.size(-1))  # Changed view->reshape
+                targets_flat = target_ids.contiguous().view(-1)       # Ensure contiguous
                 
                 # Calculate loss only on valid positions
                 raw_loss = self.criterion(outputs_flat, targets_flat)
