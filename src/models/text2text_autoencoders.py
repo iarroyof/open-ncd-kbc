@@ -254,9 +254,12 @@ class ConvS2SDecoder(nn.Module):
         self,
         prev_output_tokens: torch.Tensor,
         encoder_out: torch.Tensor,
-        incremental_state: Optional[Dict] = None,
         encoder_padding_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
+        # Handle sequence length
+        if prev_output_tokens.size(1) > self.max_positions:
+            prev_output_tokens = prev_output_tokens[:, :self.max_positions]
+            
         # Get sequence positions
         positions = self.positions[:, :prev_output_tokens.size(1)]
         
@@ -278,6 +281,10 @@ class ConvS2SDecoder(nn.Module):
         
         # Project to vocabulary
         x = self.output_projection(x)
+        
+        # Ensure sequence length hasn't changed
+        if x.size(1) > prev_output_tokens.size(1):
+            x = x[:, :prev_output_tokens.size(1), :]
         
         return x
 
@@ -320,14 +327,14 @@ class ConvS2S(nn.Module):
             dropout=dropout,
             max_positions=max_seq_len
         )
-        
+            
     def forward(
         self,
         src: torch.Tensor,
         tgt: Optional[torch.Tensor] = None,
         teacher_forcing_ratio: float = 1.0
     ) -> torch.Tensor:
-        # Truncate source sequence if needed
+        # Truncate source sequence if needed (keeping right side)
         if src.size(1) > self.max_seq_len:
             src = src[:, -self.max_seq_len:]
         
@@ -352,6 +359,10 @@ class ConvS2S(nn.Module):
                 encoder_padding_mask=src_padding_mask
             )
             
+            # Ensure output length matches target_seq_len
+            if output.size(1) > self.target_seq_len:
+                output = output[:, :self.target_seq_len, :]
+            
         else:
             # Inference or no teacher forcing
             batch_size = src.size(0)
@@ -361,22 +372,27 @@ class ConvS2S(nn.Module):
             decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
             outputs = []
             
-            # Generate one token at a time
-            for _ in range(self.target_seq_len):
+            # Generate up to target_seq_len tokens
+            for t in range(self.target_seq_len):
                 step_output = self.decoder(
                     prev_output_tokens=decoder_input,
                     encoder_out=encoder_out,
                     encoder_padding_mask=src_padding_mask
                 )
                 
-                outputs.append(step_output[:, -1:])
+                outputs.append(step_output[:, -1:, :])  # Keep only last token prediction
                 
                 if not self.training:
                     # Use model's prediction as next input
                     next_token = step_output[:, -1:].argmax(dim=-1)
                     decoder_input = torch.cat([decoder_input, next_token], dim=1)
             
+            # Combine all outputs
             output = torch.cat(outputs, dim=1)
+            
+            # Double-check output length
+            if output.size(1) > self.target_seq_len:
+                output = output[:, :self.target_seq_len, :]
         
         return output
 
