@@ -146,97 +146,110 @@ class ConvS2STrainer:
         valid_batches = 0
         progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         
+        # Calculate teacher forcing ratio (linear schedule)
         teacher_forcing_ratio = max(0.0, 1.0 - (epoch / self.training_config['num_epochs']))
+        
+        # Get model configuration parameters
+        max_seq_len = self.model_config['max_seq_len']
+        target_seq_len = self.model_config['target_seq_len']
         
         for batch_idx, batch in enumerate(progress_bar):
             try:
-                # Move data to device
+                # Move data to device with length control
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Log shapes before processing
-                logging.debug(f"Initial shapes - Source: {source_ids.shape}, Target: {target_ids.shape}")
-                
-                # Truncate source from the left (keep rightmost tokens)
-                if source_ids.size(1) > self.model_config['max_seq_len']:
-                    source_ids = source_ids[:, -self.model_config['max_seq_len']:]
+                # --- Sequence Length Enforcement ---
+                # Truncate source from the left (keep most recent tokens)
+                source_ids = source_ids[:, -max_seq_len:]
                 
                 # Ensure target has exact length
-                target_seq_len = self.model_config['target_seq_len']
-                if target_ids.size(1) != target_seq_len:
-                    if target_ids.size(1) > target_seq_len:
-                        target_ids = target_ids[:, :target_seq_len]
-                    else:
-                        target_ids = torch.nn.functional.pad(
-                            target_ids, 
-                            (0, target_seq_len - target_ids.size(1)), 
-                            value=0
-                        )
+                target_ids = target_ids[:, :target_seq_len]  # Truncate if too long
+                if target_ids.size(1) < target_seq_len:
+                    # Pad with zeros on the right if too short
+                    target_ids = F.pad(target_ids, 
+                                      (0, target_seq_len - target_ids.size(1)), 
+                                      value=0)
                 
-                # Log shapes after processing
-                logging.debug(f"After processing - Source: {source_ids.shape}, Target: {target_ids.shape}")
+                # --- Forward Pass ---
+                self.optimizer.zero_grad()
                 
-                # Forward pass
+                # Model forward with teacher forcing
                 outputs = self.model(
                     src=source_ids,
                     tgt=target_ids,
                     teacher_forcing_ratio=teacher_forcing_ratio
                 )
                 
-                # Log output shape
-                logging.debug(f"Model output shape: {outputs.shape}")
+                # --- Loss Calculation ---
+                # Create mask for valid tokens (exclude padding)
+                loss_mask = (target_ids != 0).float()
                 
-                # Force output length to match target length
-                if outputs.size(1) != target_seq_len:
-                    logging.warning(f"Output length mismatch: got {outputs.size(1)}, expected {target_seq_len}")
-                    if outputs.size(1) > target_seq_len:
-                        outputs = outputs[:, :target_seq_len, :]
-                    else:
-                        raise ValueError(f"Model output length {outputs.size(1)} is shorter than target length {target_seq_len}")
+                # Reshape for cross entropy
+                outputs_flat = outputs.view(-1, outputs.size(-1))
+                targets_flat = target_ids.view(-1)
                 
-                # Calculate loss
-                outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
-                targets_flat = target_ids.contiguous().view(-1)
+                # Calculate loss only on valid positions
+                raw_loss = self.criterion(outputs_flat, targets_flat)
+                masked_loss = raw_loss * loss_mask.view(-1)
                 
-                # Log shapes before loss
-                logging.debug(f"Loss shapes - Outputs: {outputs_flat.shape}, Targets: {targets_flat.shape}")
+                # Scale loss by sqrt(valid_tokens) as per paper
+                valid_tokens = loss_mask.sum()
+                scaled_loss = masked_loss.sum() / (valid_tokens.sqrt() + 1e-9)
                 
-                loss = self.criterion(outputs_flat, targets_flat)
+                # --- Backward Pass ---
+                scaled_loss.backward()
                 
-                # Scale loss by sqrt(target_length)
-                loss = loss * math.sqrt(target_seq_len)
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), 
+                    0.1  # Same as paper
+                )
                 
-                # Backward pass
-                self.optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.1)
                 self.optimizer.step()
                 self.scheduler.step()
                 
-                # Update metrics
-                total_loss += loss.item()
+                # --- Metrics Tracking ---
+                batch_loss = scaled_loss.item()
+                total_loss += batch_loss
                 valid_batches += 1
-                avg_loss = total_loss / valid_batches
                 
+                # Update progress bar
                 progress_bar.set_postfix({
-                    'loss': f'{avg_loss:.4f}',
-                    'tf_ratio': f'{teacher_forcing_ratio:.2f}'
+                    'loss': f'{total_loss/valid_batches:.4f}',
+                    'tf_ratio': f'{teacher_forcing_ratio:.2f}',
+                    'lr': f'{self.scheduler.get_last_lr()[0]:.2e}'
                 })
                 
+                # --- Logging ---
                 if self.use_wandb:
                     wandb.log({
-                        'batch_loss': loss.item(),
+                        'batch_loss': batch_loss,
                         'learning_rate': self.scheduler.get_last_lr()[0],
                         'teacher_forcing_ratio': teacher_forcing_ratio,
-                        'output_length': outputs.size(1)
+                        'valid_tokens': valid_tokens.item(),
+                        'seq_length': target_seq_len
                     })
                     
+            except RuntimeError as e:
+                if 'CUDA out of memory' in str(e):
+                    logging.warning(f"OOM at batch {batch_idx}, skipping")
+                    torch.cuda.empty_cache()
+                    continue
+                else:
+                    raise
             except Exception as e:
-                logging.warning(f"Error in training batch {batch_idx}: {str(e)}")
+                logging.warning(f"Error in batch {batch_idx}: {str(e)}")
                 continue
-        
-        return total_loss / valid_batches if valid_batches > 0 else float('inf')
-
+    
+        # Final cleanup
+        avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
+        return avg_loss
+    
     @torch.no_grad()
     def evaluate(self) -> Dict[str, float]:
         """Evaluate model without teacher forcing"""
