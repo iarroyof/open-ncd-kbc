@@ -227,37 +227,36 @@ class ConvS2STrainer:
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Ensure sequences match model's expected lengths
+                # Trim sequences to match model expectations
                 source_ids = source_ids[:, -self.model_config['max_seq_len']:]
                 target_ids = target_ids[:, :self.model_config['target_seq_len']]
                 
                 # Forward pass
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
                 
-                # Ensure output and target lengths match
+                # Align output and target lengths
                 min_len = min(outputs.size(1), target_ids.size(1))
                 outputs = outputs[:, :min_len, :]
                 target_ids = target_ids[:, :min_len]
                 
-                # Calculate loss
+                # Compute loss
                 loss = self.criterion(
                     outputs.view(-1, outputs.size(-1)),
                     target_ids.view(-1)
                 )
-                
                 total_loss += loss.item()
                 valid_batches += 1
                 
-                # Get predictions
+                # Generate predictions
                 predictions = outputs.argmax(dim=-1)
                 
-                # Remove padding
+                # Remove padding and collect predictions
                 mask = target_ids != 0
                 for pred, ref, m in zip(predictions, target_ids, mask):
                     valid_len = m.sum().item()
                     if valid_len > 0:
-                        all_predictions.append(pred[:valid_len])
-                        all_references.append(ref[:valid_len])
+                        all_predictions.append(pred[:valid_len].cpu())
+                        all_references.append(ref[:valid_len].cpu())
                 
             except Exception as e:
                 logging.warning(f"Error in evaluation batch {batch_idx}: {str(e)}")
@@ -274,15 +273,12 @@ class ConvS2STrainer:
                 'meteor': 0.0
             }
         
-        # Calculate metrics
-        metrics = self.metrics.compute_metrics(
-            torch.stack(all_predictions),
-            torch.stack(all_references)
-        )
+        # Calculate metrics without stacking
+        metrics = self.metrics.compute_metrics(all_predictions, all_references)
         metrics['val_loss'] = total_loss / valid_batches if valid_batches > 0 else float('inf')
         
         return metrics
-
+    
     def train(self):
         """Complete training loop"""
         logging.info("Starting training")
