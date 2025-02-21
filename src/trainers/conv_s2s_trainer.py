@@ -134,13 +134,13 @@ class ConvS2STrainer:
             src = item['source_text']
             if len(src) > src_max_len:
                 src = src[-src_max_len:]
-            source_ids[i, -len(src):] = torch.tensor(src, dtype=torch.long)
+            source_ids[i, -len(src):] = src
             
             # Handle target sequence (take first tgt_max_len tokens if longer)
             tgt = item['target_text']
             if len(tgt) > tgt_max_len:
                 tgt = tgt[:tgt_max_len]
-            target_ids[i, :len(tgt)] = torch.tensor(tgt, dtype=torch.long)
+            target_ids[i, :len(tgt)] = tgt
         
         return {
             'source_text': source_ids,
