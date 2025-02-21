@@ -8,14 +8,14 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 
 class WeightNormConv1d(nn.Module):
-    """Weight-normalized 1D convolution with proper causal initialization"""
+    """Weight-normalized 1D convolution with proper causal padding"""
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int):
         super().__init__()
         self.conv = nn.Conv1d(
-            in_channels, 
-            out_channels, 
-            kernel_size, 
-            padding=kernel_size - 1  # Changed to proper causal padding
+            in_channels,
+            out_channels,
+            kernel_size,
+            padding=0  # No symmetric padding
         )
         
         # Initialize parameters
@@ -34,16 +34,21 @@ class WeightNormConv1d(nn.Module):
         weight_flat = self.conv.weight.view(self.conv.out_channels, -1)
         weight = self.scale.view(-1, 1, 1) * F.normalize(weight_flat, dim=1).view_as(self.conv.weight)
         
+        # Causal padding: pad kernel_size - 1 on the left
+        pad_left = self.conv.kernel_size[0] - 1
+        x = F.pad(x, (pad_left, 0))  # (batch, channels, seq_len + pad_left)
+        
+        # Apply convolution with padding=0
         return F.conv1d(
-            x, 
-            weight, 
-            self.conv.bias, 
+            x,
+            weight,
+            self.conv.bias,
             stride=self.conv.stride,
-            padding=self.conv.padding,  # Use padding from conv layer
+            padding=0,
             dilation=self.conv.dilation,
             groups=self.conv.groups
         )
-
+        
 class ConvS2SBlock(nn.Module):
     """Causal convolutional block with GLU activation"""
     def __init__(
