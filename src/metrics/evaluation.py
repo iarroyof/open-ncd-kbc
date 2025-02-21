@@ -57,33 +57,23 @@ class TextGenerationMetrics:
         return np.mean(scores)
 
     @torch.no_grad()
-    def compute_metrics(self, predictions, references):
-        # Decode predictions
-        pred_texts = []
-        for pred in predictions:
-            if isinstance(pred, torch.Tensor):
-                pred = pred.cpu().numpy()
-            text = self.tokenizer.decode(pred, skip_special_tokens=True)
-            pred_texts.append(text)
+    def compute_metrics(self, predictions: torch.Tensor, references: torch.Tensor) -> Dict[str, float]:
+        """Compute all metrics"""
+        # Convert tokens to text
+        pred_texts = self.decode_tokens(predictions)
+        ref_texts = self.decode_tokens(references)
         
-        # Decode references
-        ref_texts = []
-        for ref in references:
-            if isinstance(ref, torch.Tensor):
-                ref = ref.cpu().numpy()
-            text = self.tokenizer.decode(ref, skip_special_tokens=True)
-            ref_texts.append(text)
+        # Compute metrics
+        metrics = {}
+        metrics['bleu'] = self.compute_bleu(pred_texts, ref_texts)
         
-        # Compute metrics using the decoded texts
-        bleu = compute_bleu(pred_texts, ref_texts)  # Replace with your BLEU implementation
-        rouge = compute_rouge(pred_texts, ref_texts)  # Replace with your ROUGE implementation
-        meteor = compute_meteor(pred_texts, ref_texts)  # Replace with your METEOR implementation
+        rouge_scores = self.compute_rouge(pred_texts, ref_texts)
+        metrics.update(rouge_scores)
         
-        # Return the computed metrics
-        return {
-            'bleu': bleu,
-            'rouge1': rouge['rouge1'],
-            'rouge2': rouge['rouge2'],
-            'rougeL': rouge['rougeL'],
-            'meteor': meteor
-        }
+        metrics['meteor'] = self.compute_meteor(pred_texts, ref_texts)
+        
+        # Clear cache
+        del pred_texts, ref_texts
+        gc.collect()
+        
+        return metrics
