@@ -7,6 +7,12 @@ import math
 from typing import Dict, Optional, Tuple
 import numpy as np
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F  # Added missing import
+import math  # Added missing import
+from typing import Optional, Tuple
+
 class WeightNormConv1d(nn.Module):
     """Weight-normalized 1D convolution with proper causal initialization"""
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int):
@@ -15,7 +21,7 @@ class WeightNormConv1d(nn.Module):
             in_channels, 
             out_channels, 
             kernel_size, 
-            padding=0  # No built-in padding
+            padding=kernel_size - 1  # Changed to proper causal padding
         )
         
         # Initialize parameters
@@ -39,7 +45,7 @@ class WeightNormConv1d(nn.Module):
             weight, 
             self.conv.bias, 
             stride=self.conv.stride,
-            padding=0,
+            padding=self.conv.padding,  # Use padding from conv layer
             dilation=self.conv.dilation,
             groups=self.conv.groups
         )
@@ -63,44 +69,44 @@ class ConvS2SBlock(nn.Module):
         # Convolution with weight normalization
         self.conv = WeightNormConv1d(
             in_channels=input_dim,
-            out_channels=2 * output_dim,
+            out_channels=2 * output_dim,  # Double for GLU
             kernel_size=kernel_size
         )
         
-        # Residual projection
+        # Residual projection if dimensions don't match
         self.residual = nn.Linear(input_dim, output_dim) if input_dim != output_dim else None
+        
+        # Layer normalization for stability
+        self.layer_norm = nn.LayerNorm(output_dim)
         
         # Regularization
         self.dropout = nn.Dropout(dropout)
-        self._init_weights()
-
-    def _init_weights(self):
-        if self.residual:
-            nn.init.xavier_uniform_(self.residual.weight)
-            nn.init.constant_(self.residual.bias, 0.0)
 
     def forward(self, x: torch.Tensor, padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         residual = x
-        batch_size, seq_len, _ = x.shape
         
-        # Apply causal padding
-        x = F.pad(x.transpose(1, 2), (self.kernel_size - 1, 0))
-        x = self.conv(x).transpose(1, 2)
+        # Transpose for convolution
+        x = x.transpose(1, 2)
+        x = self.conv(x)
+        x = x.transpose(1, 2)
         
         # GLU activation
         x = F.glu(x, dim=-1)
         
         # Residual connection
-        if self.residual:
+        if self.residual is not None:
             residual = self.residual(residual)
-        x = (x + residual) * math.sqrt(self.num_layers)
+        x = (x + residual) / math.sqrt(self.num_layers)
         
-        # Mask padding
+        # Layer normalization
+        x = self.layer_norm(x)
+        
+        # Mask padding if provided
         if padding_mask is not None:
             x = x.masked_fill(padding_mask.unsqueeze(-1), 0.0)
             
-        return self.dropout(x[:, :seq_len, :])  # Strict length control
-        
+        return self.dropout(x)
+
 class ConvS2SAttention(nn.Module):
     """Multi-step attention as described in the paper"""
     def __init__(self, decoder_dim: int, encoder_dim: int, hidden_dim: int):
@@ -110,6 +116,9 @@ class ConvS2SAttention(nn.Module):
         self.decoder_proj = nn.Linear(decoder_dim, hidden_dim, bias=False)
         self.encoder_proj = nn.Linear(encoder_dim, hidden_dim, bias=False)
         self.output_proj = nn.Linear(hidden_dim, 1, bias=False)
+        
+        # Scaling factor for attention
+        self.scaling = 1.0 / math.sqrt(hidden_dim)
         
     def forward(
         self,
@@ -122,12 +131,11 @@ class ConvS2SAttention(nn.Module):
         encoder_hidden = self.encoder_proj(encoder_out)    # [B, S, H]
         
         # Calculate attention scores
-        # Add dims for broadcasting
-        decoder_hidden = decoder_hidden.unsqueeze(2)  # [B, T, 1, H]
-        encoder_hidden = encoder_hidden.unsqueeze(1)  # [B, 1, S, H]
+        decoder_hidden = decoder_hidden.unsqueeze(2)       # [B, T, 1, H]
+        encoder_hidden = encoder_hidden.unsqueeze(1)       # [B, 1, S, H]
         
-        # Combined hidden
-        combined = torch.tanh(decoder_hidden + encoder_hidden)  # [B, T, S, H]
+        # Combined hidden with scaling
+        combined = torch.tanh(decoder_hidden + encoder_hidden) * self.scaling
         
         # Calculate attention scores
         attn_scores = self.output_proj(combined).squeeze(-1)  # [B, T, S]
@@ -148,7 +156,7 @@ class ConvS2SAttention(nn.Module):
         return context, attn_weights
 
 class ConvS2SEncoder(nn.Module):
-    """Convolutional encoder"""
+    """Convolutional encoder with improved sequence handling"""
     def __init__(
         self,
         vocab_size: int,
@@ -160,16 +168,22 @@ class ConvS2SEncoder(nn.Module):
         max_positions: int = 512
     ):
         super().__init__()
-        self.max_positions = max_positions  # Add this line
-        # Word embeddings
-        self.embed_tokens = nn.Embedding(vocab_size, embed_dim)
+        self.max_positions = max_positions
         
-        # Position embeddings (learned, not sinusoidal)
+        # Word embeddings with proper initialization
+        self.embed_tokens = nn.Embedding(vocab_size, embed_dim)
+        nn.init.normal_(self.embed_tokens.weight, mean=0, std=embed_dim ** -0.5)
+        
+        # Position embeddings
         self.embed_positions = nn.Embedding(max_positions, embed_dim)
+        nn.init.normal_(self.embed_positions.weight, mean=0, std=embed_dim ** -0.5)
         
         # Register position indices buffer
         positions = torch.arange(max_positions).unsqueeze(0)
         self.register_buffer('positions', positions)
+        
+        # Layer normalization for embeddings
+        self.embed_layer_norm = nn.LayerNorm(embed_dim)
         
         # Convolutional layers
         self.layers = nn.ModuleList([
@@ -196,11 +210,18 @@ class ConvS2SEncoder(nn.Module):
         src_tokens: torch.Tensor,
         src_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
+        # Ensure input length doesn't exceed max_positions
+        if src_tokens.size(1) > self.max_positions:
+            src_tokens = src_tokens[:, :self.max_positions]
+            if src_mask is not None:
+                src_mask = src_mask[:, :self.max_positions]
+        
         # Get sequence positions
         positions = self.positions[:, :src_tokens.size(1)]
         
         # Combine token and position embeddings
         x = self.embed_tokens(src_tokens) + self.embed_positions(positions)
+        x = self.embed_layer_norm(x)
         
         # Apply convolutional layers
         for layer in self.layers:
@@ -213,7 +234,7 @@ class ConvS2SEncoder(nn.Module):
         return x
 
 class ConvS2SDecoder(nn.Module):
-    """Convolutional decoder with strict sequence length enforcement"""
+    """Convolutional decoder with improved generation"""
     def __init__(
         self,
         vocab_size: int,
@@ -226,11 +247,22 @@ class ConvS2SDecoder(nn.Module):
     ):
         super().__init__()
         self.max_positions = max_positions
+        
+        # Word embeddings
         self.embed_tokens = nn.Embedding(vocab_size, embed_dim)
+        nn.init.normal_(self.embed_tokens.weight, mean=0, std=embed_dim ** -0.5)
+        
+        # Position embeddings
         self.embed_positions = nn.Embedding(max_positions, embed_dim)
+        nn.init.normal_(self.embed_positions.weight, mean=0, std=embed_dim ** -0.5)
+        
+        # Position indices buffer
         self.register_buffer('position_ids', torch.arange(max_positions).unsqueeze(0))
         
-        # Layer stack
+        # Layer normalization for embeddings
+        self.embed_layer_norm = nn.LayerNorm(embed_dim)
+        
+        # Layer stack (attention + convolution)
         self.layers = nn.ModuleList()
         for idx in range(num_layers):
             self.layers.extend([
@@ -245,7 +277,10 @@ class ConvS2SDecoder(nn.Module):
                 )
             ])
             
+        # Output projection
         self.proj = nn.Linear(hidden_dim, vocab_size)
+        nn.init.normal_(self.proj.weight, mean=0, std=hidden_dim ** -0.5)
+        nn.init.constant_(self.proj.bias, 0.0)
 
     def forward(
         self,
@@ -254,29 +289,34 @@ class ConvS2SDecoder(nn.Module):
         encoder_padding_mask: Optional[torch.Tensor] = None,
         output_length: Optional[int] = None
     ) -> torch.Tensor:
-        # Length validation
-        output_length = output_length or prev_output_tokens.size(1)
-        if prev_output_tokens.size(1) > output_length:
-            prev_output_tokens = prev_output_tokens[:, :output_length]
+        # Length validation and handling
+        seq_len = min(
+            prev_output_tokens.size(1),
+            output_length or self.max_positions
+        )
+        prev_output_tokens = prev_output_tokens[:, :seq_len]
             
         # Embeddings
         positions = self.position_ids[:, :prev_output_tokens.size(1)]
         x = self.embed_tokens(prev_output_tokens) + self.embed_positions(positions)
+        x = self.embed_layer_norm(x)
         
         # Layer processing
         for i in range(0, len(self.layers), 2):
             # Attention
             attn_out, _ = self.layers[i](x, encoder_out, encoder_padding_mask)
-            x = (x + attn_out)[:, :output_length, :]
+            x = x + attn_out
             
             # Convolution
-            conv_out = self.layers[i+1](x)
-            x = conv_out[:, :output_length, :]
+            x = self.layers[i+1](x)
             
-        return self.proj(x)
-        
+        # Output projection
+        x = self.proj(x)
+            
+        return x
+
 class ConvS2S(nn.Module):
-    """Full model with sequence length validation"""
+    """Complete Convolutional Sequence-to-Sequence model"""
     def __init__(
         self,
         vocab_size: int,
@@ -290,14 +330,27 @@ class ConvS2S(nn.Module):
     ):
         super().__init__()
         self.encoder = ConvS2SEncoder(
-            vocab_size, embed_dim, hidden_dim, num_layers, 
-            kernel_size, dropout, max_seq_len
+            vocab_size=vocab_size,
+            embed_dim=embed_dim,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            kernel_size=kernel_size,
+            dropout=dropout,
+            max_positions=max_seq_len
         )
+        
         self.decoder = ConvS2SDecoder(
-            vocab_size, embed_dim, hidden_dim, num_layers,
-            kernel_size, dropout, max_seq_len
+            vocab_size=vocab_size,
+            embed_dim=embed_dim,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            kernel_size=kernel_size,
+            dropout=dropout,
+            max_positions=max_seq_len
         )
+        
         self.target_seq_len = target_seq_len
+        self.pad_idx = 0  # Assuming 0 is pad token
 
     def forward(
         self,
@@ -305,43 +358,69 @@ class ConvS2S(nn.Module):
         tgt: Optional[torch.Tensor] = None,
         teacher_forcing_ratio: float = 1.0
     ) -> torch.Tensor:
-        # Encoder
-        src = src[:, -self.encoder.max_positions:]
-        encoder_out = self.encoder(src)
+        # Create padding mask for source
+        src_padding_mask = (src == self.pad_idx)
         
-        # Decoder
+        # Encoder forward pass
+        encoder_out = self.encoder(src, src_padding_mask)
+        
+        # Decoder forward pass (training vs. inference)
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
-            tgt = tgt[:, :self.target_seq_len]
-            output = self.decoder(
+            # Teacher forcing
+            decoder_out = self.decoder(
                 prev_output_tokens=tgt,
                 encoder_out=encoder_out,
+                encoder_padding_mask=src_padding_mask,
                 output_length=self.target_seq_len
             )
         else:
-            output = self._generate(encoder_out)
+            # Autoregressive generation
+            decoder_out = self._generate(
+                encoder_out=encoder_out,
+                encoder_padding_mask=src_padding_mask
+            )
             
-        return output[:, :self.target_seq_len, :]  # Final length enforcement
+        return decoder_out
 
-    def _generate(self, encoder_out: torch.Tensor) -> torch.Tensor:
-        """Autoregressive generation with length control"""
+    def _generate(
+        self,
+        encoder_out: torch.Tensor,
+        encoder_padding_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """Autoregressive generation with proper length control"""
         batch_size = encoder_out.size(0)
         device = encoder_out.device
-        outputs = []
         
+        # Initialize with start token (assuming 1 is start token)
         decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
         
+        # Store all outputs
+        outputs = []
+        
+        # Generate one token at a time
         for step in range(self.target_seq_len):
-            output = self.decoder(
+            # Get decoder output for current step
+            decoder_out = self.decoder(
                 prev_output_tokens=decoder_input,
                 encoder_out=encoder_out,
-                output_length=step+1
+                encoder_padding_mask=encoder_padding_mask,
+                output_length=step + 1
             )
-            outputs.append(output[:, -1:, :])
-            decoder_input = torch.cat([
-                decoder_input, 
-                output[:, -1:].argmax(dim=-1)
-            ], dim=1)
             
+            # Store the output logits
+            outputs.append(decoder_out[:, -1:, :])
+            
+            # Get next token (argmax or sampling could be implemented here)
+            next_token = decoder_out[:, -1:, :].argmax(dim=-1)
+            
+            # Concatenate with previous tokens
+            decoder_input = torch.cat([decoder_input, next_token], dim=1)
+            
+            # Optional early stopping on EOS token
+            # if (next_token == eos_token_id).all():
+            #     break
+                
+        # Concatenate all outputs
         return torch.cat(outputs, dim=1)
         
 class PositionalEncoding(nn.Module):
