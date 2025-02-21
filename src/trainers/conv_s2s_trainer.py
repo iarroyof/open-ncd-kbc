@@ -1,8 +1,7 @@
-# src/trainers/conv_s2s_trainer.py
-
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+import torch.nn.functional as F  # Added missing import
+import math  # Added missing import
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict
@@ -20,9 +19,6 @@ from ..data.tsv_text2text_dataset import (
 from ..models.text2text_autoencoders import ConvS2S
 from ..metrics.evaluation import TextGenerationMetrics
 
-# Set tokenizers parallelism
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 class ConvS2STrainer:
     def __init__(
         self,
@@ -39,27 +35,15 @@ class ConvS2STrainer:
         self.training_config = training_config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Setup logging
-        self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(exist_ok=True)
-        logging.basicConfig(
-            filename=self.log_dir / "training.log",
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s'
-        )
-        
-        # Cache configuration
-        cache_config = CacheConfig(
-            enable_cache=True,
-            cache_dir=cache_dir,
-            cache_format='h5'
-        )
-        
-        # Initialize datasets
+        # Initialize datasets with explicit sequence lengths
         logging.info("Initializing train dataset")
         self.train_dataset = CachedTSVDataset(
             configs=train_configs,
-            cache_config=cache_config,
+            cache_config=CacheConfig(
+                enable_cache=True,
+                cache_dir=cache_dir,
+                cache_format='h5'
+            ),
             tokenizer_path=tokenizer_path,
             vocab_size=self.model_config.get('vocab_size', 32000),
             max_length=self.model_config.get('max_seq_len', 512)
@@ -68,41 +52,23 @@ class ConvS2STrainer:
         logging.info("Initializing validation dataset")
         self.valid_dataset = CachedTSVDataset(
             configs=valid_configs,
-            cache_config=cache_config,
+            cache_config=CacheConfig(
+                enable_cache=True,
+                cache_dir=cache_dir,
+                cache_format='h5'
+            ),
             tokenizer_path=tokenizer_path,
             vocab_size=self.model_config.get('vocab_size', 32000),
             max_length=self.model_config.get('max_seq_len', 512)
         )
         
-        # Initialize dataloaders
-        self.train_loader = DataLoader(
-            self.train_dataset,
-            batch_size=training_config['batch_size'],
-            shuffle=True,
-            collate_fn=collate_fn,
-            num_workers=training_config.get('num_workers', 4),
-            pin_memory=True,
-            prefetch_factor=2
-        )
-        
-        self.valid_loader = DataLoader(
-            self.valid_dataset,
-            batch_size=training_config['batch_size'],
-            shuffle=False,
-            collate_fn=collate_fn,
-            num_workers=training_config.get('num_workers', 4),
-            pin_memory=True,
-            prefetch_factor=2
-        )
-        
-        # Update model_config with vocab_size from dataset
+        # Update model config with actual vocab size
         self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
         
         # Initialize model
         self.model = ConvS2S(**self.model_config).to(self.device)
         
-        # Initialize optimizer
-        # Using NAG (Nesterov Accelerated Gradient) as per paper
+        # Initialize optimizer with Nesterov momentum
         self.optimizer = torch.optim.SGD(
             self.model.parameters(),
             lr=training_config['learning_rate'],
@@ -111,25 +77,36 @@ class ConvS2STrainer:
             weight_decay=training_config.get('weight_decay', 0.0)
         )
         
-        # Learning rate scheduler (paper uses fixed learning rate with decay)
-        def lr_lambda(step):
-            warmup_steps = training_config.get('warmup_steps', 4000)
-            if step < warmup_steps:
-                return float(step) / float(max(1, warmup_steps))
-            return training_config.get('lr_decay', 0.1) ** (step // training_config.get('decay_steps', 50000))
-            
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
+        # Initialize dataloaders with dynamic batch size
+        self.batch_size = training_config['batch_size']
+        self.train_loader = torch.utils.data.DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            collate_fn=self._custom_collate_fn,
+            num_workers=training_config.get('num_workers', 4),
+            pin_memory=True
+        )
         
-        # Loss function with label smoothing as per paper
+        self.valid_loader = torch.utils.data.DataLoader(
+            self.valid_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            collate_fn=self._custom_collate_fn,
+            num_workers=training_config.get('num_workers', 4),
+            pin_memory=True
+        )
+        
+        # Loss function with label smoothing
         self.criterion = nn.CrossEntropyLoss(
-            ignore_index=0,  # Ignore padding token
+            ignore_index=0,
             label_smoothing=training_config.get('label_smoothing', 0.1)
         )
         
-        # Initialize metrics calculator
+        # Initialize metrics
         self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
         
-        # Initialize wandb
+        # Setup wandb
         self.use_wandb = use_wandb
         if use_wandb:
             wandb.init(
@@ -140,119 +117,98 @@ class ConvS2STrainer:
                 }
             )
 
+    def _custom_collate_fn(self, batch):
+        """Custom collate function to ensure consistent sequence lengths"""
+        # Get max lengths for this batch
+        src_max_len = min(
+            max(len(x['source_text']) for x in batch),
+            self.model_config['max_seq_len']
+        )
+        tgt_max_len = min(
+            max(len(x['target_text']) for x in batch),
+            self.model_config['target_seq_len']
+        )
+        
+        # Pad sequences to same length
+        source_ids = torch.zeros((len(batch), src_max_len), dtype=torch.long)
+        target_ids = torch.zeros((len(batch), tgt_max_len), dtype=torch.long)
+        
+        for i, item in enumerate(batch):
+            src = torch.tensor(item['source_text'][-src_max_len:], dtype=torch.long)
+            tgt = torch.tensor(item['target_text'][:tgt_max_len], dtype=torch.long)
+            
+            source_ids[i, :len(src)] = src
+            target_ids[i, :len(tgt)] = tgt
+        
+        return {
+            'source_text': source_ids,
+            'target_text': target_ids
+        }
+
     def train_epoch(self, epoch: int) -> float:
         self.model.train()
         total_loss = 0
         valid_batches = 0
-        progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         
-        # Calculate teacher forcing ratio (linear schedule)
+        # Calculate teacher forcing ratio
         teacher_forcing_ratio = max(0.0, 1.0 - (epoch / self.training_config['num_epochs']))
         
-        # Get model configuration parameters
-        max_seq_len = self.model_config['max_seq_len']
-        target_seq_len = self.model_config['target_seq_len']
+        progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         
         for batch_idx, batch in enumerate(progress_bar):
             try:
-                # Move data to device with length control
+                # Move data to device
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # --- Sequence Length Enforcement ---
-                # Truncate source from the left (keep most recent tokens)
-                source_ids = source_ids[:, -max_seq_len:]
-                
-                # Ensure target has exact length
-                target_ids = target_ids[:, :target_seq_len]  # Truncate if too long
-                if target_ids.size(1) < target_seq_len:
-                    # Pad with zeros on the right if too short
-                    target_ids = F.pad(target_ids, 
-                                      (0, target_seq_len - target_ids.size(1)), 
-                                      value=0)
-                
-                # --- Forward Pass ---
+                # Forward pass
                 self.optimizer.zero_grad()
-                
-                # Model forward with teacher forcing
                 outputs = self.model(
                     src=source_ids,
                     tgt=target_ids,
                     teacher_forcing_ratio=teacher_forcing_ratio
                 )
                 
-                # --- Loss Calculation ---
-                # Create mask for valid tokens (exclude padding)
+                # Calculate loss
                 loss_mask = (target_ids != 0).float()
+                outputs_flat = outputs.view(-1, outputs.size(-1))
+                targets_flat = target_ids.view(-1)
                 
-                # Reshape for cross entropy
-                outputs_flat = outputs.reshape(-1, outputs.size(-1))  # Changed view->reshape
-                targets_flat = target_ids.contiguous().view(-1)       # Ensure contiguous
-                
-                # Calculate loss only on valid positions
+                # Scale loss by sqrt(length) as per paper
                 raw_loss = self.criterion(outputs_flat, targets_flat)
-                masked_loss = raw_loss * loss_mask.view(-1)
-                
-                # Scale loss by sqrt(valid_tokens) as per paper
                 valid_tokens = loss_mask.sum()
-                scaled_loss = masked_loss.sum() / (valid_tokens.sqrt() + 1e-9)
+                loss = raw_loss * math.sqrt(valid_tokens)
                 
-                # --- Backward Pass ---
-                scaled_loss.backward()
-                
-                # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), 
-                    0.1  # Same as paper
-                )
-                
+                # Backward pass
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.1)
                 self.optimizer.step()
-                self.scheduler.step()
                 
-                # --- Metrics Tracking ---
-                batch_loss = scaled_loss.item()
+                # Update metrics
+                batch_loss = loss.item()
                 total_loss += batch_loss
                 valid_batches += 1
                 
                 # Update progress bar
                 progress_bar.set_postfix({
-                    'loss': f'{total_loss/valid_batches:.4f}',
-                    'tf_ratio': f'{teacher_forcing_ratio:.2f}',
-                    'lr': f'{self.scheduler.get_last_lr()[0]:.2e}'
+                    'loss': f'{batch_loss:.4f}',
+                    'tf_ratio': f'{teacher_forcing_ratio:.2f}'
                 })
                 
-                # --- Logging ---
                 if self.use_wandb:
                     wandb.log({
                         'batch_loss': batch_loss,
-                        'learning_rate': self.scheduler.get_last_lr()[0],
-                        'teacher_forcing_ratio': teacher_forcing_ratio,
-                        'valid_tokens': valid_tokens.item(),
-                        'seq_length': target_seq_len
+                        'teacher_forcing_ratio': teacher_forcing_ratio
                     })
                     
-            except RuntimeError as e:
-                if 'CUDA out of memory' in str(e):
-                    logging.warning(f"OOM at batch {batch_idx}, skipping")
-                    torch.cuda.empty_cache()
-                    continue
-                else:
-                    raise
             except Exception as e:
                 logging.warning(f"Error in batch {batch_idx}: {str(e)}")
                 continue
-    
-        # Final cleanup
-        avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            
-        return avg_loss
-    
+        
+        return total_loss / valid_batches if valid_batches > 0 else float('inf')
+
     @torch.no_grad()
     def evaluate(self) -> Dict[str, float]:
-        """Evaluate model without teacher forcing"""
         self.model.eval()
         total_loss = 0
         all_predictions = []
@@ -265,24 +221,7 @@ class ConvS2STrainer:
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Handle source sequence length
-                if source_ids.size(1) > self.model_config['max_seq_len']:
-                    source_ids = source_ids[:, -self.model_config['max_seq_len']:]
-                
-                # Handle target sequence length
-                if target_ids.size(1) != self.model_config['target_seq_len']:
-                    if target_ids.size(1) > self.model_config['target_seq_len']:
-                        target_ids = target_ids[:, :self.model_config['target_seq_len']]
-                    else:
-                        pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
-                        target_ids = torch.nn.functional.pad(
-                            target_ids, 
-                            (0, pad_len), 
-                            value=0,
-                            mode='constant'
-                        )
-                
-                # Forward pass without teacher forcing
+                # Forward pass
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
                 
                 # Ensure output and target lengths match
@@ -291,14 +230,10 @@ class ConvS2STrainer:
                 target_ids = target_ids[:, :min_len]
                 
                 # Calculate loss
-                outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
-                targets_flat = target_ids.contiguous().view(-1)
-                
-                # Apply loss
-                loss = self.criterion(outputs_flat, targets_flat)
-                
-                # Scale loss by sqrt(target_length) as per paper
-                loss = loss * math.sqrt(target_ids.size(1))
+                loss = self.criterion(
+                    outputs.view(-1, outputs.size(-1)),
+                    target_ids.view(-1)
+                )
                 
                 total_loss += loss.item()
                 valid_batches += 1
@@ -306,28 +241,18 @@ class ConvS2STrainer:
                 # Get predictions
                 predictions = outputs.argmax(dim=-1)
                 
-                # Remove padding from predictions and targets for metric calculation
+                # Remove padding
                 mask = target_ids != 0
-                valid_predictions = []
-                valid_references = []
-                
                 for pred, ref, m in zip(predictions, target_ids, mask):
-                    # Get valid (non-padding) tokens
                     valid_len = m.sum().item()
                     if valid_len > 0:
-                        valid_predictions.append(pred[:valid_len])
-                        valid_references.append(ref[:valid_len])
-                
-                # Only store if we have valid sequences
-                if valid_predictions and valid_references:
-                    all_predictions.extend(valid_predictions)
-                    all_references.extend(valid_references)
+                        all_predictions.append(pred[:valid_len])
+                        all_references.append(ref[:valid_len])
                 
             except Exception as e:
                 logging.warning(f"Error in evaluation batch {batch_idx}: {str(e)}")
                 continue
         
-        # Check if we have any valid predictions
         if not all_predictions:
             logging.error("No valid predictions during evaluation")
             return {
@@ -339,72 +264,14 @@ class ConvS2STrainer:
                 'meteor': 0.0
             }
         
-        try:
-            # Compute average loss
-            avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
-            
-            # Stack predictions and references
-            all_predictions = torch.stack([
-                torch.nn.functional.pad(p, (0, self.model_config['target_seq_len'] - len(p)), value=0)
-                for p in all_predictions
-            ])
-            all_references = torch.stack([
-                torch.nn.functional.pad(r, (0, self.model_config['target_seq_len'] - len(r)), value=0)
-                for r in all_references
-            ])
-            
-            # Compute metrics
-            metrics = self.metrics.compute_metrics(all_predictions, all_references)
-            metrics['val_loss'] = avg_loss
-            
-            # Log some example predictions
-            if self.use_wandb and len(all_predictions) > 0:
-                num_examples = min(5, len(all_predictions))
-                examples = []
-                for i in range(num_examples):
-                    pred_text = self.train_dataset.tokenizer.decode(all_predictions[i].tolist())
-                    ref_text = self.train_dataset.tokenizer.decode(all_references[i].tolist())
-                    examples.append({
-                        'prediction': pred_text,
-                        'reference': ref_text
-                    })
-                wandb.log({'validation_examples': examples})
-            
-        except Exception as e:
-            logging.error(f"Error computing metrics: {str(e)}")
-            metrics = {
-                'val_loss': avg_loss if 'avg_loss' in locals() else float('inf'),
-                'bleu': 0.0,
-                'rouge1': 0.0,
-                'rouge2': 0.0,
-                'rougeL': 0.0,
-                'meteor': 0.0
-            }
-        
-        # Clear memory
-        del all_predictions, all_references
-        if 'outputs' in locals():
-            del outputs
-        if 'predictions' in locals():
-            del predictions
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        # Calculate metrics
+        metrics = self.metrics.compute_metrics(
+            torch.stack(all_predictions),
+            torch.stack(all_references)
+        )
+        metrics['val_loss'] = total_loss / valid_batches if valid_batches > 0 else float('inf')
         
         return metrics
-
-    def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
-        """Save model checkpoint"""
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'metrics': metrics,
-            'model_config': self.model_config,
-            'training_config': self.training_config
-        }
-        torch.save(checkpoint, self.log_dir / f'checkpoint_epoch_{epoch}.pt')
 
     def train(self):
         """Complete training loop"""
@@ -433,13 +300,6 @@ class ConvS2STrainer:
                         **val_metrics
                     })
                 
-                # Save best model
-                if val_metrics['val_loss'] < best_metrics['val_loss'] or \
-                   val_metrics['bleu'] > best_metrics['bleu']:
-                    best_metrics = val_metrics
-                    self.save_checkpoint(epoch, val_metrics)
-                    logging.info(f"Saved new best model with metrics: {val_metrics}")
-                    
         except KeyboardInterrupt:
             logging.info("Training interrupted by user")
         except Exception as e:
@@ -449,7 +309,7 @@ class ConvS2STrainer:
             logging.info("Training completed")
             if self.use_wandb:
                 wandb.finish()
-
+            
     def __del__(self):
         """Cleanup resources"""
         if torch.cuda.is_available():
