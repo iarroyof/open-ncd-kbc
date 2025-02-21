@@ -7,13 +7,6 @@ import math
 from typing import Dict, Optional, Tuple
 import numpy as np
 
-
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-
 class WeightNormConv1d(nn.Module):
     """Weight-normalized 1D convolution with proper causal initialization"""
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int):
