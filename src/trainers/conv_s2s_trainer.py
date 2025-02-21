@@ -48,7 +48,7 @@ class ConvS2STrainer:
             ),
             tokenizer_path=tokenizer_path,
             vocab_size=self.model_config.get('vocab_size', 32000),
-            max_length=self.model_config.get('max_seq_len', 512)
+            max_length=max(self.model_config.get('max_seq_len', 512), self.model_config.get('target_seq_len', 64))
         )
 
         logging.info("Initializing validation dataset")
@@ -61,7 +61,7 @@ class ConvS2STrainer:
             ),
             tokenizer_path=tokenizer_path,
             vocab_size=self.model_config.get('vocab_size', 32000),
-            max_length=self.model_config.get('max_seq_len', 512)
+            max_length=max(self.model_config.get('max_seq_len', 512), self.model_config.get('target_seq_len', 64))
         )
 
         # Update model config with actual vocab size
@@ -119,29 +119,30 @@ class ConvS2STrainer:
                 }
             )
 
+
     def _custom_collate_fn(self, batch):
-        """Custom collate function with strict sequence length enforcement"""
-        # Use model's configured lengths
+    """Custom collate function with strict sequence length enforcement"""
+    # Use model's configured lengths
         src_max_len = self.model_config.get('max_seq_len', 512)
         tgt_max_len = self.model_config.get('target_seq_len', 64)
-
+    
         # Initialize tensors with padding
         source_ids = torch.zeros((len(batch), src_max_len), dtype=torch.long)
         target_ids = torch.zeros((len(batch), tgt_max_len), dtype=torch.long)
-
+    
         for i, item in enumerate(batch):
             # Handle source sequence (take last src_max_len tokens if longer)
             src = item['source_text']
             if len(src) > src_max_len:
                 src = src[-src_max_len:]
             source_ids[i, -len(src):] = torch.tensor(src, dtype=torch.long)
-
+    
             # Handle target sequence (take first tgt_max_len tokens if longer)
             tgt = item['target_text']
             if len(tgt) > tgt_max_len:
                 tgt = tgt[:tgt_max_len]
             target_ids[i, :len(tgt)] = torch.tensor(tgt, dtype=torch.long)
-
+    
         return {
             'source_text': source_ids,
             'target_text': target_ids
