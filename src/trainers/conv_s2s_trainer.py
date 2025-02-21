@@ -118,27 +118,27 @@ class ConvS2STrainer:
             )
 
     def _custom_collate_fn(self, batch):
-        """Custom collate function to ensure consistent sequence lengths"""
-        # Get max lengths for this batch
-        src_max_len = min(
-            max(len(x['source_text']) for x in batch),
-            self.model_config['max_seq_len']
-        )
-        tgt_max_len = min(
-            max(len(x['target_text']) for x in batch),
-            self.model_config['target_seq_len']
-        )
+        """Custom collate function with strict sequence length enforcement"""
+        # Use model's configured lengths
+        src_max_len = self.model_config.get('max_seq_len', 512)
+        tgt_max_len = self.model_config.get('target_seq_len', 64)
         
-        # Pad sequences to same length
+        # Initialize tensors with padding
         source_ids = torch.zeros((len(batch), src_max_len), dtype=torch.long)
         target_ids = torch.zeros((len(batch), tgt_max_len), dtype=torch.long)
         
         for i, item in enumerate(batch):
-            src = torch.tensor(item['source_text'][-src_max_len:], dtype=torch.long)
-            tgt = torch.tensor(item['target_text'][:tgt_max_len], dtype=torch.long)
+            # Handle source sequence (take last src_max_len tokens if longer)
+            src = item['source_text']
+            if len(src) > src_max_len:
+                src = src[-src_max_len:]
+            source_ids[i, -len(src):] = torch.tensor(src, dtype=torch.long)
             
-            source_ids[i, :len(src)] = src
-            target_ids[i, :len(tgt)] = tgt
+            # Handle target sequence (take first tgt_max_len tokens if longer)
+            tgt = item['target_text']
+            if len(tgt) > tgt_max_len:
+                tgt = tgt[:tgt_max_len]
+            target_ids[i, :len(tgt)] = torch.tensor(tgt, dtype=torch.long)
         
         return {
             'source_text': source_ids,
@@ -160,6 +160,10 @@ class ConvS2STrainer:
                 # Move data to device
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
+                
+                # Ensure sequences match model's expected lengths
+                source_ids = source_ids[:, -self.model_config['max_seq_len']:]
+                target_ids = target_ids[:, :self.model_config['target_seq_len']]
                 
                 # Forward pass
                 self.optimizer.zero_grad()
@@ -220,6 +224,10 @@ class ConvS2STrainer:
                 # Move data to device
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
+                
+                # Ensure sequences match model's expected lengths
+                source_ids = source_ids[:, -self.model_config['max_seq_len']:]
+                target_ids = target_ids[:, :self.model_config['target_seq_len']]
                 
                 # Forward pass
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
