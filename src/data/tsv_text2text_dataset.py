@@ -46,18 +46,18 @@ class CachedTSVDataset(Dataset):
         self.configs = configs
         self.cache_config = cache_config
         self.max_length = max_length
-
+        
         # Setup caching
         self.cache_dir = Path(cache_config.cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
-
+        
         # Initialize tokenizer
         self.tokenizer = self._setup_tokenizer(tokenizer_path, vocab_size)
-
+        
         # Create or load cache
         self.cache_path = self._get_cache_path()
         self.data_cache = self._setup_cache()
-
+        
         # Initialize indices
         self._setup_indices()
 
@@ -179,24 +179,24 @@ class CachedTSVDataset(Dataset):
     def _create_cache(self) -> Union[h5py.File, np.memmap]:
         """Create and populate cache file"""
         logging.info(f"Creating cache file at {self.cache_path}")
-
+        
         try:
             # Initialize lists for storage
             all_source_ids = []
             all_target_ids = []
-            max_source_len = self.model_config.get('max_seq_len', 512)
-            max_target_len = self.model_config.get('target_seq_len', 64)
-
+            max_source_len = 0
+            max_target_len = 0
+            
             # Process all data and track lengths
             logging.info("First pass: calculating maximum sequence lengths")
             for config in self.configs:
                 for chunk in self._read_chunks(config):
                     if chunk.empty:
                         continue
-
+                        
                     source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
                     target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
-
+                    
                     for src, tgt in zip(source_encodings, target_encodings):
                         if src and tgt:  # Ensure both sequences exist
                             max_source_len = max(max_source_len, len(src.ids))
@@ -205,43 +205,43 @@ class CachedTSVDataset(Dataset):
             # Clip maximum lengths to model's max_length
             max_source_len = min(max_source_len, self.max_length)
             max_target_len = min(max_target_len, self.max_length)
-
+            
             logging.info(f"Maximum source length: {max_source_len}")
             logging.info(f"Maximum target length: {max_target_len}")
-
-            # Second pass: create padded sequences
+            
+            # Second pass: create padded arrays
             logging.info("Second pass: creating padded sequences")
             for config in self.configs:
                 for chunk in self._read_chunks(config):
                     if chunk.empty:
                         continue
-
+                        
                     source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
                     target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
-
+                    
                     for src, tgt in zip(source_encodings, target_encodings):
                         if src and tgt:  # Ensure both sequences exist
                             # Pad or truncate source sequence
                             src_ids = src.ids[:max_source_len]
                             src_ids = src_ids + [0] * (max_source_len - len(src_ids))
-
+                            
                             # Pad or truncate target sequence
                             tgt_ids = tgt.ids[:max_target_len]
                             tgt_ids = tgt_ids + [0] * (max_target_len - len(tgt_ids))
-
+                            
                             all_source_ids.append(src_ids)
                             all_target_ids.append(tgt_ids)
-
+            
             if not all_source_ids or not all_target_ids:
                 raise ValueError("No valid sequences found in the dataset")
-
+            
             # Convert to numpy arrays
             logging.info("Converting to numpy arrays")
             source_array = np.array(all_source_ids, dtype=np.int32)
             target_array = np.array(all_target_ids, dtype=np.int32)
-
+            
             logging.info(f"Final arrays shape - Source: {source_array.shape}, Target: {target_array.shape}")
-
+            
             # Create cache file
             if self.cache_config.cache_format == 'h5':
                 logging.info("Creating HDF5 cache file")
@@ -249,28 +249,28 @@ class CachedTSVDataset(Dataset):
                     # Store the sequences
                     f.create_dataset('source_ids', data=source_array)
                     f.create_dataset('target_ids', data=target_array)
-
+                    
                     # Store metadata
                     f.attrs['max_source_len'] = max_source_len
                     f.attrs['max_target_len'] = max_target_len
                     f.attrs['num_sequences'] = len(all_source_ids)
-
+                
                 logging.info("Cache file created successfully")
                 return h5py.File(self.cache_path, 'r')  # Reopen in read mode
-
+                
             else:
                 logging.info("Creating numpy memory-mapped cache file")
                 data = np.array(list(zip(all_source_ids, all_target_ids)), dtype=np.int32)
                 np.save(self.cache_path, data)
                 return np.load(self.cache_path, mmap_mode='r')
-
+                
         except Exception as e:
             logging.error(f"Error creating cache: {str(e)}")
             # Clean up partial cache file if it exists
             if self.cache_path.exists():
                 self.cache_path.unlink()
             raise RuntimeError(f"Failed to create cache: {str(e)}") from e
-            
+
     def _setup_indices(self):
         """Setup indices for dataset access"""
         try:
