@@ -18,10 +18,10 @@ def get_model_config(model_type: str) -> Dict:
     base_config = {
         'vocab_size': 32000,
         'target_seq_len': 64,
-        'max_seq_len': 64,  # Set a default value for max_seq_len
+        'max_seq_len': 64,
         'dropout': 0.1
     }
-
+    
     if model_type == 'autoencoder':
         return {
             **base_config,
@@ -33,7 +33,7 @@ def get_model_config(model_type: str) -> Dict:
             'use_normalization': True,
             'norm_type': 'batch'
         }
-
+    
     elif model_type == 'attention_gru':
         return {
             **base_config,
@@ -42,7 +42,7 @@ def get_model_config(model_type: str) -> Dict:
             'num_layers': 2,
             'bidirectional_encoder': True
         }
-
+        
     elif model_type == 'transformer':
         return {
             **base_config,
@@ -56,7 +56,7 @@ def get_model_config(model_type: str) -> Dict:
             'fixed_scale': 1.0,
             'learned_scale': 1.0
         }
-
+    
     elif model_type == 'conv_s2s':
         return {
             **base_config,
@@ -66,7 +66,7 @@ def get_model_config(model_type: str) -> Dict:
             'kernel_size': 3,          # As per paper
             'dropout': 0.2            # As per paper
         }
-
+    
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -251,3 +251,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+	
