@@ -121,8 +121,8 @@ class ConvS2STrainer:
 
 
     def _custom_collate_fn(self, batch):
-    """Custom collate function with strict sequence length enforcement"""
-    # Use model's configured lengths
+        """Custom collate function with strict sequence length enforcement"""
+        # Use model's configured lengths
         src_max_len = self.model_config.get('max_seq_len', 512)
         tgt_max_len = self.model_config.get('target_seq_len', 64)
     
