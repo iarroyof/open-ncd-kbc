@@ -75,7 +75,8 @@ def get_model_config(model_type: str) -> Dict:
             'hidden_dim': 512,
             'num_layers': 4,           # As per paper for base model
             'kernel_size': 3,          # As per paper
-            'dropout': 0.2            # As per paper
+            'dropout': 0.2,            # As per paper
+            'use_attention': False     # Add this line; set to False to disable attention
         }
     
     else:
