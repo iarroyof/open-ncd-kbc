@@ -464,6 +464,197 @@ class PositionalEncoding(nn.Module):
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
+class LSTMAttention(nn.Module):
+    """Bahdanau-style attention mechanism for LSTM decoder"""
+    def __init__(self, hidden_size: int):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.attn = nn.Linear(hidden_size * 2, hidden_size)  # Combine decoder hidden and encoder output
+        self.v = nn.Parameter(torch.rand(hidden_size))
+        stdv = 1. / math.sqrt(self.v.size(0))
+        self.v.data.uniform_(-stdv, stdv)
+
+    def forward(self, hidden: torch.Tensor, encoder_outputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            hidden: [batch_size, hidden_size] - Decoder's current hidden state
+            encoder_outputs: [batch_size, src_seq_len, hidden_size] - Encoder's output
+        Returns:
+            context: [batch_size, hidden_size] - Context vector
+            attn_weights: [batch_size, src_seq_len] - Attention weights
+        """
+        batch_size, src_seq_len, _ = encoder_outputs.size()
+        
+        # Expand hidden state to match encoder outputs' sequence length
+        hidden = hidden.unsqueeze(1).repeat(1, src_seq_len, 1)  # [batch_size, src_seq_len, hidden_size]
+        
+        # Compute energy scores
+        energy = torch.tanh(self.attn(torch.cat((hidden, encoder_outputs), dim=2)))  # [batch_size, src_seq_len, hidden_size]
+        energy = energy.transpose(1, 2)  # [batch_size, hidden_size, src_seq_len]
+        v = self.v.repeat(batch_size, 1).unsqueeze(1)  # [batch_size, 1, hidden_size]
+        attn_scores = torch.bmm(v, energy).squeeze(1)  # [batch_size, src_seq_len]
+        
+        # Compute attention weights
+        attn_weights = torch.softmax(attn_scores, dim=1)  # [batch_size, src_seq_len]
+        
+        # Compute context vector
+        context = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs).squeeze(1)  # [batch_size, hidden_size]
+        
+        return context, attn_weights
+
+class LSTMSeq2Seq(nn.Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        target_seq_len: int = 64,
+        embed_size: int = 256,
+        hidden_size: int = 512,
+        num_layers: int = 2,
+        dropout: float = 0.1,
+        max_seq_len: int = 512,
+        bidirectional_encoder: bool = True
+    ):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.target_seq_len = target_seq_len
+        self.embed_size = embed_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.max_seq_len = max_seq_len
+        self.bidirectional_encoder = bidirectional_encoder
+        self.dropout = dropout
+
+        # Embedding layer
+        self.embedding = nn.Embedding(vocab_size, embed_size)
+        
+        # Encoder LSTM
+        encoder_hidden_size = hidden_size // 2 if bidirectional_encoder else hidden_size
+        self.encoder_lstm = nn.LSTM(
+            embed_size,
+            encoder_hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0,
+            bidirectional=bidirectional_encoder
+        )
+        
+        # Decoder LSTM
+        decoder_input_size = embed_size + (encoder_hidden_size * 2 if bidirectional_encoder else encoder_hidden_size)
+        self.decoder_lstm = nn.LSTM(
+            decoder_input_size,
+            hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0
+        )
+        
+        # Attention mechanism
+        self.attention = LSTMAttention(hidden_size)
+        
+        # Output layer
+        self.fc = nn.Linear(hidden_size + (encoder_hidden_size * 2 if bidirectional_encoder else encoder_hidden_size), vocab_size)
+        
+        # Dropout
+        self.dropout_layer = nn.Dropout(dropout)
+        
+        # Initialize weights
+        self._init_weights()
+
+    def _init_weights(self):
+        """Initialize weights using Xavier uniform initialization"""
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def forward(
+        self,
+        src: torch.Tensor,
+        tgt: Optional[torch.Tensor] = None,
+        teacher_forcing_ratio: float = 1.0
+    ) -> torch.Tensor:
+        # Truncate source sequence if needed
+        if src.size(1) > self.max_seq_len:
+            src = src[:, -self.max_seq_len:]
+        
+        batch_size = src.size(0)
+        device = src.device
+        
+        # Encoder
+        src_emb = self.dropout_layer(self.embedding(src))  # [batch_size, src_seq_len, embed_size]
+        encoder_outputs, (hidden, cell) = self.encoder_lstm(src_emb)  # [batch_size, src_seq_len, hidden_size], [num_layers * directions, batch_size, hidden_size]
+        
+        # Adjust hidden and cell states for bidirectional encoder
+        if self.bidirectional_encoder:
+            hidden = hidden.view(self.num_layers, 2, batch_size, -1)  # [num_layers, directions, batch_size, hidden_size/2]
+            hidden = hidden.transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)  # [num_layers, batch_size, hidden_size]
+            cell = cell.view(self.num_layers, 2, batch_size, -1)
+            cell = cell.transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)
+
+        # Training with teacher forcing
+        if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
+            # Prepare target sequence
+            if tgt.size(1) > self.target_seq_len:
+                tgt = tgt[:, :self.target_seq_len]
+            elif tgt.size(1) < self.target_seq_len:
+                tgt = torch.nn.functional.pad(tgt, (0, self.target_seq_len - tgt.size(1)), value=0)
+            
+            # Embed target sequence
+            tgt_emb = self.dropout_layer(self.embedding(tgt))  # [batch_size, tgt_seq_len, embed_size]
+            outputs = []
+            
+            # Initial input to decoder
+            decoder_input = tgt_emb[:, 0, :]  # [batch_size, embed_size]
+            
+            for t in range(self.target_seq_len):
+                # Attention
+                context, _ = self.attention(hidden[-1], encoder_outputs)  # [batch_size, hidden_size]
+                
+                # Combine context with decoder input
+                decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)  # [batch_size, embed_size + hidden_size]
+                
+                # Decoder step
+                decoder_output, (hidden, cell) = self.decoder_lstm(
+                    decoder_input_with_context.unsqueeze(1), (hidden, cell)
+                )  # [batch_size, 1, hidden_size]
+                
+                # Project to vocabulary
+                combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1)  # [batch_size, hidden_size + encoder_hidden_size]
+                output = self.fc(combined_output)  # [batch_size, vocab_size]
+                outputs.append(output.unsqueeze(1))
+                
+                # Next input (teacher forcing)
+                decoder_input = tgt_emb[:, t, :] if t < self.target_seq_len - 1 else torch.zeros_like(decoder_input)
+            
+            return torch.cat(outputs, dim=1)  # [batch_size, target_seq_len, vocab_size]
+        
+        # Inference (autoregressive generation)
+        else:
+            outputs = []
+            decoder_input = self.embedding(torch.ones(batch_size, 1, dtype=torch.long, device=device)).squeeze(1)  # [batch_size, embed_size]
+            hidden, cell = hidden, cell
+            
+            for t in range(self.target_seq_len):
+                # Attention
+                context, _ = self.attention(hidden[-1], encoder_outputs)  # [batch_size, hidden_size]
+                
+                # Combine context with decoder input
+                decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)  # [batch_size, embed_size + hidden_size]
+                
+                # Decoder step
+                decoder_output, (hidden, cell) = self.decoder_lstm(
+                    decoder_input_with_context.unsqueeze(1), (hidden, cell)
+                )  # [batch_size, 1, hidden_size]
+                
+                # Project to vocabulary
+                combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1)
+                output = self.fc(combined_output)  # [batch_size, vocab_size]
+                outputs.append(output.unsqueeze(1))
+                
+                # Update decoder input with prediction
+                decoder_input = self.embedding(output.argmax(dim=-1))  # [batch_size, embed_size]
+            
+            return torch.cat(outputs, dim=1)  # [batch_size, target_seq_len, vocab_size]
+
 class VanillaTransformer(nn.Module):
     def __init__(
         self,
