@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 import torch
 import numpy as np
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
@@ -6,6 +6,7 @@ from rouge_score import rouge_scorer
 from nltk.translate.meteor_score import meteor_score
 import nltk
 import gc
+
 
 class TextGenerationMetrics:
     def __init__(self, tokenizer):
@@ -19,16 +20,33 @@ class TextGenerationMetrics:
         except LookupError:
             nltk.download('wordnet')
 
-    def decode_tokens(self, token_ids: torch.Tensor) -> List[str]:
-        """Convert token IDs to text"""
+
+    def decode_tokens(self, token_ids: Union[torch.Tensor, List[torch.Tensor]]) -> List[str]:
+        """
+        Convert token IDs to text. Handles both a single batched tensor and a list of tensors.
+        
+        Args:
+            token_ids: Either a tensor of shape [batch_size, sequence_length] or a list of 1D tensors.
+        
+        Returns:
+            A list of decoded strings.
+        """
+        # If token_ids is a tensor, convert it to a list of sequences
+        if isinstance(token_ids, torch.Tensor):
+            token_ids = [seq for seq in token_ids]
+        elif not isinstance(token_ids, list):
+            raise ValueError("token_ids must be a tensor or a list of tensors")
+        
         decoded = []
-        for seq in token_ids.cpu().numpy():
-            # Remove padding tokens
-            seq = seq[seq != 0]
-            text = self.tokenizer.decode(seq)
+        for seq in token_ids:
+            if isinstance(seq, torch.Tensor):
+                seq = seq.cpu().numpy()  # Move to CPU and convert to NumPy
+            # Remove padding tokens (0) and decode
+            seq = seq[seq != 0]  # Assumes 0 is the padding token
+            text = self.tokenizer.decode(seq, skip_special_tokens=True)
             decoded.append(text)
         return decoded
-
+    
     def compute_bleu(self, predictions: List[str], references: List[List[str]]) -> float:
         """Compute BLEU score"""
         pred_tokens = [pred.split() for pred in predictions]
