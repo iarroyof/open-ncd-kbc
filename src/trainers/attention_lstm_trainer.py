@@ -44,7 +44,7 @@ class AttentionLSTMTrainer:
         self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
         
         # Initialize model
-        self.model = LSTMSeq2Seq(**self.model_config).to(self.device)
+        self.model = AttentionLSTMSeq2Seq(**self.model_config).to(self.device)
         
         # Optimizer
         self.optimizer = torch.optim.Adam(
