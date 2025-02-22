@@ -171,7 +171,7 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Train various sequence-to-sequence models')
     parser.add_argument('--model_type', type=str, default='autoencoder',
-                      choices=['autoencoder', 'attention_gru', 'transformer', 'conv_s2s'],
+                      choices=['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s'],
                       help='Type of model to train')
     parser.add_argument('--data_path', type=str, default='data/ncd_gp_conceptnet',
                       help='Path to data directory')
