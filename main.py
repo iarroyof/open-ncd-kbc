@@ -42,7 +42,15 @@ def get_model_config(model_type: str) -> Dict:
             'num_layers': 2,
             'bidirectional_encoder': True
         }
-        
+    elif model_type == 'attention_lstm':
+	return {
+	    **base_config,
+	    'embed_size': 256,
+	    'hidden_size': 512,
+	    'num_layers': 2,
+	    'bidirectional_encoder': True,
+	    'dropout': 0.1
+	}    
     elif model_type == 'transformer':
         return {
             **base_config,
@@ -88,6 +96,19 @@ def get_training_config(model_type: str) -> Dict:
             'warmup_steps': 4000,
             'label_smoothing': 0.1
         }
+    elif model_type == 'attention_gru':  # Add this new case
+        return {
+            **base_config,
+            'learning_rate': 1e-3,
+            'weight_decay': 1e-5,
+            'gradient_clip': 1.0
+        }
+    elif model_type == 'attention_lstm':
+        return {
+            **base_config,
+            'learning_rate': 1e-3,
+            'weight_decay': 1e-5
+        }
     elif model_type == 'conv_s2s':
         return {
             **base_config,
@@ -109,6 +130,7 @@ def get_trainer_class(model_type: str):
     trainers = {
         'autoencoder': AutoencoderTrainer,
         'attention_gru': AttentionGRUTrainer,
+	'attention_lstm': AttentionLSTMTrainer,
         'transformer': TransformerTrainer,
         'conv_s2s': ConvS2STrainer
     }
