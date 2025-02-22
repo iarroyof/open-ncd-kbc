@@ -568,6 +568,8 @@ class VanillaTransformer(nn.Module):
                 tgt_key_padding_mask=tgt_key_padding_mask
             )
             
+            return self.fc(out)
+        
         # For inference or when not using teacher forcing
         else:
             batch_size = src.size(0)
@@ -608,9 +610,8 @@ class VanillaTransformer(nn.Module):
             
             # Combine all outputs
             out = torch.cat(outputs, dim=1)
+            return out
         
-        # Project to vocabulary size
-        return self.fc(out)
 class PositionalAutoencoder(nn.Module):
     def __init__(
         self,
