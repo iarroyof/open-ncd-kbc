@@ -41,7 +41,8 @@ def get_model_config(model_type: str) -> Dict:
             'embed_size': 256,
             'hidden_size': 512,
             'num_layers': 2,
-            'bidirectional_encoder': True
+            'bidirectional_encoder': True,
+            'use_attention': False  # Toggle this: True for attention, False to disable
         }
     elif model_type == 'attention_lstm':
         return {
