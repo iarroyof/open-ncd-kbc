@@ -485,19 +485,13 @@ class LSTMAttention(nn.Module):
         """
         batch_size, src_seq_len, _ = encoder_outputs.size()
         
-        # Expand hidden state to match encoder outputs' sequence length
         hidden = hidden.unsqueeze(1).repeat(1, src_seq_len, 1)  # [batch_size, src_seq_len, hidden_size]
-        
-        # Compute energy scores
         energy = torch.tanh(self.attn(torch.cat((hidden, encoder_outputs), dim=2)))  # [batch_size, src_seq_len, hidden_size]
         energy = energy.transpose(1, 2)  # [batch_size, hidden_size, src_seq_len]
         v = self.v.repeat(batch_size, 1).unsqueeze(1)  # [batch_size, 1, hidden_size]
         attn_scores = torch.bmm(v, energy).squeeze(1)  # [batch_size, src_seq_len]
         
-        # Compute attention weights
         attn_weights = torch.softmax(attn_scores, dim=1)  # [batch_size, src_seq_len]
-        
-        # Compute context vector
         context = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs).squeeze(1)  # [batch_size, hidden_size]
         
         return context, attn_weights
@@ -512,7 +506,8 @@ class AttentionLSTMSeq2Seq(nn.Module):
         num_layers: int = 2,
         dropout: float = 0.1,
         max_seq_len: int = 512,
-        bidirectional_encoder: bool = True
+        bidirectional_encoder: bool = True,
+        use_attention: bool = True  # New parameter to toggle attention
     ):
         super().__init__()
         self.vocab_size = vocab_size
@@ -522,6 +517,7 @@ class AttentionLSTMSeq2Seq(nn.Module):
         self.num_layers = num_layers
         self.max_seq_len = max_seq_len
         self.bidirectional_encoder = bidirectional_encoder
+        self.use_attention = use_attention
         self.dropout = dropout
 
         # Embedding layer
@@ -538,8 +534,8 @@ class AttentionLSTMSeq2Seq(nn.Module):
             bidirectional=bidirectional_encoder
         )
         
-        # Decoder LSTM
-        decoder_input_size = embed_size + (encoder_hidden_size * 2 if bidirectional_encoder else encoder_hidden_size)
+        # Decoder LSTM input size depends on attention
+        decoder_input_size = embed_size + (encoder_hidden_size * 2 if bidirectional_encoder else encoder_hidden_size) if use_attention else embed_size
         self.decoder_lstm = nn.LSTM(
             decoder_input_size,
             hidden_size,
@@ -548,11 +544,12 @@ class AttentionLSTMSeq2Seq(nn.Module):
             dropout=dropout if num_layers > 1 else 0
         )
         
-        # Attention mechanism
-        self.attention = LSTMAttention(hidden_size)
+        # Attention mechanism (only if enabled)
+        self.attention = LSTMAttention(hidden_size) if use_attention else None
         
-        # Output layer
-        self.fc = nn.Linear(hidden_size + (encoder_hidden_size * 2 if bidirectional_encoder else encoder_hidden_size), vocab_size)
+        # Output layer size depends on attention
+        fc_input_size = hidden_size + (encoder_hidden_size * 2 if bidirectional_encoder else encoder_hidden_size) if use_attention else hidden_size
+        self.fc = nn.Linear(fc_input_size, vocab_size)
         
         # Dropout
         self.dropout_layer = nn.Dropout(dropout)
@@ -585,44 +582,35 @@ class AttentionLSTMSeq2Seq(nn.Module):
         
         # Adjust hidden and cell states for bidirectional encoder
         if self.bidirectional_encoder:
-            hidden = hidden.view(self.num_layers, 2, batch_size, -1)  # [num_layers, directions, batch_size, hidden_size/2]
-            hidden = hidden.transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)  # [num_layers, batch_size, hidden_size]
-            cell = cell.view(self.num_layers, 2, batch_size, -1)
-            cell = cell.transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)
+            hidden = hidden.view(self.num_layers, 2, batch_size, -1).transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)
+            cell = cell.view(self.num_layers, 2, batch_size, -1).transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)
 
         # Training with teacher forcing
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
-            # Prepare target sequence
             if tgt.size(1) > self.target_seq_len:
                 tgt = tgt[:, :self.target_seq_len]
             elif tgt.size(1) < self.target_seq_len:
                 tgt = torch.nn.functional.pad(tgt, (0, self.target_seq_len - tgt.size(1)), value=0)
             
-            # Embed target sequence
             tgt_emb = self.dropout_layer(self.embedding(tgt))  # [batch_size, tgt_seq_len, embed_size]
             outputs = []
-            
-            # Initial input to decoder
             decoder_input = tgt_emb[:, 0, :]  # [batch_size, embed_size]
             
             for t in range(self.target_seq_len):
-                # Attention
-                context, _ = self.attention(hidden[-1], encoder_outputs)  # [batch_size, hidden_size]
+                if self.use_attention:
+                    context, _ = self.attention(hidden[-1], encoder_outputs)  # [batch_size, hidden_size]
+                    decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)  # [batch_size, embed_size + encoder_hidden_size]
+                else:
+                    decoder_input_with_context = decoder_input
                 
-                # Combine context with decoder input
-                decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)  # [batch_size, embed_size + hidden_size]
-                
-                # Decoder step
                 decoder_output, (hidden, cell) = self.decoder_lstm(
                     decoder_input_with_context.unsqueeze(1), (hidden, cell)
                 )  # [batch_size, 1, hidden_size]
                 
-                # Project to vocabulary
-                combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1)  # [batch_size, hidden_size + encoder_hidden_size]
+                combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1) if self.use_attention else decoder_output.squeeze(1)
                 output = self.fc(combined_output)  # [batch_size, vocab_size]
                 outputs.append(output.unsqueeze(1))
                 
-                # Next input (teacher forcing)
                 decoder_input = tgt_emb[:, t, :] if t < self.target_seq_len - 1 else torch.zeros_like(decoder_input)
             
             return torch.cat(outputs, dim=1)  # [batch_size, target_seq_len, vocab_size]
@@ -634,23 +622,20 @@ class AttentionLSTMSeq2Seq(nn.Module):
             hidden, cell = hidden, cell
             
             for t in range(self.target_seq_len):
-                # Attention
-                context, _ = self.attention(hidden[-1], encoder_outputs)  # [batch_size, hidden_size]
+                if self.use_attention:
+                    context, _ = self.attention(hidden[-1], encoder_outputs)  # [batch_size, hidden_size]
+                    decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)  # [batch_size, embed_size + encoder_hidden_size]
+                else:
+                    decoder_input_with_context = decoder_input
                 
-                # Combine context with decoder input
-                decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)  # [batch_size, embed_size + hidden_size]
-                
-                # Decoder step
                 decoder_output, (hidden, cell) = self.decoder_lstm(
                     decoder_input_with_context.unsqueeze(1), (hidden, cell)
                 )  # [batch_size, 1, hidden_size]
                 
-                # Project to vocabulary
-                combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1)
+                combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1) if self.use_attention else decoder_output.squeeze(1)
                 output = self.fc(combined_output)  # [batch_size, vocab_size]
                 outputs.append(output.unsqueeze(1))
                 
-                # Update decoder input with prediction
                 decoder_input = self.embedding(output.argmax(dim=-1))  # [batch_size, embed_size]
             
             return torch.cat(outputs, dim=1)  # [batch_size, target_seq_len, vocab_size]
