@@ -50,7 +50,8 @@ def get_model_config(model_type: str) -> Dict:
             'hidden_size': 512,
             'num_layers': 2,
             'bidirectional_encoder': True,
-            'dropout': 0.1
+            'dropout': 0.1,
+            'use_attention': False  # Add this line; set to False to disable attention
         }    
     elif model_type == 'transformer':
         return {
