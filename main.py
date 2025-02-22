@@ -44,14 +44,14 @@ def get_model_config(model_type: str) -> Dict:
             'bidirectional_encoder': True
         }
     elif model_type == 'attention_lstm':
-	return {
-	    **base_config,
-	    'embed_size': 256,
-	    'hidden_size': 512,
-	    'num_layers': 2,
-	    'bidirectional_encoder': True,
-	    'dropout': 0.1
-	}    
+        return {
+            **base_config,
+            'embed_size': 256,
+            'hidden_size': 512,
+            'num_layers': 2,
+            'bidirectional_encoder': True,
+            'dropout': 0.1
+        }    
     elif model_type == 'transformer':
         return {
             **base_config,
