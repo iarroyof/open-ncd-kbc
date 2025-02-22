@@ -9,6 +9,7 @@ from typing import Dict
 # Import all model trainers
 from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
 from src.trainers.attention_gru_trainer import AttentionGRUTrainer
+from src.trainers.attention_lstm_trainer import AttentionLSTMTrainer
 from src.trainers.transformer_trainer import TransformerTrainer
 from src.trainers.conv_s2s_trainer import ConvS2STrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
