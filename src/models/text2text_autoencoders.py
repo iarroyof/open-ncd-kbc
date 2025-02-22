@@ -502,7 +502,7 @@ class LSTMAttention(nn.Module):
         
         return context, attn_weights
 
-class LSTMSeq2Seq(nn.Module):
+class AttentionLSTMSeq2Seq(nn.Module):
     def __init__(
         self,
         vocab_size: int,
