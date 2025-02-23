@@ -181,9 +181,9 @@ class ConvS2STrainer:
                 targets_flat = target_ids.view(-1)
                 
                 # Scale loss by sqrt(length) as per paper
-                raw_loss = self.criterion(outputs_flat, targets_flat)
+                loss = self.criterion(outputs_flat, targets_flat)
                 valid_tokens = loss_mask.sum()
-                loss = raw_loss * math.sqrt(valid_tokens)
+                #loss = raw_loss * math.sqrt(valid_tokens)
                 
                 # Backward pass
                 loss.backward()
@@ -223,60 +223,37 @@ class ConvS2STrainer:
         
         for batch_idx, batch in enumerate(tqdm(self.valid_loader, desc="Evaluating")):
             try:
-                # Move data to device
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
-                
-                # Trim sequences to match model expectations
                 source_ids = source_ids[:, -self.model_config['max_seq_len']:]
                 target_ids = target_ids[:, :self.model_config['target_seq_len']]
                 
-                # Forward pass
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
-                
-                # Align output and target lengths
                 min_len = min(outputs.size(1), target_ids.size(1))
                 outputs = outputs[:, :min_len, :]
                 target_ids = target_ids[:, :min_len]
                 
-                # Compute loss
-                loss = self.criterion(
-                    outputs.view(-1, outputs.size(-1)),
-                    target_ids.view(-1)
-                )
+                loss = self.criterion(outputs.view(-1, outputs.size(-1)), target_ids.view(-1))
                 total_loss += loss.item()
                 valid_batches += 1
                 
-                # Generate predictions
                 predictions = outputs.argmax(dim=-1)
-                
-                # Remove padding and collect predictions
                 mask = target_ids != 0
                 for pred, ref, m in zip(predictions, target_ids, mask):
                     valid_len = m.sum().item()
                     if valid_len > 0:
                         all_predictions.append(pred[:valid_len].cpu())
                         all_references.append(ref[:valid_len].cpu())
-                
             except Exception as e:
                 logging.warning(f"Error in evaluation batch {batch_idx}: {str(e)}")
                 continue
         
         if not all_predictions:
             logging.error("No valid predictions during evaluation")
-            return {
-                'val_loss': float('inf'),
-                'bleu': 0.0,
-                'rouge1': 0.0,
-                'rouge2': 0.0,
-                'rougeL': 0.0,
-                'meteor': 0.0
-            }
+            return {'val_loss': float('inf'), 'bleu': 0.0, 'rouge1': 0.0, 'rouge2': 0.0, 'rougeL': 0.0, 'meteor': 0.0}
         
-        # Calculate metrics without stacking
         metrics = self.metrics.compute_metrics(all_predictions, all_references)
         metrics['val_loss'] = total_loss / valid_batches if valid_batches > 0 else float('inf')
-        
         return metrics
     
     def train(self):
