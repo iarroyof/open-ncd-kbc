@@ -200,69 +200,30 @@ class ConvS2SDecoder(nn.Module):
 
 class ConvS2S(nn.Module):
     """Complete Convolutional Sequence-to-Sequence model with optional attention"""
-    def __init__(
-        self,
-        vocab_size: int,
-        embed_dim: int = 512,
-        hidden_dim: int = 512,
-        num_layers: int = 4,
-        kernel_size: int = 3,
-        dropout: float = 0.1,
-        max_seq_len: int = 512,
-        target_seq_len: int = 64,
-        use_attention: bool = True  # New parameter to toggle attention
-    ):
+    def __init__(self, vocab_size: int, embed_dim: int = 512, hidden_dim: int = 512, num_layers: int = 4, kernel_size: int = 3, dropout: float = 0.1, max_seq_len: int = 512, target_seq_len: int = 64, use_attention: bool = True):
         super().__init__()
-        self.encoder = ConvS2SEncoder(
-            vocab_size=vocab_size,
-            embed_dim=embed_dim,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            kernel_size=kernel_size,
-            dropout=dropout,
-            max_positions=max_seq_len
-        )
-        
-        self.decoder = ConvS2SDecoder(
-            vocab_size=vocab_size,
-            embed_dim=embed_dim,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            kernel_size=kernel_size,
-            dropout=dropout,
-            max_positions=max_seq_len,
-            use_attention=use_attention  # Pass to decoder
-        )
-        
+        self.vocab_size = vocab_size  # Store vocab_size as instance attribute
+        self.encoder = ConvS2SEncoder(vocab_size=vocab_size, embed_dim=embed_dim, hidden_dim=hidden_dim, num_layers=num_layers, kernel_size=kernel_size, dropout=dropout, max_positions=max_seq_len)
+        self.decoder = ConvS2SDecoder(vocab_size=vocab_size, embed_dim=embed_dim, hidden_dim=hidden_dim, num_layers=num_layers, kernel_size=kernel_size, dropout=dropout, max_positions=max_seq_len, use_attention=use_attention)
         self.target_seq_len = target_seq_len
         self.pad_idx = 0
 
-    def forward(
-        self,
-        src: torch.Tensor,
-        tgt: Optional[torch.Tensor] = None,
-        teacher_forcing_ratio: float = 1.0
-    ) -> torch.Tensor:
+    def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
         src_padding_mask = (src == self.pad_idx)
         encoder_out = self.encoder(src, src_padding_mask)
         
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
-            decoder_out = self.decoder(
-                prev_output_tokens=tgt,
-                encoder_out=encoder_out,
-                encoder_padding_mask=src_padding_mask,
-                output_length=self.target_seq_len
-            )
+            decoder_out = self.decoder(prev_output_tokens=tgt, encoder_out=encoder_out, encoder_padding_mask=src_padding_mask, output_length=self.target_seq_len)
         else:
             decoder_out = self._generate(encoder_out=encoder_out, encoder_padding_mask=src_padding_mask)
-            
+        
         return decoder_out
 
     def _generate(self, encoder_out: torch.Tensor, encoder_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         batch_size = encoder_out.size(0)
         device = encoder_out.device
         decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
-        outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
+        outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Use self.vocab_size
         
         for step in range(self.target_seq_len):
             decoder_out = self.decoder(
@@ -274,8 +235,7 @@ class ConvS2S(nn.Module):
             outputs[:, step:step+1, :] = decoder_out[:, -1:, :]
             next_token = decoder_out[:, -1:, :].argmax(dim=-1)
             decoder_input = torch.cat([decoder_input, next_token], dim=1)
-            del decoder_out  # Free intermediate tensor
-            torch.cuda.empty_cache()  # Optional: clear unused memory
+        
         return outputs
     
 class PositionalEncoding(nn.Module):
