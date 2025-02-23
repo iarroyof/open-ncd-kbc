@@ -379,12 +379,7 @@ class AttentionLSTMSeq2Seq(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(
-        self,
-        src: torch.Tensor,
-        tgt: Optional[torch.Tensor] = None,
-        teacher_forcing_ratio: float = 1.0
-    ) -> torch.Tensor:
+    def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
         # Truncate source sequence if needed
         if src.size(1) > self.max_seq_len:
             src = src[:, -self.max_seq_len:]
@@ -400,7 +395,7 @@ class AttentionLSTMSeq2Seq(nn.Module):
         if self.bidirectional_encoder:
             hidden = hidden.view(self.num_layers, 2, batch_size, -1).transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)
             cell = cell.view(self.num_layers, 2, batch_size, -1).transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)
-
+    
         # Training with teacher forcing
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
             if tgt.size(1) > self.target_seq_len:
@@ -409,7 +404,7 @@ class AttentionLSTMSeq2Seq(nn.Module):
                 tgt = torch.nn.functional.pad(tgt, (0, self.target_seq_len - tgt.size(1)), value=0)
             
             tgt_emb = self.dropout_layer(self.embedding(tgt))  # [batch_size, tgt_seq_len, embed_size]
-            outputs = []
+            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Pre-allocate outputs
             decoder_input = tgt_emb[:, 0, :]  # [batch_size, embed_size]
             
             for t in range(self.target_seq_len):
@@ -425,16 +420,18 @@ class AttentionLSTMSeq2Seq(nn.Module):
                 
                 combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1) if self.use_attention else decoder_output.squeeze(1)
                 output = self.fc(combined_output)  # [batch_size, vocab_size]
-                outputs.append(output.unsqueeze(1))
+                outputs[:, t:t+1, :] = output.unsqueeze(1)  # Fill pre-allocated tensor
                 
                 decoder_input = tgt_emb[:, t, :] if t < self.target_seq_len - 1 else torch.zeros_like(decoder_input)
             
-            return torch.cat(outputs, dim=1)  # [batch_size, target_seq_len, vocab_size]
+            return outputs
         
         # Inference (autoregressive generation)
         else:
-            outputs = []
+            batch_size = src.size(0)
+            device = src.device
             decoder_input = self.embedding(torch.ones(batch_size, 1, dtype=torch.long, device=device)).squeeze(1)  # [batch_size, embed_size]
+            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Pre-allocate outputs
             hidden, cell = hidden, cell
             
             for t in range(self.target_seq_len):
@@ -450,11 +447,11 @@ class AttentionLSTMSeq2Seq(nn.Module):
                 
                 combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1) if self.use_attention else decoder_output.squeeze(1)
                 output = self.fc(combined_output)  # [batch_size, vocab_size]
-                outputs.append(output.unsqueeze(1))
+                outputs[:, t:t+1, :] = output.unsqueeze(1)  # Fill pre-allocated tensor
                 
                 decoder_input = self.embedding(output.argmax(dim=-1))  # [batch_size, embed_size]
             
-            return torch.cat(outputs, dim=1)  # [batch_size, target_seq_len, vocab_size]
+            return outputs
 
 class VanillaTransformer(nn.Module):
     def __init__(
@@ -504,6 +501,7 @@ class VanillaTransformer(nn.Module):
         
         # Final projection layer
         self.fc = nn.Linear(d_model, vocab_size)
+        self.vocab_size = vocab_size
 
         # Initialize weights
         self._init_weights()
@@ -518,16 +516,11 @@ class VanillaTransformer(nn.Module):
         """Generate causal mask for decoder"""
         return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
 
-    def forward(
-        self,
-        src: torch.Tensor,
-        tgt: Optional[torch.Tensor] = None,
-        teacher_forcing_ratio: float = 1.0
-    ) -> torch.Tensor:
+    def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
         # Truncate source sequence if needed (keeping right side)
         if src.size(1) > self.max_seq_len:
             src = src[:, -self.max_seq_len:]
-            
+        
         # Create source mask for padding tokens
         src_key_padding_mask = (src == 0).to(src.device)
         
@@ -561,6 +554,43 @@ class VanillaTransformer(nn.Module):
             )
             
             return self.fc(out)
+        
+        # For inference or when not using teacher forcing
+        else:
+            batch_size = src.size(0)
+            device = src.device
+            
+            # Initialize decoder input with SOS token (assumed to be 1)
+            decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
+            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Pre-allocate outputs
+            
+            for t in range(self.target_seq_len):
+                # Create target mask
+                tgt_mask = self.transformer.generate_square_subsequent_mask(decoder_input.size(1)).to(device)
+                tgt_key_padding_mask = (decoder_input == 0).to(device)
+                
+                # Embed and add positional encoding
+                tgt_emb = self.embedding(decoder_input) * math.sqrt(self.d_model)
+                tgt_emb = self.pos_encoder(tgt_emb)
+                
+                # Transformer forward pass
+                out = self.transformer(
+                    src=src_emb,
+                    tgt=tgt_emb,
+                    tgt_mask=tgt_mask,
+                    src_key_padding_mask=src_key_padding_mask,
+                    tgt_key_padding_mask=tgt_key_padding_mask
+                )
+                
+                # Get next token prediction
+                next_token = self.fc(out[:, -1:])  # Only take last position
+                outputs[:, t:t+1, :] = next_token  # Fill pre-allocated tensor
+                
+                # Update decoder input
+                if not self.training:
+                    decoder_input = torch.cat([decoder_input, next_token.argmax(dim=-1)], dim=1)
+            
+            return outputs
         
         # For inference or when not using teacher forcing
         else:
