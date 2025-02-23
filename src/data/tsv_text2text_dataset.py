@@ -67,11 +67,16 @@ class CachedTSVDataset(Dataset):
         # Initialize indices
         self._setup_indices()
 
-    def _camel_to_lower(self, text: str) -> str:
-        """Convert CamelCase to lower case with spaces"""
-        # Insert space before uppercase letters and convert to lower case
-        text = re.sub(r'(?<!^)(?=[A-Z])', ' ', text)
-        return text.lower()
+    def _camel_to_lower(self, text: Optional[str]) -> str:
+        """Convert CamelCase to lower case with spaces, handling non-string inputs"""
+        if text is None or pd.isna(text):
+            return ""  # Return empty string for None/NaN
+        try:
+            text = str(text)  # Convert to string if possible (e.g., int/float)
+            return re.sub(r'(?<!^)(?=[A-Z])', ' ', text).lower()
+        except Exception as e:
+            logging.warning(f"Failed to convert text to lower case: {str(e)}")
+            return str(text)  #Fallback to original as string
 
     def _read_and_preprocess_chunks(self, config: ColumnConfig):
         """Read data in chunks and apply preprocessing including CamelCase conversion"""
@@ -79,24 +84,29 @@ class CachedTSVDataset(Dataset):
             source_cols = [f'col_{i}' for i in config.source_columns]
             target_cols = [f'col_{i}' for i in config.target_columns]
             all_cols = source_cols + target_cols
-            col_mapping = dict(zip(range(len(all_cols)), all_cols))
+            col_indices = config.source_columns + config.target_columns
             
             for chunk in pd.read_csv(
                 config.file_path,
                 sep=config.separator,
-                usecols=config.source_columns + config.target_columns,
+                usecols=col_indices,
                 header=None,
                 names=all_cols,
                 chunksize=10000,
                 dtype=str,
-                on_bad_lines='skip'
+                on_bad_lines='warn'  # Log bad lines instead of skipping
             ):
-                # Apply CamelCase to lower case transformation for specified columns
+                # Log chunk for debugging
+                logging.debug(f"Processing chunk with columns: {chunk.columns}")
+                
+                # Apply CamelCase transformation
                 if config.camel_to_lower:
                     for col_idx in config.camel_to_lower:
                         col_name = f'col_{col_idx}'
                         if col_name in chunk.columns:
                             chunk[col_name] = chunk[col_name].apply(self._camel_to_lower)
+                        else:
+                            logging.warning(f"Column {col_name} not found in chunk")
                 
                 source_text = chunk[source_cols].astype(str).agg(config.join_token.join, axis=1)
                 target_text = chunk[target_cols].astype(str).agg(config.join_token.join, axis=1)
