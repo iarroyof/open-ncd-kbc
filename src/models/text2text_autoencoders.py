@@ -592,48 +592,6 @@ class VanillaTransformer(nn.Module):
             
             return outputs
         
-        # For inference or when not using teacher forcing
-        else:
-            batch_size = src.size(0)
-            device = src.device
-            
-            # Initialize decoder input with SOS token (assumed to be 1)
-            decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
-            outputs = []
-            
-            for t in range(self.target_seq_len):
-                # Create target mask
-                tgt_mask = self.transformer.generate_square_subsequent_mask(decoder_input.size(1)).to(device)
-                tgt_key_padding_mask = (decoder_input == 0).to(device)
-                
-                # Embed and add positional encoding
-                tgt_emb = self.embedding(decoder_input) * math.sqrt(self.d_model)
-                tgt_emb = self.pos_encoder(tgt_emb)
-                
-                # Transformer forward pass
-                out = self.transformer(
-                    src=src_emb,
-                    tgt=tgt_emb,
-                    tgt_mask=tgt_mask,
-                    src_key_padding_mask=src_key_padding_mask,
-                    tgt_key_padding_mask=tgt_key_padding_mask
-                )
-                
-                # Get next token prediction
-                next_token = self.fc(out[:, -1:])  # Only take last position
-                outputs.append(next_token)
-                
-                # Update decoder input
-                if not self.training:
-                    decoder_input = torch.cat([
-                        decoder_input,
-                        next_token.argmax(dim=-1)
-                    ], dim=1)
-            
-            # Combine all outputs
-            out = torch.cat(outputs, dim=1)
-            return out
-        
 class PositionalAutoencoder(nn.Module):
     def __init__(
         self,
