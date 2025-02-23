@@ -152,7 +152,8 @@ def setup_data_configs(data_path: str, split: str = 'train') -> list:
             source_columns=[3, 2],  # First column contains source text
             target_columns=[4],     # Second column contains target text
             has_header=False,
-            separator="\t"
+            separator="\t",
+            camel_to_lower = [2]
         )
     ]
 
