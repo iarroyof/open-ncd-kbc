@@ -1,3 +1,5 @@
+# src/trainers/attention_lstm_trainer.py
+
 import torch
 import torch.nn as nn
 from tqdm import tqdm
