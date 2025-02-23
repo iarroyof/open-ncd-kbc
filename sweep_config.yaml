@@ -1,0 +1,110 @@
+# sweep_config.yaml
+program: main.py
+method: bayes  # Bayesian optimization for hyperparameter search
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  model_type:
+    values: ['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s']
+  train_data_path:
+    value: 'data/ncd_conceptnet/ncd_conceptnet_train.tsv' #'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv'
+  valid_data_path:
+    value: 'data/ncd_conceptnet/ncd_conceptnet_valid.tsv' #'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'
+  batch_size:
+    min: 16
+    max: 256
+    distribution: int_uniform
+  learning_rate:
+    min: 1e-5
+    max: 1e-2
+    distribution: log_uniform
+  num_epochs:
+    value: 10  # Fixed for simplicity; can be swept if desired
+  target_seq_len:
+    min: 3
+    max: 128
+    distribution: int_uniform
+
+  # Model-specific parameters
+  # Autoencoder
+  autoencoder_d_model:
+    min: 512
+    max: 2048
+    distribution: int_uniform
+  autoencoder_hidden_dim:
+    min: 256
+    max: 1024
+    distribution: int_uniform
+  autoencoder_num_encoder_layers:
+    min: 1
+    max: 4
+    distribution: int_uniform
+
+  # Attention GRU
+  attention_gru_embed_size:
+    min: 128
+    max: 512
+    distribution: int_uniform
+  attention_gru_hidden_size:
+    min: 256
+    max: 1024
+    distribution: int_uniform
+  attention_gru_num_layers:
+    min: 1
+    max: 4
+    distribution: int_uniform
+  attention_gru_use_attention:
+    values: [true, false]
+
+  # Attention LSTM
+  attention_lstm_embed_size:
+    min: 128
+    max: 512
+    distribution: int_uniform
+  attention_lstm_hidden_size:
+    min: 256
+    max: 1024
+    distribution: int_uniform
+  attention_lstm_num_layers:
+    min: 1
+    max: 4
+    distribution: int_uniform
+  attention_lstm_use_attention:
+    values: [true, false]
+
+  # Transformer (with blocks)
+  transformer_d_model:
+    min: 256
+    max: 1024
+    distribution: int_uniform
+  transformer_nhead:
+    values: [4, 8, 16]
+  transformer_num_encoder_layers:  # Transformer block parameter
+    min: 2
+    max: 8
+    distribution: int_uniform
+  transformer_num_decoder_layers:  # Transformer block parameter
+    min: 2
+    max: 8
+    distribution: int_uniform
+  transformer_dim_feedforward:
+    min: 1024
+    max: 4096
+    distribution: int_uniform
+
+  # ConvS2S
+  conv_s2s_embed_dim:
+    min: 256
+    max: 1024
+    distribution: int_uniform
+  conv_s2s_hidden_dim:
+    min: 256
+    max: 1024
+    distribution: int_uniform
+  conv_s2s_num_layers:
+    min: 2
+    max: 6
+    distribution: int_uniform
+  conv_s2s_use_attention:
+    values: [true, false]
