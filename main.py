@@ -1,5 +1,3 @@
-# main.py
-
 import torch
 import logging
 import argparse
@@ -7,6 +5,7 @@ from pathlib import Path
 from typing import Dict
 import wandb
 import yaml
+import sys
 
 # Import all model trainers
 from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
@@ -88,7 +87,6 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
             wandb_key = prefix + key
             if wandb_key in wandb_config:
                 config[key] = wandb_config[wandb_key]
-        # Common parameter
         if 'target_seq_len' in wandb_config:
             config['target_seq_len'] = wandb_config['target_seq_len']
     
@@ -141,7 +139,6 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
             'learning_rate': 1e-3
         }
 
-    # Override with W&B config if provided
     if wandb_config:
         for key in ['batch_size', 'learning_rate', 'num_epochs']:
             if key in wandb_config:
@@ -162,7 +159,6 @@ def get_trainer_class(model_type: str):
     return trainers[model_type]
 
 def setup_data_configs(train_path: str, valid_path: str) -> tuple:
-    """Setup data configurations with full paths"""
     train_configs = [
         ColumnConfig(
             file_path=train_path,
@@ -199,7 +195,7 @@ def setup_logging(log_dir: str):
 
 def train_with_wandb():
     """Training function for W&B sweep"""
-    with wandb.init() as run:
+    with wandb.init(config=None) as run:  # Config passed via CLI is handled by W&B
         config = wandb.config
         
         # Extract paths and model type from W&B config
@@ -256,7 +252,8 @@ def main():
     parser.add_argument('--sweep', action='store_true',
                         help='Run W&B sweep instead of single run')
     
-    args = parser.parse_args()
+    # Allow unknown arguments for sweeps to avoid parsing errors
+    args, unknown = parser.parse_known_args()
     
     # Create necessary directories
     Path(args.cache_dir).mkdir(exist_ok=True)
@@ -264,10 +261,10 @@ def main():
     
     try:
         if args.use_wandb and args.sweep:
-            # Setup W&B sweep
-            with open('sweep_config.yaml', 'r') as f:
+            # Setup W&B sweep without parsing additional CLI args
+            with open('sweep_config_cn-gp.yaml', 'r') as f:
                 sweep_config = yaml.safe_load(f)
-            sweep_id = wandb.sweep(sweep_config, project="seq2seq_sweep")
+            sweep_id = wandb.sweep(sweep_config, project="standard_models")
             wandb.agent(sweep_id, function=train_with_wandb)
         else:
             # Single run mode
@@ -280,10 +277,10 @@ def main():
             training_config = get_training_config(args.model_type)
             
             # Setup data configurations with default paths
-            train_configs = setup_data_configs(f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
-                                             f"{args.data_path}/ncd_gp_conceptnet_valid.tsv")[0]
-            valid_configs = setup_data_configs(f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
-                                             f"{args.data_path}/ncd_gp_conceptnet_valid.tsv")[1]
+            train_configs, valid_configs = setup_data_configs(
+                f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
+                f"{args.data_path}/ncd_gp_conceptnet_valid.tsv"
+            )
             
             # Initialize trainer
             TrainerClass = get_trainer_class(args.model_type)
