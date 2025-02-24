@@ -11,100 +11,89 @@ parameters:
     value: 'data/ncd_conceptnet/ncd_conceptnet_train.tsv' #'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv'
   valid_data_path:
     value: 'data/ncd_conceptnet/ncd_conceptnet_valid.tsv' #'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'
+  
+  # Key shared hyperparameters (3-5 values for critical ones)
   batch_size:
-    min: 16
-    max: 256
-    distribution: int_uniform
+    values: [16, 64, 128]  # 4 values: min, mid-low, mid-high, max
   learning_rate:
-    min: 1e-5
-    max: 1e-2
-    distribution: log_uniform
-  num_epochs:
-    value: 10  # Fixed for simplicity; can be swept if desired
+    values: [1e-4, 1e-3, 1e-2]  # 4 values: low, mid-low, mid-high, high
   target_seq_len:
-    min: 3
-    max: 128
-    distribution: int_uniform
+    values: [3, 16, 64, 128]  # 4 values: min (autoencoder), mid-low, default, high
+  num_epochs:
+    value: 3  # Fixed to save time; can be swept if needed
 
-  # Model-specific parameters
   # Autoencoder
   autoencoder_d_model:
-    min: 512
-    max: 2048
-    distribution: int_uniform
+    values: [512, 1024, 2048]  # 3 values: low, mid, high (research-aligned)
   autoencoder_hidden_dim:
-    min: 256
-    max: 1024
-    distribution: int_uniform
+    values: [256, 512, 1024]  # 3 values: low, mid, high
   autoencoder_num_encoder_layers:
-    min: 1
-    max: 4
-    distribution: int_uniform
+    values: [1, 2, 4]  # 3 values: shallow, mid, deep
+  # Less critical parameters
+  autoencoder_activation:
+    value: 'ReLU'  # Fixed: common choice
+  autoencoder_pe_mode:
+    value: 'fixed'  # Fixed: standard for autoencoders
+  autoencoder_use_normalization:
+    value: true  # Fixed: typical
+  autoencoder_norm_type:
+    value: 'batch'  # Fixed: effective default
 
   # Attention GRU
   attention_gru_embed_size:
-    min: 128
-    max: 512
-    distribution: int_uniform
+    values: [512, 1024, 2048]  # 3 values: updated low, mid, high (shifted from 128)
   attention_gru_hidden_size:
-    min: 256
-    max: 1024
-    distribution: int_uniform
+    values: [256, 512, 1024]  # 3 values: low, mid, high
   attention_gru_num_layers:
-    min: 1
-    max: 4
-    distribution: int_uniform
+    values: [1, 2, 4]  # 3 values: shallow, mid, deep
   attention_gru_use_attention:
-    values: [true, false]
+    values: [true, false]  # 2 values: binary toggle
+  attention_gru_bidirectional_encoder:
+    value: true  # Fixed: common for GRU
 
   # Attention LSTM
   attention_lstm_embed_size:
-    min: 128
-    max: 512
-    distribution: int_uniform
+    values: [512, 1024, 2048]  # 3 values: updated low, mid, high (shifted from 128)
   attention_lstm_hidden_size:
-    min: 256
-    max: 1024
-    distribution: int_uniform
+    values: [256, 512, 1024]  # 3 values: low, mid, high
   attention_lstm_num_layers:
-    min: 1
-    max: 4
-    distribution: int_uniform
+    values: [1, 2, 4]  # 3 values: shallow, mid, deep
   attention_lstm_use_attention:
-    values: [true, false]
+    values: [true, false]  # 2 values: binary toggle
+  attention_lstm_bidirectional_encoder:
+    value: true  # Fixed: common for LSTM
 
   # Transformer (with blocks)
   transformer_d_model:
-    min: 256
-    max: 1024
-    distribution: int_uniform
+    values: [256, 512, 1024]  # 3 values: low, mid, high
   transformer_nhead:
-    values: [4, 8, 16]
-  transformer_num_encoder_layers:  # Transformer block parameter
-    min: 2
-    max: 8
-    distribution: int_uniform
-  transformer_num_decoder_layers:  # Transformer block parameter
-    min: 2
-    max: 8
-    distribution: int_uniform
+    values: [4, 8, 16]  # 3 values: low, mid, high
+  transformer_num_encoder_layers:  # Key block parameter
+    values: [2, 4, 6, 8]  # 4 values: shallow, mid-low, mid-high, deep
+  transformer_num_decoder_layers:  # Key block parameter
+    values: [2, 4, 6, 8]  # 4 values: shallow, mid-low, mid-high, deep
   transformer_dim_feedforward:
     min: 1024
-    max: 4096
-    distribution: int_uniform
+    max: 4096  # Less critical, broader range for flexibility
+  # Less critical parameters
+  transformer_activation:
+    value: 'relu'  # Fixed: standard choice
+  transformer_pe_mode:
+    value: 'fixed'  # Fixed: typical for Transformers
+  transformer_fixed_scale:
+    value: 1.0  # Fixed: default
+  transformer_learned_scale:
+    value: 1.0  # Fixed: default
 
   # ConvS2S
   conv_s2s_embed_dim:
-    min: 256
-    max: 1024
-    distribution: int_uniform
+    values: [512, 1024, 2048]  # 3 values: low, mid, high
   conv_s2s_hidden_dim:
-    min: 256
-    max: 1024
-    distribution: int_uniform
+    values: [256, 512, 1024]  # 3 values: low, mid, high
   conv_s2s_num_layers:
-    min: 2
-    max: 6
-    distribution: int_uniform
+    values: [2, 4, 6]  # 3 values: shallow, mid, deep
   conv_s2s_use_attention:
-    values: [true, false]
+    values: [true, false]  # 2 values: binary toggle
+  # Less critical parameters
+  conv_s2s_kernel_size:
+    value: 3  # Fixed: standard from paper
