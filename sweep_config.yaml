@@ -69,9 +69,9 @@ parameters:
   transformer_nhead:
     values: [4, 8, 16]  # 3 values: low, mid, high
   transformer_num_encoder_layers:  # Key block parameter
-    values: [2, 4, 6, 8]  # 4 values: shallow, mid-low, mid-high, deep
+    values: [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
   transformer_num_decoder_layers:  # Key block parameter
-    values: [2, 4, 6, 8]  # 4 values: shallow, mid-low, mid-high, deep
+    values: [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
   transformer_dim_feedforward:
     min: 1024
     max: 4096  # Less critical, broader range for flexibility
