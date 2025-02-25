@@ -15,12 +15,14 @@ from src.trainers.transformer_trainer import TransformerTrainer
 from src.trainers.conv_s2s_trainer import ConvS2STrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
 
+# Global counter for round-robin GPU assignment
+current_gpu_index = 0
+
 def estimate_vram_usage(config: Dict) -> float:
-    """Estimate VRAM usage in GB based on hyperparameters."""
     model_type = config['model_type']
     batch_size = config['batch_size']
     target_seq_len = config['target_seq_len']
-    token_mem = 0.0001  # GB per token per batch item per dim
+    token_mem = 0.0001
     
     if model_type == 'autoencoder':
         d_model = config['autoencoder_d_model']
@@ -38,11 +40,10 @@ def estimate_vram_usage(config: Dict) -> float:
         d_model = config['conv_s2s_embed_dim']
         num_layers = config['conv_s2s_num_layers']
     
-    vram = batch_size * target_seq_len * d_model * num_layers * token_mem + 5  # 5 GB baseline overhead
+    vram = batch_size * target_seq_len * d_model * num_layers * token_mem + 5
     return vram
 
 def get_available_gpus() -> list:
-    """Detect available GPUs within the container."""
     try:
         num_gpus = torch.cuda.device_count()
         available_gpus = list(range(num_gpus))
@@ -53,7 +54,9 @@ def get_available_gpus() -> list:
         return []
 
 def assign_gpu(config: Dict, available_gpus: list, workstation_id: int) -> int:
-    """Assign GPU based on VRAM usage and workstation-specific mapping."""
+    """Dynamically assign GPU from available list, respecting workstation mapping."""
+    global current_gpu_index
+    
     vram = estimate_vram_usage(config)
     logging.info(f"Estimated VRAM usage: {vram:.2f} GB")
     
@@ -68,14 +71,19 @@ def assign_gpu(config: Dict, available_gpus: list, workstation_id: int) -> int:
     else:
         raise ValueError(f"Invalid workstation_id: {workstation_id}")
     
+    # Filter viable GPUs based on VRAM capacity
     viable_gpus = [gpu for gpu in available_gpus if base_gpus[gpu] in gpu_capacities and vram <= gpu_capacities[base_gpus[gpu]]]
     
     if not viable_gpus:
         logging.warning(f"No viable GPU for VRAM {vram:.2f} GB. Defaulting to first available.")
-        return base_gpus[0] if available_gpus else base_gpus[0]
+        gpu_id = base_gpus[0] if available_gpus else base_gpus[0]
+    else:
+        # Round-robin assignment across viable GPUs
+        gpu_id = base_gpus[viable_gpus[current_gpu_index % len(viable_gpus)]]
+        current_gpu_index += 1  # Increment for next run
     
-    local_gpu = viable_gpus[hash(str(config)) % len(viable_gpus)]
-    return base_gpus[local_gpu]
+    logging.info(f"Dynamically assigned GPU {gpu_id} from available GPUs")
+    return gpu_id
 
 def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
     base_config = {
@@ -225,4 +233,174 @@ def setup_data_configs(train_path: str, valid_path: str) -> tuple:
     
     train_configs = [
         ColumnConfig(
-            file_path=train
+            file_path=train_path,
+            source_columns=[3, 2],
+            target_columns=[4],
+            has_header=False,
+            separator="\t",
+            camel_to_lower=[2]
+        )
+    ]
+    valid_configs = [
+        ColumnConfig(
+            file_path=valid_path,
+            source_columns=[3, 2],
+            target_columns=[4],
+            has_header=False,
+            separator="\t",
+            camel_to_lower=[2]
+        )
+    ]
+    return train_configs, valid_configs
+
+def setup_logging(log_dir: str):
+    log_path = Path(log_dir)
+    log_path.mkdir(exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_path / "main.log"),
+            logging.StreamHandler()
+        ]
+    )
+
+def train_with_wandb():
+    wandb_config = {
+        'log_frequency': 100,
+        'disable_code': True,
+        'save_code': False,
+        'log_model': False,
+        'watch': False,
+        'system_interval': 30,
+    }
+    os.environ["WANDB_SYSTEM_METRICS"] = "system.cpu,system.gpu.0.memory,system.gpu.1.memory,system.gpu.0.temp,system.gpu.1.temp,system.gpu.0.powerPercent,system.gpu.1.powerPercent,system.disk.free"
+    
+    with wandb.init(config=None, settings=wandb.Settings(**wandb_config)) as run:
+        config = wandb.config
+        
+        workstation_id = int(os.environ.get('WORKSTATION_ID', 1))
+        workstation_name = os.environ.get('WORKSTATION_NAME', 'santo')
+        
+        available_gpus = get_available_gpus()
+        if not available_gpus:
+            logging.error("No GPUs available in container. Exiting.")
+            return
+        
+        gpu_id = assign_gpu(config, available_gpus, workstation_id)
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        logging.info(f"Assigned run to GPU {gpu_id} (Workstation {workstation_name}) with VRAM {estimate_vram_usage(config):.2f} GB")
+        
+        model_type = config['model_type']
+        train_path = config['train_data_path']
+        valid_path = config['valid_data_path']
+        
+        log_dir = f"logs/sweep_{run.id}"
+        setup_logging(log_dir)
+        logging.info(f"Starting sweep run {run.id} with model type: {model_type} on GPU {gpu_id}")
+        
+        model_config = get_model_config(model_type, config)
+        training_config = get_training_config(model_type, config)
+        
+        train_configs, valid_configs = setup_data_configs(train_path, valid_path)
+        
+        TrainerClass = get_trainer_class(model_type)
+        trainer = TrainerClass(
+            model_config=model_config,
+            training_config=training_config,
+            train_configs=train_configs,
+            valid_configs=valid_configs,
+            tokenizer_path=None,
+            cache_dir="/app/cache",
+            log_dir=log_dir,
+            use_wandb=True
+        )
+        
+        trainer.train()
+        
+        del trainer
+        torch.cuda.empty_cache()
+
+def main():
+    parser = argparse.ArgumentParser(description='Train sequence-to-sequence models with W&B sweeps in Docker')
+    parser.add_argument('--model_type', type=str, default='autoencoder',
+                        choices=['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s'],
+                        help='Type of model to train (ignored if using sweep)')
+    parser.add_argument('--data_path', type=str, default='data/ncd_gp_conceptnet',
+                        help='Base path to data directory (ignored if using sweep)')
+    parser.add_argument('--cache_dir', type=str, default='/app/cache',
+                        help='Directory for caching datasets inside container')
+    parser.add_argument('--log_dir', type=str, default='/app/logs',
+                        help='Directory for logs and checkpoints inside container')
+    parser.add_argument('--tokenizer_path', type=str, default=None,
+                        help='Path to pretrained tokenizer (optional)')
+    parser.add_argument('--use_wandb', action='store_true',
+                        help='Use Weights & Biases logging and sweeps')
+    parser.add_argument('--eval_only', action='store_true',
+                        help='Run only evaluation on validation set')
+    parser.add_argument('--checkpoint_path', type=str, default=None,
+                        help='Path to model checkpoint for evaluation')
+    parser.add_argument('--sweep', action='store_true',
+                        help='Run W&B sweep instead of single run')
+    
+    args, unknown = parser.parse_known_args()
+    
+    Path(args.cache_dir).mkdir(exist_ok=True)
+    Path(args.log_dir).mkdir(exist_ok=True)
+    
+    try:
+        if args.use_wandb and args.sweep:
+            workstation_name = os.environ.get("WORKSTATION_NAME", "santo").lower().replace('-', '_')
+            yaml_file = f'sweep_config_{workstation_name}.yaml'
+            with open(yaml_file, 'r') as f:
+                sweep_config = yaml.safe_load(f)
+            sweep_id = wandb.sweep(sweep_config, project="standard_models")
+            for attempt in range(3):
+                try:
+                    wandb.agent(sweep_id, function=train_with_wandb, count=50)
+                    break
+                except Exception as e:
+                    logging.error(f"Sweep attempt {attempt + 1} failed on {workstation_name}: {str(e)}. Retrying in 60 seconds...")
+                    time.sleep(60)
+        else:
+            setup_logging(args.log_dir)
+            logging.info(f"Starting script with model type: {args.model_type}")
+            logging.info(f"Arguments: {vars(args)}")
+            
+            model_config = get_model_config(args.model_type)
+            training_config = get_training_config(args.model_type)
+            
+            train_configs, valid_configs = setup_data_configs(
+                f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
+                f"{args.data_path}/ncd_gp_conceptnet_valid.tsv"
+            )
+            
+            TrainerClass = get_trainer_class(args.model_type)
+            trainer = TrainerClass(
+                model_config=model_config,
+                training_config=training_config,
+                train_configs=train_configs,
+                valid_configs=valid_configs,
+                tokenizer_path=args.tokenizer_path,
+                cache_dir=args.cache_dir,
+                log_dir=args.log_dir,
+                use_wandb=args.use_wandb
+            )
+            
+            if args.eval_only:
+                logging.info("Running evaluation...")
+                metrics = trainer.evaluate()
+                for metric, value in metrics.items():
+                    logging.info(f"{metric}: {value:.4f}")
+            else:
+                trainer.train()
+                
+    except Exception as e:
+        logging.error(f"Process failed with error: {str(e)}")
+        raise
+    finally:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+if __name__ == "__main__":
+    main()
