@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Dict
 import wandb
 import yaml
-import sys
+import os
+import time
 
-# Import all model trainers
 from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
 from src.trainers.attention_gru_trainer import AttentionGRUTrainer
 from src.trainers.attention_lstm_trainer import AttentionLSTMTrainer
@@ -15,15 +15,75 @@ from src.trainers.transformer_trainer import TransformerTrainer
 from src.trainers.conv_s2s_trainer import ConvS2STrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
 
+def estimate_vram_usage(config: Dict) -> float:
+    """Estimate VRAM usage in GB based on hyperparameters."""
+    model_type = config['model_type']
+    batch_size = config['batch_size']
+    target_seq_len = config['target_seq_len']
+    token_mem = 0.0001  # GB per token per batch item per dim
+    
+    if model_type == 'autoencoder':
+        d_model = config['autoencoder_d_model']
+        num_layers = config['autoencoder_num_encoder_layers']
+    elif model_type == 'attention_gru':
+        d_model = config['attention_gru_embed_size']
+        num_layers = config['attention_gru_num_layers']
+    elif model_type == 'attention_lstm':
+        d_model = config['attention_lstm_embed_size']
+        num_layers = config['attention_lstm_num_layers']
+    elif model_type == 'transformer':
+        d_model = config['transformer_d_model']
+        num_layers = config['transformer_num_encoder_layers'] + config['transformer_num_decoder_layers']
+    elif model_type == 'conv_s2s':
+        d_model = config['conv_s2s_embed_dim']
+        num_layers = config['conv_s2s_num_layers']
+    
+    vram = batch_size * target_seq_len * d_model * num_layers * token_mem + 5  # 5 GB baseline overhead
+    return vram
+
+def get_available_gpus() -> list:
+    """Detect available GPUs within the container."""
+    try:
+        num_gpus = torch.cuda.device_count()
+        available_gpus = list(range(num_gpus))
+        logging.info(f"Detected {num_gpus} available GPUs in container: {available_gpus}")
+        return available_gpus
+    except Exception as e:
+        logging.warning(f"GPU detection failed: {str(e)}. Defaulting to CPU.")
+        return []
+
+def assign_gpu(config: Dict, available_gpus: list, workstation_id: int) -> int:
+    """Assign GPU based on VRAM usage and workstation-specific mapping."""
+    vram = estimate_vram_usage(config)
+    logging.info(f"Estimated VRAM usage: {vram:.2f} GB")
+    
+    gpu_capacities = {0: 24, 1: 24, 2: 24, 3: 24, 4: 48, 5: 48}
+    
+    if workstation_id == 1:  # Santo
+        base_gpus = [0, 1]
+    elif workstation_id == 2:  # Blue-Demon
+        base_gpus = [2, 3]
+    elif workstation_id == 3:  # Lizmark
+        base_gpus = [4, 5]
+    else:
+        raise ValueError(f"Invalid workstation_id: {workstation_id}")
+    
+    viable_gpus = [gpu for gpu in available_gpus if base_gpus[gpu] in gpu_capacities and vram <= gpu_capacities[base_gpus[gpu]]]
+    
+    if not viable_gpus:
+        logging.warning(f"No viable GPU for VRAM {vram:.2f} GB. Defaulting to first available.")
+        return base_gpus[0] if available_gpus else base_gpus[0]
+    
+    local_gpu = viable_gpus[hash(str(config)) % len(viable_gpus)]
+    return base_gpus[local_gpu]
+
 def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
-    """Get model-specific configuration, optionally overridden by W&B config"""
     base_config = {
         'vocab_size': 32000,
         'target_seq_len': 64,
         'max_seq_len': 64,
         'dropout': 0.1
     }
-    
     if model_type == 'autoencoder':
         config = {
             **base_config,
@@ -80,7 +140,6 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
-    # Override with W&B config if provided
     if wandb_config:
         prefix = f"{model_type}_"
         for key in config:
@@ -93,16 +152,14 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
     return config
 
 def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
-    """Get training configuration, optionally overridden by W&B config"""
     base_config = {
         'batch_size': 128,
-        'num_epochs': 10,
+        'num_epochs': 3,
         'weight_decay': 0.01,
         'num_workers': 4,
         'chunk_size': 10000,
         'seed': 42
     }
-    
     if model_type == 'transformer':
         config = {
             **base_config,
@@ -159,156 +216,13 @@ def get_trainer_class(model_type: str):
     return trainers[model_type]
 
 def setup_data_configs(train_path: str, valid_path: str) -> tuple:
+    valid_map = {
+        'data/conceptnet_gp/conceptnet_gp_train.tsv': 'data/conceptnet_gp/conceptnet_gp_valid.tsv',
+        'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv': 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'
+    }
+    if valid_map[train_path] != valid_path:
+        raise ValueError(f"Dataset mismatch: {train_path} requires {valid_map[train_path]}, got {valid_path}")
+    
     train_configs = [
         ColumnConfig(
-            file_path=train_path,
-            source_columns=[3, 2],
-            target_columns=[4],
-            has_header=False,
-            separator="\t",
-            camel_to_lower=[2]
-        )
-    ]
-    valid_configs = [
-        ColumnConfig(
-            file_path=valid_path,
-            source_columns=[3, 2],
-            target_columns=[4],
-            has_header=False,
-            separator="\t",
-            camel_to_lower=[2]
-        )
-    ]
-    return train_configs, valid_configs
-
-def setup_logging(log_dir: str):
-    log_path = Path(log_dir)
-    log_path.mkdir(exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_path / "main.log"),
-            logging.StreamHandler()
-        ]
-    )
-
-def train_with_wandb():
-    """Training function for W&B sweep"""
-    with wandb.init(config=None) as run:  # Config passed via CLI is handled by W&B
-        config = wandb.config
-        
-        # Extract paths and model type from W&B config
-        model_type = config['model_type']
-        train_path = config['train_data_path']
-        valid_path = config['valid_data_path']
-        
-        # Setup logging with W&B run ID
-        setup_logging(f"logs/sweep_{run.id}")
-        logging.info(f"Starting sweep run {run.id} with model type: {model_type}")
-        
-        # Get configurations from W&B
-        model_config = get_model_config(model_type, config)
-        training_config = get_training_config(model_type, config)
-        
-        # Setup data configurations
-        train_configs, valid_configs = setup_data_configs(train_path, valid_path)
-        
-        # Initialize trainer
-        TrainerClass = get_trainer_class(model_type)
-        trainer = TrainerClass(
-            model_config=model_config,
-            training_config=training_config,
-            train_configs=train_configs,
-            valid_configs=valid_configs,
-            tokenizer_path=None,
-            cache_dir="./cache",
-            log_dir=f"logs/sweep_{run.id}",
-            use_wandb=True
-        )
-        
-        # Train
-        trainer.train()
-
-def main():
-    parser = argparse.ArgumentParser(description='Train sequence-to-sequence models with W&B sweeps')
-    parser.add_argument('--model_type', type=str, default='autoencoder',
-                        choices=['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s'],
-                        help='Type of model to train (ignored if using sweep)')
-    parser.add_argument('--data_path', type=str, default='data/ncd_gp_conceptnet',
-                        help='Base path to data directory (ignored if using sweep)')
-    parser.add_argument('--cache_dir', type=str, default='./cache',
-                        help='Directory for caching datasets')
-    parser.add_argument('--log_dir', type=str, default='./logs',
-                        help='Directory for logs and checkpoints')
-    parser.add_argument('--tokenizer_path', type=str, default=None,
-                        help='Path to pretrained tokenizer (optional)')
-    parser.add_argument('--use_wandb', action='store_true',
-                        help='Use Weights & Biases logging and sweeps')
-    parser.add_argument('--eval_only', action='store_true',
-                        help='Run only evaluation on validation set')
-    parser.add_argument('--checkpoint_path', type=str, default=None,
-                        help='Path to model checkpoint for evaluation')
-    parser.add_argument('--sweep', action='store_true',
-                        help='Run W&B sweep instead of single run')
-    
-    # Allow unknown arguments for sweeps to avoid parsing errors
-    args, unknown = parser.parse_known_args()
-    
-    # Create necessary directories
-    Path(args.cache_dir).mkdir(exist_ok=True)
-    Path(args.log_dir).mkdir(exist_ok=True)
-    
-    try:
-        if args.use_wandb and args.sweep:
-            # Setup W&B sweep without parsing additional CLI args
-            with open('sweep_config_cn-gp.yaml', 'r') as f:
-                sweep_config = yaml.safe_load(f)
-            sweep_id = wandb.sweep(sweep_config, project="standard_models")
-            wandb.agent(sweep_id, function=train_with_wandb)
-        else:
-            # Single run mode
-            setup_logging(args.log_dir)
-            logging.info(f"Starting script with model type: {args.model_type}")
-            logging.info(f"Arguments: {vars(args)}")
-            
-            # Get configurations
-            model_config = get_model_config(args.model_type)
-            training_config = get_training_config(args.model_type)
-            
-            # Setup data configurations with default paths
-            train_configs, valid_configs = setup_data_configs(
-                f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
-                f"{args.data_path}/ncd_gp_conceptnet_valid.tsv"
-            )
-            
-            # Initialize trainer
-            TrainerClass = get_trainer_class(args.model_type)
-            trainer = TrainerClass(
-                model_config=model_config,
-                training_config=training_config,
-                train_configs=train_configs,
-                valid_configs=valid_configs,
-                tokenizer_path=args.tokenizer_path,
-                cache_dir=args.cache_dir,
-                log_dir=args.log_dir,
-                use_wandb=args.use_wandb
-            )
-            
-            if args.eval_only:
-                logging.info("Running evaluation...")
-                metrics = trainer.evaluate()
-                for metric, value in metrics.items():
-                    logging.info(f"{metric}: {value:.4f}")
-            else:
-                trainer.train()
-                
-    except Exception as e:
-        logging.error(f"Process failed with error: {str(e)}")
-        raise
-    finally:
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-if __name__ == "__main__":
-    main()
+            file_path=train
