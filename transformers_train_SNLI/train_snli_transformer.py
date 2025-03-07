@@ -112,16 +112,22 @@ class VanillaTransformer(nn.Module):
 
         return self.fc(out)
 
+import json
+from torch.utils.data import Dataset
+
 class DataLoader_custom(Dataset):
-    def __init__(self, data_dir_part1, data_dir_part2, split):
-        with open(data_dir_part1, 'r') as file1, open(data_dir_part2, 'r') as file2:
+    def __init__(self, data_dir_part1, data_dir_part2=None, split=None):
+        with open(data_dir_part1, 'r') as file1:
             dic_data_part1 = json.load(file1)
-            dic_data_part2 = json.load(file2)
         
-        # Combinar las dos partes
-        dic_data = {
-            split: dic_data_part1[split] + dic_data_part2[split]
-        }
+        if data_dir_part2:
+            with open(data_dir_part2, 'r') as file2:
+                dic_data_part2 = json.load(file2)
+            
+            # Combinar las dos partes
+            dic_data = {split: dic_data_part1[split] + dic_data_part2[split]}
+        else:
+            dic_data = {split: dic_data_part1[split]}
         
         self.X, self.y = self.separar(dic_data, split)
         self.samples = len(self.X)
@@ -165,7 +171,9 @@ def train_transformer():
     data_dir_part1 = "SNLI_procesados_tuplas_part1.json"
     data_dir_part2 = "SNLI_procesados_tuplas_part2.json"
     split = "dev"
-    dataset = DataLoader_custom(data_dir_part1, data_dir_part2, split)
+    data_dir = "SNLI_procesados_tuplas.json"
+    #dataset = DataLoader_custom(data_dir_part1, data_dir_part2, split)
+    dataset = DataLoader_custom(data_dir, split=split)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate_fn)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
