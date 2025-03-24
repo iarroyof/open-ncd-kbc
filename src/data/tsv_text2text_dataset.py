@@ -188,7 +188,6 @@ class CachedTSVDataset(Dataset):
                 raise RuntimeError(f"Failed to create new cache: {str(create_error)}") from create_error
 
     def _create_cache(self) -> h5py.File:
-        """Create cache with raw (unpadded) tokenized sequences"""
         logging.info(f"Creating cache file at {self.cache_path}")
         
         try:
@@ -201,8 +200,14 @@ class CachedTSVDataset(Dataset):
                 for chunk in self._read_and_preprocess_chunks(config):
                     if chunk.empty:
                         continue
-                    source_encodings = self.tokenizer.encode_batch(chunk['source'].tolist())
-                    target_encodings = self.tokenizer.encode_batch(chunk['target'].tolist())
+                    source_texts = chunk['source'].tolist()
+                    target_texts = chunk['target'].tolist()
+                    
+                    # Add [BOS] and [EOS] to target texts
+                    target_texts_with_tokens = ["[BOS] " + text + " [EOS]" for text in target_texts]
+                    
+                    source_encodings = self.tokenizer.encode_batch(source_texts)
+                    target_encodings = self.tokenizer.encode_batch(target_texts_with_tokens)
                     for src, tgt in zip(source_encodings, target_encodings):
                         if src and tgt:
                             src_ids = src.ids
