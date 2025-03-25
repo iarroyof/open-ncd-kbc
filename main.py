@@ -311,7 +311,7 @@ def train_with_wandb():
                 training_config=training_config,
                 train_configs=train_configs,
                 valid_configs=valid_configs,
-                tokenizer_path=args.tokenizer_path,
+                #tokenizer_path=args.tokenizer_path,
                 #cache_dir=args.cache_dir,
                 log_dir=log_dir,
                 use_wandb=True
