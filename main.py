@@ -7,7 +7,7 @@ import wandb
 import yaml
 import os
 import time
-import json
+import ast
 
 from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
 from src.trainers.attention_gru_trainer import AttentionGRUTrainer
@@ -400,11 +400,11 @@ def main():
             
             model_config = get_model_config(args.model_type)
             training_config = get_training_config(args.model_type)
-            
+            train_path, val_path = ast.literal_eval(args.data_path)
             train_configs, valid_configs = setup_data_configs(
-                args.data_path[0],
+                train_path,
                 #f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
-                args.data_path[1]
+                val_path
                 #f"{args.data_path}/ncd_gp_conceptnet_valid.tsv"
             )
             
