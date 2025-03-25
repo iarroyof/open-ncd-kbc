@@ -376,7 +376,7 @@ def main():
     Path(args.log_dir).mkdir(exist_ok=True)
     
     try:
-        if args.use_wandb and args.sweep:
+        if args.use_wandb:
             if not args.yaml:
                 workstation_name = os.environ.get("WORKSTATION_NAME", "santo").lower().replace('-', '_')
                 yaml_file = f'sweep_config_{workstation_name}.yaml'
