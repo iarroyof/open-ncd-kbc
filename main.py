@@ -373,6 +373,8 @@ def main():
                         help='Path to model checkpoint for evaluation')
     parser.add_argument('--sweep', action='store_true',
                         help='Run W&B sweep instead of single run')
+    parser.add_argument('--yaml', type=str, default=None,
+                        help='Run W&B sweep yaml file')
     
     args, unknown = parser.parse_known_args()
     
@@ -381,8 +383,11 @@ def main():
     
     try:
         if args.use_wandb and args.sweep:
-            workstation_name = os.environ.get("WORKSTATION_NAME", "santo").lower().replace('-', '_')
-            yaml_file = f'sweep_config_{workstation_name}.yaml'
+            if not args.yaml:
+                workstation_name = os.environ.get("WORKSTATION_NAME", "santo").lower().replace('-', '_')
+                yaml_file = f'sweep_config_{workstation_name}.yaml'
+            else:
+                yaml_file = args.yaml
             with open(yaml_file, 'r') as f:
                 sweep_config = yaml.safe_load(f)
             sweep_id = wandb.sweep(sweep_config, project="standard_models")
