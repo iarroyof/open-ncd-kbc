@@ -271,8 +271,8 @@ def train_with_wandb():
         'system_interval': 30,
     }
     os.environ["WANDB_SYSTEM_METRICS"] = "system.cpu,system.gpu.0.memory,system.gpu.1.memory,system.gpu.0.temp,system.gpu.1.temp,system.gpu.0.powerPercent,system.gpu.1.powerPercent,system.disk.free"
-    
-    with wandb.init(config=None, settings=wandb.Settings(**wandb_config)) as run:
+    # config=None, settings=wandb.Settings(**wandb_config)
+    with wandb.init() as run:
         config = wandb.config
         
         workstation_id = int(os.environ.get('WORKSTATION_ID', 1))
