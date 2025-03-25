@@ -225,12 +225,6 @@ def get_trainer_class(model_type: str):
     return trainers[model_type]
 
 def setup_data_configs(train_path: str, valid_path: str) -> tuple:
-    valid_map = {
-        'data/conceptnet_gp/conceptnet_gp_train.tsv': 'data/conceptnet_gp/conceptnet_gp_valid.tsv',
-        'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv': 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'
-    }
-    if valid_map[train_path] != valid_path:
-        raise ValueError(f"Dataset mismatch: {train_path} requires {valid_map[train_path]}, got {valid_path}")
     
     train_configs = [
         ColumnConfig(
@@ -294,8 +288,8 @@ def train_with_wandb():
         logging.info(f"Assigned run to GPU {gpu_id} (Workstation {workstation_name}) with VRAM {estimate_vram_usage(config):.2f} GB")
         
         model_type = config['model_type']
-        train_path = config['train_data_path']
-        valid_path = config['valid_data_path']
+        train_path = config['data_path'][0]
+        valid_path = config['data_path'][1]
         
         log_dir = f"logs/sweep_{run.id}"
         setup_logging(log_dir)
