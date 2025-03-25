@@ -14,6 +14,7 @@ from src.trainers.attention_lstm_trainer import AttentionLSTMTrainer
 from src.trainers.transformer_trainer import TransformerTrainer
 from src.trainers.conv_s2s_trainer import ConvS2STrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
+from src.prediction_logging import PredictionLogger
 
 # Global counter for round-robin GPU assignment
 current_gpu_index = 0
@@ -255,6 +256,7 @@ def setup_data_configs(train_path: str, valid_path: str) -> tuple:
 
 def setup_logging(log_dir: str):
     log_path = Path(log_dir)
+    
     log_path.mkdir(exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
@@ -321,102 +323,34 @@ def train_with_wandb():
             use_wandb=True
         )
         
-        # Initialize prediction logger if the trainer class supports it
-        if hasattr(trainer, '_setup_prediction_logger') and callable(getattr(trainer, '_setup_prediction_logger')):
-            trainer.prediction_logger = trainer._setup_prediction_logger()
-            
-            # Set up WandB logging for predictions
-            predictions_table = wandb.Table(columns=["epoch", "batch", "phase", "source", "target", "prediction", "bleu"])
-            
-            # Monkey patch the _log_predictions method if it exists
-            if hasattr(trainer, '_log_predictions') and callable(getattr(trainer, '_log_predictions')):
-                original_log_predictions = trainer._log_predictions
-                
-                def wandb_log_predictions(batch, outputs, batch_idx, phase="train"):
-                    # Call the original method first
-                    original_log_predictions(batch, outputs, batch_idx, phase)
-                    
-                    # Add to WandB table
-                    predictions = outputs.argmax(dim=-1).cpu().numpy()
-                    source_ids = batch['source_text'].cpu().numpy()
-                    target_ids = batch['target_text'].cpu().numpy()
-                    
-                    # Sample up to n examples from the batch to log
-                    batch_size = len(predictions)
-                    num_samples = min(training_config['prediction_samples'], batch_size)
-                    sample_indices = random.sample(range(batch_size), num_samples)
-                    
-                    current_epoch = getattr(trainer, 'current_epoch', 0)
-                    
-                    for idx in sample_indices:
-                        try:
-                            # Get non-padding tokens
-                            src_tokens = [t for t in source_ids[idx] if t != 0]
-                            tgt_tokens = [t for t in target_ids[idx] if t != 0]
-                            pred_tokens = [t for t in predictions[idx] if t != 0]
-                            
-                            # Decode tokens to text
-                            src_text = trainer.tokenizer.decode(src_tokens)
-                            tgt_text = trainer.tokenizer.decode(tgt_tokens)
-                            pred_text = trainer.tokenizer.decode(pred_tokens)
-                            
-                            # Calculate BLEU score for this sample
-                            sample_bleu = trainer.metrics.compute_bleu_score([pred_tokens], [tgt_tokens])
-                            
-                            # Add to WandB table
-                            predictions_table.add_data(
-                                current_epoch, 
-                                batch_idx, 
-                                phase,
-                                src_text, 
-                                tgt_text, 
-                                pred_text, 
-                                sample_bleu
-                            )
-                        except Exception as e:
-                            logging.warning(f"Error logging prediction to WandB: {str(e)}")
-                
-                # Replace the original method with our enhanced version
-                trainer._log_predictions = wandb_log_predictions
-            
-            # Add a hook to log the table at the end of each epoch
-            original_train_epoch = trainer.train_epoch
-            
-            def train_epoch_with_logging(epoch):
-                # Store current epoch for logging
-                trainer.current_epoch = epoch
-                result = original_train_epoch(epoch)
-                
-                # Log predictions table to WandB at end of epoch
-                wandb.log({"predictions": predictions_table})
-                return result
-            
-            trainer.train_epoch = train_epoch_with_logging
-                
+        # Set up prediction logging dynamically
+        trainer.prediction_logger = PredictionLogger.setup_prediction_logger(
+            Path(log_dir), 
+            logger_name=f'predictions_{model_type}'
+        )
+        
+        # Monkey patch prediction logging methods if they don't exist
+        if not hasattr(trainer, '_log_predictions'):
+            trainer._log_predictions = lambda batch, outputs, batch_idx, phase: \
+                PredictionLogger.log_predictions(
+                    trainer, batch, outputs, batch_idx, phase, 
+                    max_samples=training_config['prediction_samples']
+                )
+        
+        if not hasattr(trainer, 'generate_samples'):
+            trainer.generate_samples = lambda num_samples=10: \
+                PredictionLogger.generate_samples(trainer, num_samples)
+        
         # Train the model
         trainer.train()
         
-        # Log final predictions table if it exists
-        if 'predictions_table' in locals():
-            wandb.log({"final_predictions": predictions_table})
-        
-        # Generate samples and log them to WandB
-        if hasattr(trainer, 'generate_samples') and callable(getattr(trainer, 'generate_samples')):
-            num_final_samples = config.get('final_samples', 10)
-            trainer.generate_samples(num_samples=num_final_samples)
-            
-            # If trainer has a prediction log file, upload it as an artifact
-            if hasattr(trainer, 'predictions_log_path'):
-                prediction_artifact = wandb.Artifact(
-                    name=f"predictions_{run.id}", 
-                    type="predictions", 
-                    description="Model predictions log"
-                )
-                prediction_artifact.add_file(trainer.predictions_log_path)
-                wandb.log_artifact(prediction_artifact)
+        # Generate final samples
+        num_final_samples = config.get('final_samples', 10)
+        trainer.generate_samples(num_samples=num_final_samples)
         
         del trainer
         torch.cuda.empty_cache()
+
 
 def main():
     parser = argparse.ArgumentParser(description='Train sequence-to-sequence models with W&B sweeps in Docker')
