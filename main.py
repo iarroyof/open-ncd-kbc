@@ -7,6 +7,7 @@ import wandb
 import yaml
 import os
 import time
+import json
 
 from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
 from src.trainers.attention_gru_trainer import AttentionGRUTrainer
@@ -351,7 +352,7 @@ def main():
     parser.add_argument('--model_type', type=str, default='autoencoder',
                         choices=['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s'],
                         help='Type of model to train (ignored if using sweep)')
-    parser.add_argument('--data_path', type=str, default='data/ncd_gp_conceptnet',
+    parser.add_argument('--data_path', type=json.loads, #type=str, default='data/ncd_gp_conceptnet',
                         help='Base path to data directory (ignored if using sweep)')
     parser.add_argument('--cache_dir', type=str, default='/app/cache',
                         help='Directory for caching datasets inside container')
@@ -401,8 +402,10 @@ def main():
             training_config = get_training_config(args.model_type)
             
             train_configs, valid_configs = setup_data_configs(
-                f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
-                f"{args.data_path}/ncd_gp_conceptnet_valid.tsv"
+                args.data_path[0],
+                #f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
+                args.data_path[1]
+                #f"{args.data_path}/ncd_gp_conceptnet_valid.tsv"
             )
             
             TrainerClass = get_trainer_class(args.model_type)
