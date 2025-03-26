@@ -274,8 +274,8 @@ class TransformerTrainer:
                 
                 # Trim predictions and references at EOS for each sequence in the batch
                 for pred_seq, target_seq in zip(preds, target_ids):
-                    pred_trimmed = trim_sequence_at_eos(pred_seq, eos_token_id)
-                    target_trimmed = trim_sequence_at_eos(target_seq, eos_token_id)
+                    pred_trimmed = self.trim_sequence_at_eos(pred_seq, eos_token_id)
+                    target_trimmed = self.trim_sequence_at_eos(target_seq, eos_token_id)
                     all_predictions.append(torch.tensor(pred_trimmed))
                     all_references.append(torch.tensor(target_trimmed))
                     
