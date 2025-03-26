@@ -158,8 +158,11 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
                 config[key] = wandb_config[wandb_key]
         if 'target_seq_len' in wandb_config:
             config['target_seq_len'] = wandb_config['target_seq_len']
-    
+        if 'max_seq_len' in wandb_config:
+            config['max_seq_len'] = wandb_config['max_seq_len']
+
     return config
+
 
 def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
     base_config = {
