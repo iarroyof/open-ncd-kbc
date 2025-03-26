@@ -7,7 +7,7 @@ parameters:
   model_type:
     values: ['transformer']
   data_path:
-    value: ['data/ncd_conceptnet_toy/ncd_gp_conceptnet_train.tsv', 'data/ncd_conceptnet_toy/ncd_gp_conceptnet_valid.tsv'] #['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv']
+    value: ['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/conceptnet_gp/conceptnet_gp_valid.tsv'] # ['data/ncd_conceptnet_toy/ncd_gp_conceptnet_train.tsv', 'data/ncd_conceptnet_toy/ncd_gp_conceptnet_valid.tsv'] #['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv']
   #data_path:
   #  value: 'data/conceptnet_gp/conceptnet_gp_valid.tsv' #['data/conceptnet_gp/conceptnet_gp_valid.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv']
   
@@ -19,7 +19,7 @@ parameters:
   target_seq_len:
     values: [128]  # 4 values: min (autoencoder), mid-low, default, high
   num_epochs:
-    value: 5  # Fixed to save time; can be swept if needed
+    value: 2  # Fixed to save time; can be swept if needed
 
   # Transformer (with blocks)
   transformer_d_model:
