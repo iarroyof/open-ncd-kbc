@@ -183,7 +183,11 @@ class PredictionLogger:
                     pred_text = trainer.train_dataset.tokenizer.decode(pred_tokens)
                     
                     # Calculate BLEU score
-                    sample_bleu = trainer.metrics.compute_bleu_score([pred_tokens], [tgt_tokens])
+                    metrics_result = trainer.metrics.compute_metrics(
+                        torch.tensor([pred_tokens]),
+                        torch.tensor([tgt_tokens])
+                    )
+                    sample_bleu = metrics_result.get("bleu", 0.0)
                     
                     # Log sample details
                     log_message = (
