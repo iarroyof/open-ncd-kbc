@@ -453,6 +453,8 @@ class AttentionLSTMSeq2Seq(nn.Module):
             
             return outputs
 
+# src/models/text2text_autoencoders.py
+
 class VanillaTransformer(nn.Module):
     def __init__(
         self,
@@ -465,7 +467,8 @@ class VanillaTransformer(nn.Module):
         dim_feedforward: int = 2048,
         dropout: float = 0.1,
         activation: str = "relu",
-        max_seq_len: int = 512,
+        # Remove independent max_seq_len parameter; use source_seq_len instead.
+        source_seq_len: int = 64,
         pe_mode: str = 'fixed',
         fixed_scale: float = 1.0,
         learned_scale: float = 1.0
@@ -473,15 +476,17 @@ class VanillaTransformer(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.target_seq_len = target_seq_len
-        self.max_seq_len = max_seq_len
+        self.source_seq_len = source_seq_len
 
         # Embedding layer
         self.embedding = nn.Embedding(vocab_size, d_model)
         
-        # Positional encoding
+        # Initialize positional encoder with a maximum length that covers both source and
+        # potential decoder sequence lengths (decoder may temporarily grow to target_seq_len+1).
+        max_len_for_pos = max(self.source_seq_len, self.target_seq_len + 1)
         self.pos_encoder = PositionalEncoding(
             d_model=d_model,
-            max_len=max_seq_len,
+            max_len=max_len_for_pos,
             mode=pe_mode,
             fixed_scale=fixed_scale,
             learned_scale=learned_scale
@@ -518,8 +523,8 @@ class VanillaTransformer(nn.Module):
 
     def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
         # Truncate source sequence if needed (keeping right side)
-        if src.size(1) > self.max_seq_len:
-            src = src[:, -self.max_seq_len:]
+        if src.size(1) > self.source_seq_len:
+            src = src[:, -self.source_seq_len:]
         
         # Create source mask for padding tokens
         src_key_padding_mask = (src == 0).to(src.device)
@@ -530,7 +535,7 @@ class VanillaTransformer(nn.Module):
         
         # For training with teacher forcing
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
-            # Prepare target sequence
+            # Prepare target sequence using target_seq_len
             if tgt.size(1) > self.target_seq_len:
                 tgt = tgt[:, :self.target_seq_len]
             elif tgt.size(1) < self.target_seq_len:
@@ -544,7 +549,7 @@ class VanillaTransformer(nn.Module):
             tgt_emb = self.embedding(tgt) * math.sqrt(self.d_model)
             tgt_emb = self.pos_encoder(tgt_emb)
             
-            # Transformer forward pass
+            # Transformer forward pass with teacher forcing
             out = self.transformer(
                 src=src_emb,
                 tgt=tgt_emb,
@@ -569,7 +574,7 @@ class VanillaTransformer(nn.Module):
                 tgt_mask = self.transformer.generate_square_subsequent_mask(decoder_input.size(1)).to(device)
                 tgt_key_padding_mask = (decoder_input == 0).to(device)
                 
-                # Embed and add positional encoding
+                # Embed and add positional encoding to decoder input
                 tgt_emb = self.embedding(decoder_input) * math.sqrt(self.d_model)
                 tgt_emb = self.pos_encoder(tgt_emb)
                 
@@ -586,11 +591,12 @@ class VanillaTransformer(nn.Module):
                 next_token = self.fc(out[:, -1:])  # Only take last position
                 outputs[:, t:t+1, :] = next_token  # Fill pre-allocated tensor
                 
-                # Update decoder input
+                # Update decoder input (only in inference mode)
                 if not self.training:
                     decoder_input = torch.cat([decoder_input, next_token.argmax(dim=-1)], dim=1)
             
             return outputs
+
         
 class PositionalAutoencoder(nn.Module):
     def __init__(
