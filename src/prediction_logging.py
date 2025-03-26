@@ -208,7 +208,7 @@ class PredictionLogger:
                     })
         
         # Log artifact to wandb if using wandb
-        if trainer.use_wandb and generated_samples:
+        if trainer.use_wandb and generated_samples and wandb.run is not None:
             # Convert samples to DataFrame for easier logging
             import pandas as pd
             samples_df = pd.DataFrame(generated_samples)
