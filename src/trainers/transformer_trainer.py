@@ -325,6 +325,7 @@ class TransformerTrainer:
         try:
             for epoch in range(self.training_config['num_epochs']):
                 # Train
+                self.current_epoch = epoch
                 train_loss = self.train_epoch(epoch)
                 
                 # Evaluate
