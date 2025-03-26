@@ -46,7 +46,8 @@ class PredictionLogger:
         outputs, 
         batch_idx, 
         phase="train", 
-        max_samples=3
+        max_samples=3,
+        epoch
     ):
         """
         Log model predictions for a batch.
@@ -76,7 +77,7 @@ class PredictionLogger:
             num_samples = min(max_samples, batch_size)
             sample_indices = random.sample(range(batch_size), num_samples)
             
-            current_epoch = getattr(trainer, 'current_epoch', 0)
+            current_epoch = epoch
             
             for idx in sample_indices:
                 # Decode non-padding tokens
