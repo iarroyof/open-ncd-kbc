@@ -113,7 +113,7 @@ class TransformerTrainer:
         # Learning rate scheduler with warmup
         warmup_steps = training_config.get('warmup_steps', 4000)
         total_steps = len(self.train_loader) * training_config['num_epochs']
-        
+
         def lr_lambda(step):
             # Implement transformer learning rate schedule
             step = max(1, step)  # Avoid division by zero
@@ -143,6 +143,25 @@ class TransformerTrainer:
                 }
             )
 
+    def trim_sequence_at_eos(self, seq, eos_token_id):
+            """
+            Trims the sequence at the first occurrence of the EOS token.
+            If EOS is not found, returns the full sequence.
+            Args:
+                seq (list or 1D tensor): Sequence of token ids.
+                eos_token_id (int): The token id corresponding to [EOS].
+            Returns:
+                trimmed sequence (list)
+            """
+            # Convert tensor to list if needed
+            if hasattr(seq, "tolist"):
+                seq = seq.tolist()
+            if eos_token_id in seq:
+                index = seq.index(eos_token_id)
+                # Keep EOS token in the trimmed output (if desired)
+                return seq[: index + 1]
+            return seq
+        
     def train_epoch(self, epoch: int) -> float:
         """Train for one epoch"""
         self.model.train()
@@ -226,13 +245,15 @@ class TransformerTrainer:
         all_references = []
         valid_batches = 0
         
+        # Get the [EOS] token id from the tokenizer (assuming it has a method token_to_id)
+        eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
+        
         for batch in tqdm(self.valid_loader, desc="Evaluating"):
             try:
-                # Move data to device
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Ensure target has correct sequence length
+                # Standard target length adjustment (if needed)
                 if target_ids.size(1) != self.model_config['target_seq_len']:
                     if target_ids.size(1) > self.model_config['target_seq_len']:
                         target_ids = target_ids[:, :self.model_config['target_seq_len']]
@@ -240,10 +261,7 @@ class TransformerTrainer:
                         pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
                         target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
                 
-                # Forward pass without teacher forcing
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
-                
-                # Calculate loss
                 outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
                 targets_flat = target_ids.contiguous().view(-1)
                 loss = self.criterion(outputs_flat, targets_flat)
@@ -251,13 +269,16 @@ class TransformerTrainer:
                 total_loss += loss.item()
                 valid_batches += 1
                 
-                # Get predictions
-                predictions = outputs.argmax(dim=-1)  # [batch_size, target_seq_len]
+                # Get raw predictions (without trimming)
+                preds = outputs.argmax(dim=-1)
                 
-                # Store predictions and references
-                all_predictions.append(predictions.cpu())
-                all_references.append(target_ids.cpu())
-                
+                # Trim predictions and references at EOS for each sequence in the batch
+                for pred_seq, target_seq in zip(preds, target_ids):
+                    pred_trimmed = trim_sequence_at_eos(pred_seq, eos_token_id)
+                    target_trimmed = trim_sequence_at_eos(target_seq, eos_token_id)
+                    all_predictions.append(torch.tensor(pred_trimmed))
+                    all_references.append(torch.tensor(target_trimmed))
+                    
             except Exception as e:
                 logging.warning(f"Error in evaluation batch: {str(e)}")
                 continue
@@ -274,14 +295,9 @@ class TransformerTrainer:
             }
         
         try:
-            # Compute average loss
             avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
-            
-            # Concatenate all predictions and references
-            all_predictions = torch.cat(all_predictions, dim=0)
-            all_references = torch.cat(all_references, dim=0)
-            
-            # Compute metrics
+            # Optionally, you can pad the trimmed sequences for metric calculation,
+            # or update your metrics module to handle variable-length sequences.
             metrics = self.metrics.compute_metrics(all_predictions, all_references)
             metrics['val_loss'] = avg_loss
             
@@ -296,13 +312,14 @@ class TransformerTrainer:
                 'meteor': 0.0
             }
         
-        # Clear memory
+        # Cleanup memory
         del all_predictions, all_references
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
         return metrics
+
 
     def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
         """Save model checkpoint"""
