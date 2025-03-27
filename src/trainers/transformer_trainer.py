@@ -19,6 +19,8 @@ from ..data.tsv_text2text_dataset import (
 )
 from ..models.text2text_autoencoders import VanillaTransformer
 from ..metrics.evaluation import TextGenerationMetrics
+from ..prediction_logging import PredictionLogger
+
 
 # Set tokenizers parallelism
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
