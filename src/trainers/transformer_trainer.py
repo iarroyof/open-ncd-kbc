@@ -227,7 +227,7 @@ class TransformerTrainer:
                     })
                 
                 # Periodic memory cleanup
-                if batch_idx % 100 == 0:
+                if batch_idx % 10 == 0:
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                 del outputs, outputs_flat, targets_flat, loss  # FREE UP GPU MEMORY
