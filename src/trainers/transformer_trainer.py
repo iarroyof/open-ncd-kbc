@@ -232,9 +232,15 @@ class TransformerTrainer:
                         torch.cuda.empty_cache()
                 del outputs, outputs_flat, targets_flat, loss  # FREE UP GPU MEMORY
                 
-            except Exception as e:
-                logging.warning(f"Error in training batch {batch_idx}: {str(e)}")
+            except RuntimeError as e:
+                if "CUDA out of memory" in str(e):
+                    logging.warning(f"OOM at batch {batch_idx}, freeing cache")
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                else:
+                    logging.error(f"Unexpected runtime error: {str(e)}")
                 continue
+
         
         return total_loss / valid_batches if valid_batches > 0 else float('inf')
 
