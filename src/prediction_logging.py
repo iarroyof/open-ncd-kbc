@@ -48,51 +48,42 @@ class PredictionLogger:
         phase="train", 
         max_samples=3
     ):
-        """
-        Log model predictions for a batch.
-        
-        Args:
-            trainer: The trainer instance
-            batch (dict): Input batch containing source and target texts
-            outputs (torch.Tensor): Model predictions
-            batch_idx (int): Current batch index
-            phase (str, optional): Training phase. Defaults to "train".
-            max_samples (int, optional): Maximum number of samples to log
-        """
-        # Ensure prediction logger and tokenizer exist
         if not hasattr(trainer, 'prediction_logger') or \
            not hasattr(trainer, 'train_dataset') or \
            not hasattr(trainer.train_dataset, 'tokenizer'):
             return
         
         try:
-            # Convert outputs to token indices
-            predictions = outputs.argmax(dim=-1).cpu().numpy()
-            source_ids = batch['source_text'].cpu().numpy()
-            target_ids = batch['target_text'].cpu().numpy()
-            
-            # Sample up to max_samples examples from the batch
+            predictions = outputs.argmax(dim=-1).cpu()
+            source_ids = batch['source_text'].cpu()
+            target_ids = batch['target_text'].cpu()
+            eos_token_id = trainer.train_dataset.tokenizer.token_to_id("[EOS]")
             batch_size = len(predictions)
             num_samples = min(max_samples, batch_size)
             sample_indices = random.sample(range(batch_size), num_samples)
-            
             current_epoch = trainer.current_epoch
             
             for idx in sample_indices:
-                # Decode non-padding tokens
-                src_tokens = [t for t in source_ids[idx] if t != 0]
-                tgt_tokens = [t for t in target_ids[idx] if t != 0]
-                pred_tokens = [t for t in predictions[idx] if t != 0]
+                src_seq = source_ids[idx]
+                tgt_seq = target_ids[idx]
+                pred_seq = predictions[idx]
                 
-                # Decode tokens to text
-                src_text = trainer.train_dataset.tokenizer.decode(src_tokens)
-                tgt_text = trainer.train_dataset.tokenizer.decode(tgt_tokens)
-                pred_text = trainer.train_dataset.tokenizer.decode(pred_tokens)
+                src_trim = trim_sequence_at_eos(src_seq, eos_token_id)
+                tgt_trim = trim_sequence_at_eos(tgt_seq, eos_token_id)
+                pred_trim = trim_sequence_at_eos(pred_seq, eos_token_id)
                 
-                # Calculate BLEU score for this sample
-                sample_bleu = trainer.metrics.compute_bleu_score([pred_tokens], [tgt_tokens])
+                # Decode tokens to text (assumes tokenizer.decode can take a list of ints)
+                src_text = trainer.train_dataset.tokenizer.decode(src_trim)
+                tgt_text = trainer.train_dataset.tokenizer.decode(tgt_trim)
+                pred_text = trainer.train_dataset.tokenizer.decode(pred_trim)
                 
-                # Log prediction details
+                # Compute metrics for the trimmed sequences
+                metrics_result = trainer.metrics.compute_metrics(
+                    [torch.tensor(pred_trim)],
+                    [torch.tensor(tgt_trim)]
+                )
+                sample_bleu = metrics_result.get("bleu", 0.0)
+                
                 log_message = (
                     f"Epoch: {current_epoch}, "
                     f"Phase: {phase}, "
@@ -104,54 +95,34 @@ class PredictionLogger:
                 )
                 trainer.prediction_logger.info(log_message)
                 
-                # Optional: Log to wandb if available
                 if trainer.use_wandb:
                     wandb.log({
                         f"{phase}_predictions": wandb.Table(
                             columns=["Epoch", "Phase", "Batch", "Source", "Target", "Prediction", "BLEU"],
-                            data=[[
-                                current_epoch, 
-                                phase, 
-                                batch_idx, 
-                                src_text, 
-                                tgt_text, 
-                                pred_text, 
-                                sample_bleu
-                            ]]
+                            data=[[current_epoch, phase, batch_idx, src_text, tgt_text, pred_text, sample_bleu]]
                         )
                     })
         except Exception as e:
             logging.warning(f"Error logging predictions: {str(e)}")
 
+    
     @staticmethod
     def generate_samples(
         trainer, 
         num_samples=10, 
         samples_per_batch=3
     ):
-        """
-        Generate and log prediction samples from the validation dataset.
-        
-        Args:
-            trainer: The trainer instance
-            num_samples (int, optional): Total number of samples to generate
-            samples_per_batch (int, optional): Max samples to log per batch
-        """
         trainer.model.eval()
         samples_log_path = trainer.log_dir / "generated_samples.log"
         samples_logger = logging.getLogger('samples')
         samples_logger.setLevel(logging.INFO)
-        
-        # Clear existing handlers
         samples_logger.handlers.clear()
-        
         file_handler = logging.FileHandler(samples_log_path)
         file_handler.setLevel(logging.INFO)
         formatter = logging.Formatter('%(asctime)s - %(message)s')
         file_handler.setFormatter(formatter)
         samples_logger.addHandler(file_handler)
         
-        # Prediction artifact for wandb
         if trainer.use_wandb:
             prediction_artifact = wandb.Artifact(
                 name=f"generated_samples", 
@@ -159,8 +130,10 @@ class PredictionLogger:
                 description="Model generated samples"
             )
         
+        eos_token_id = trainer.train_dataset.tokenizer.token_to_id("[EOS]")
+        generated_samples = []
+        
         with torch.no_grad():
-            generated_samples = []
             for i, batch in enumerate(trainer.valid_loader):
                 if i >= num_samples // samples_per_batch:
                     break
@@ -168,28 +141,28 @@ class PredictionLogger:
                 source_ids = batch['source_text'].to(trainer.device)
                 target_ids = batch['target_text'].to(trainer.device)
                 
-                # Generate prediction without teacher forcing
                 outputs = trainer.model(src=source_ids, teacher_forcing_ratio=0.0)
-                predictions = outputs.argmax(dim=-1).cpu().numpy()
+                predictions = outputs.argmax(dim=-1).cpu()
                 
                 for idx in range(min(len(predictions), samples_per_batch)):
-                    src_tokens = [t for t in source_ids[idx].cpu().numpy() if t != 0]
-                    tgt_tokens = [t for t in target_ids[idx].cpu().numpy() if t != 0]
-                    pred_tokens = [t for t in predictions[idx] if t != 0]
+                    src_seq = source_ids[idx].cpu()
+                    tgt_seq = target_ids[idx].cpu()
+                    pred_seq = predictions[idx]
                     
-                    # Decode tokens to text
-                    src_text = trainer.train_dataset.tokenizer.decode(src_tokens)
-                    tgt_text = trainer.train_dataset.tokenizer.decode(tgt_tokens)
-                    pred_text = trainer.train_dataset.tokenizer.decode(pred_tokens)
+                    src_trim = trim_sequence_at_eos(src_seq, eos_token_id)
+                    tgt_trim = trim_sequence_at_eos(tgt_seq, eos_token_id)
+                    pred_trim = trim_sequence_at_eos(pred_seq, eos_token_id)
                     
-                    # Calculate BLEU score
+                    src_text = trainer.train_dataset.tokenizer.decode(src_trim)
+                    tgt_text = trainer.train_dataset.tokenizer.decode(tgt_trim)
+                    pred_text = trainer.train_dataset.tokenizer.decode(pred_trim)
+                    
                     metrics_result = trainer.metrics.compute_metrics(
-                        torch.tensor([pred_tokens]),
-                        torch.tensor([tgt_tokens])
+                        [torch.tensor(pred_trim)],
+                        [torch.tensor(tgt_trim)]
                     )
                     sample_bleu = metrics_result.get("bleu", 0.0)
                     
-                    # Log sample details
                     log_message = (
                         f"Sample {i * samples_per_batch + idx + 1}: "
                         f"Source: {src_text}, "
@@ -198,8 +171,6 @@ class PredictionLogger:
                         f"BLEU: {sample_bleu:.4f}"
                     )
                     samples_logger.info(log_message)
-                    
-                    # Store for potential further use
                     generated_samples.append({
                         'source': src_text,
                         'target': tgt_text,
@@ -207,13 +178,13 @@ class PredictionLogger:
                         'bleu': sample_bleu
                     })
         
-        # Log artifact to wandb if using wandb
-        if trainer.use_wandb and generated_samples and wandb.run is not None:
-            # Convert samples to DataFrame for easier logging
+        if trainer.use_wandb and wandb.run is not None and generated_samples:
             import pandas as pd
             samples_df = pd.DataFrame(generated_samples)
-            samples_df.to_csv(samples_log_path.with_suffix('.csv'), index=False)
-            prediction_artifact.add_file(samples_log_path.with_suffix('.csv'))
+            csv_path = samples_log_path.with_suffix('.csv')
+            samples_df.to_csv(csv_path, index=False)
+            prediction_artifact.add_file(str(csv_path))
             wandb.log_artifact(prediction_artifact)
         
         return generated_samples
+
