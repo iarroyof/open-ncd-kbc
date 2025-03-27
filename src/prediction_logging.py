@@ -68,9 +68,9 @@ class PredictionLogger:
                 tgt_seq = target_ids[idx]
                 pred_seq = predictions[idx]
                 
-                src_trim = trim_sequence_at_eos(src_seq, eos_token_id)
-                tgt_trim = trim_sequence_at_eos(tgt_seq, eos_token_id)
-                pred_trim = trim_sequence_at_eos(pred_seq, eos_token_id)
+                src_trim = trainer.trim_sequence_at_eos(src_seq, eos_token_id)
+                tgt_trim = trainer.trim_sequence_at_eos(tgt_seq, eos_token_id)
+                pred_trim = trainer.trim_sequence_at_eos(pred_seq, eos_token_id)
                 
                 # Decode tokens to text (assumes tokenizer.decode can take a list of ints)
                 src_text = trainer.train_dataset.tokenizer.decode(src_trim)
@@ -149,9 +149,9 @@ class PredictionLogger:
                     tgt_seq = target_ids[idx].cpu()
                     pred_seq = predictions[idx]
                     
-                    src_trim = trim_sequence_at_eos(src_seq, eos_token_id)
-                    tgt_trim = trim_sequence_at_eos(tgt_seq, eos_token_id)
-                    pred_trim = trim_sequence_at_eos(pred_seq, eos_token_id)
+                    src_trim = trainer.trim_sequence_at_eos(src_seq, eos_token_id)
+                    tgt_trim = trainer.trim_sequence_at_eos(tgt_seq, eos_token_id)
+                    pred_trim = trainer.trim_sequence_at_eos(pred_seq, eos_token_id)
                     
                     src_text = trainer.train_dataset.tokenizer.decode(src_trim)
                     tgt_text = trainer.train_dataset.tokenizer.decode(tgt_trim)
