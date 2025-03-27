@@ -188,3 +188,42 @@ class PredictionLogger:
         
         return generated_samples
 
+@staticmethod
+def log_evaluation_samples(trainer, sample_predictions):
+    """
+    Log a set of evaluation sample predictions that were collected during evaluation.
+    This function is called once per evaluation run.
+    
+    Args:
+        trainer: The trainer instance.
+        sample_predictions (list of dict): Each dict should have 'source', 'target', and 'prediction' keys.
+    """
+    if not sample_predictions:
+        return
+
+    # Log locally using the prediction logger
+    for i, sample in enumerate(sample_predictions):
+        log_message = (
+            f"Evaluation Sample {i+1}: "
+            f"Source: {sample['source']}, "
+            f"Target: {sample['target']}, "
+            f"Prediction: {sample['prediction']}"
+        )
+        trainer.prediction_logger.info(log_message)
+    
+    # Log artifact to wandb only if a run is active
+    if trainer.use_wandb and wandb.run is not None:
+        import pandas as pd
+        samples_log_path = trainer.log_dir / "evaluation_samples.log"
+        # Save samples in CSV format
+        df = pd.DataFrame(sample_predictions)
+        csv_path = samples_log_path.with_suffix('.csv')
+        df.to_csv(csv_path, index=False)
+        # Create an artifact and log it
+        eval_artifact = wandb.Artifact(
+            name="evaluation_samples", 
+            type="predictions", 
+            description="Evaluation sample predictions"
+        )
+        eval_artifact.add_file(str(csv_path))
+        wandb.log_artifact(eval_artifact)
