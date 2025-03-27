@@ -238,22 +238,27 @@ class TransformerTrainer:
 
     @torch.no_grad()
     def evaluate(self) -> Dict[str, float]:
-        """Evaluate model without teacher forcing"""
+        """Evaluate model without teacher forcing, while also gathering sample predictions for logging"""
         self.model.eval()
         total_loss = 0
-        all_predictions = []
-        all_references = []
         valid_batches = 0
-        
-        # Get the [EOS] token id from the tokenizer (assuming it has a method token_to_id)
+        # List to hold sample predictions for logging
+        sample_predictions = []
+        # Use the tokenizer to get the EOS token id
         eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
-        
+    
+        # Define how many samples you want per batch to log (adjust as needed)
+        SAMPLE_COUNT_PER_BATCH = 2
+        # Optionally, define a maximum number of samples to log overall
+        MAX_SAMPLE_LOGS = 10
+    
         for batch in tqdm(self.valid_loader, desc="Evaluating"):
             try:
+                # Move data to device
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
                 
-                # Standard target length adjustment (if needed)
+                # Ensure target has the correct sequence length
                 if target_ids.size(1) != self.model_config['target_seq_len']:
                     if target_ids.size(1) > self.model_config['target_seq_len']:
                         target_ids = target_ids[:, :self.model_config['target_seq_len']]
@@ -261,7 +266,10 @@ class TransformerTrainer:
                         pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
                         target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
                 
+                # Forward pass without teacher forcing
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
+                
+                # Compute loss
                 outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
                 targets_flat = target_ids.contiguous().view(-1)
                 loss = self.criterion(outputs_flat, targets_flat)
@@ -269,52 +277,49 @@ class TransformerTrainer:
                 total_loss += loss.item()
                 valid_batches += 1
                 
-                # Get raw predictions (without trimming)
+                # Get raw predictions (shape: [batch_size, target_seq_len])
                 preds = outputs.argmax(dim=-1)
                 
-                # Trim predictions and references at EOS for each sequence in the batch
-                for pred_seq, target_seq in zip(preds, target_ids):
-                    pred_trimmed = self.trim_sequence_at_eos(pred_seq, eos_token_id)
-                    target_trimmed = self.trim_sequence_at_eos(target_seq, eos_token_id)
-                    all_predictions.append(torch.tensor(pred_trimmed))
-                    all_references.append(torch.tensor(target_trimmed))
-                    
+                # Gather sample predictions from this batch if we haven't reached our log cap
+                if len(sample_predictions) < MAX_SAMPLE_LOGS:
+                    for i in range(min(preds.size(0), SAMPLE_COUNT_PER_BATCH)):
+                        # Trim source, target and prediction using the trainer’s trim function
+                        src_trim = self.trim_sequence_at_eos(source_ids[i].cpu(), eos_token_id)
+                        tgt_trim = self.trim_sequence_at_eos(target_ids[i].cpu(), eos_token_id)
+                        pred_trim = self.trim_sequence_at_eos(preds[i].cpu(), eos_token_id)
+                        
+                        sample_predictions.append({
+                            'source': self.train_dataset.tokenizer.decode(src_trim),
+                            'target': self.train_dataset.tokenizer.decode(tgt_trim),
+                            'prediction': self.train_dataset.tokenizer.decode(pred_trim)
+                        })
             except Exception as e:
                 logging.warning(f"Error in evaluation batch: {str(e)}")
                 continue
         
-        if not all_predictions:
-            logging.error("No valid predictions during evaluation")
-            return {
-                'val_loss': float('inf'),
-                'bleu': 0.0,
-                'rouge1': 0.0,
-                'rouge2': 0.0,
-                'rougeL': 0.0,
-                'meteor': 0.0
-            }
+        # Compute average loss
+        avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
         
+        # Compute metrics using trimmed sequences
+        # Convert our lists of trimmed predictions/references back into tensors/lists if needed
+        # Here we assume compute_metrics can handle a list of 1D tensors (variable lengths)
+        trimmed_preds = []
+        trimmed_refs = []
+        for sp in sample_predictions:
+            # For metric computation you might need token ids; assume the tokenizer provides encode
+            trimmed_preds.append(torch.tensor(self.train_dataset.tokenizer.encode(sp['prediction']).ids))
+            trimmed_refs.append(torch.tensor(self.train_dataset.tokenizer.encode(sp['target']).ids))
         try:
-            avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
-            # Optionally, you can pad the trimmed sequences for metric calculation,
-            # or update your metrics module to handle variable-length sequences.
-            metrics = self.metrics.compute_metrics(all_predictions, all_references)
-            metrics['val_loss'] = avg_loss
-            
+            metrics = self.metrics.compute_metrics(trimmed_preds, trimmed_refs)
         except Exception as e:
             logging.error(f"Error computing metrics: {str(e)}")
-            metrics = {
-                'val_loss': avg_loss if 'avg_loss' in locals() else float('inf'),
-                'bleu': 0.0,
-                'rouge1': 0.0,
-                'rouge2': 0.0,
-                'rougeL': 0.0,
-                'meteor': 0.0
-            }
+            metrics = {'bleu': 0.0, 'rouge1': 0.0, 'rouge2': 0.0, 'rougeL': 0.0, 'meteor': 0.0}
+        metrics['val_loss'] = avg_loss
+    
+        # Log the gathered evaluation samples (if any)
+        PredictionLogger.log_evaluation_samples(self, sample_predictions)
         
-        # Cleanup memory
-        del all_predictions, all_references
-        gc.collect()
+        # Cleanup
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
