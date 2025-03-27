@@ -1,4 +1,5 @@
-import torch
+# main.py
+
 import logging
 import argparse
 from pathlib import Path
@@ -17,6 +18,8 @@ from src.trainers.conv_s2s_trainer import ConvS2STrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
 from src.prediction_logging import PredictionLogger
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segments:True"
+import torch
 # Global counter for round-robin GPU assignment
 current_gpu_index = 0
 
