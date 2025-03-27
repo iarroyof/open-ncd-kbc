@@ -209,7 +209,6 @@ class TransformerTrainer:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
                 self.scheduler.step()
-                
                 # Update metrics
                 total_loss += loss.item()
                 valid_batches += 1
@@ -231,7 +230,8 @@ class TransformerTrainer:
                 if batch_idx % 100 == 0:
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                    
+                del outputs, outputs_flat, targets_flat, loss  # FREE UP GPU MEMORY
+                
             except Exception as e:
                 logging.warning(f"Error in training batch {batch_idx}: {str(e)}")
                 continue
@@ -295,6 +295,9 @@ class TransformerTrainer:
                             'target': self.train_dataset.tokenizer.decode(tgt_trim),
                             'prediction': self.train_dataset.tokenizer.decode(pred_trim)
                         })
+                del outputs, outputs_flat, targets_flat, loss, preds, source_ids, target_ids  # clear GPU tensors
+                torch.cuda.empty_cache()  # optional: force GC at end of batch
+
             except Exception as e:
                 logging.warning(f"Error in evaluation batch: {str(e)}")
                 continue
@@ -313,6 +316,7 @@ class TransformerTrainer:
             trimmed_refs.append(torch.tensor(self.train_dataset.tokenizer.encode(sp['target']).ids))
         try:
             metrics = self.metrics.compute_metrics(trimmed_preds, trimmed_refs)
+
         except Exception as e:
             logging.error(f"Error computing metrics: {str(e)}")
             metrics = {'bleu': 0.0, 'rouge1': 0.0, 'rouge2': 0.0, 'rougeL': 0.0, 'meteor': 0.0}
@@ -320,7 +324,8 @@ class TransformerTrainer:
     
         # Log the gathered evaluation samples (if any)
         PredictionLogger.log_evaluation_samples(self, sample_predictions)
-        
+        del trimmed_preds, trimmed_refs, sample_predictions
+        gc.collect()
         # Cleanup
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
