@@ -83,9 +83,10 @@ class TransformerTrainer:
             batch_size=training_config['batch_size'],
             shuffle=True,
             collate_fn=collate_fn,
-            num_workers=training_config.get('num_workers', 4),
+            num_workers=training_config.get('num_workers', 2),
             pin_memory=True,
-            prefetch_factor=2
+            prefetch_factor=1,
+            persistent_workers=False
         )
         
         self.valid_loader = DataLoader(
@@ -93,9 +94,10 @@ class TransformerTrainer:
             batch_size=training_config['batch_size'],
             shuffle=False,
             collate_fn=collate_fn,
-            num_workers=training_config.get('num_workers', 4),
+            num_workers=training_config.get('num_workers', 2),
             pin_memory=True,
-            prefetch_factor=2
+            prefetch_factor=1,
+            persistent_workers=False
         )
         
         # Update model_config with vocab_size from dataset
