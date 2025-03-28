@@ -194,8 +194,8 @@ class TransformerTrainer:
                             pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
                             target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
     
-                    # Forward + loss under autocast
-                    with autocast():
+                    # ✅ Mixed precision forward pass
+                    with torch.autocast("cuda"):
                         outputs = self.model(
                             src=source_ids,
                             tgt=target_ids,
@@ -205,6 +205,7 @@ class TransformerTrainer:
                         targets_flat = target_ids.view(-1)
                         loss = self.criterion(outputs_flat, targets_flat)
     
+                    # Backward pass with gradient scaling
                     self.optimizer.zero_grad(set_to_none=True)
                     self.scaler.scale(loss).backward()
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -233,8 +234,9 @@ class TransformerTrainer:
                     if batch_idx % 10 == 0 and torch.cuda.is_available():
                         torch.cuda.empty_cache()
     
-                    del outputs, outputs_flat, targets_flat, loss
-                    break  # Success
+                    # Free memory
+                    del outputs, outputs_flat, targets_flat, loss, source_ids, target_ids
+                    break  # Batch succeeded
     
                 except RuntimeError as e:
                     if "CUDA out of memory" in str(e):
@@ -251,6 +253,7 @@ class TransformerTrainer:
                         break
     
         return total_loss / valid_batches if valid_batches > 0 else float('inf')
+
 
     @torch.no_grad()
     def evaluate(self) -> Dict[str, float]:
