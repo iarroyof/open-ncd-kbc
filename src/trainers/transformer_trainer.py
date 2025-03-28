@@ -10,7 +10,7 @@ import wandb
 from tqdm import tqdm
 import gc
 import os
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import GradScaler, autocast
 
 from ..data.tsv_text2text_dataset import (
     CachedTSVDataset, 
@@ -195,7 +195,7 @@ class TransformerTrainer:
                             target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
     
                     # ✅ Mixed precision forward pass
-                    with torch.autocast("cuda"):
+                    with autocast(device_type="cuda"):
                         outputs = self.model(
                             src=source_ids,
                             tgt=target_ids,
