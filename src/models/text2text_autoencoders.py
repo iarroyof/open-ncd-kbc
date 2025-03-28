@@ -597,7 +597,9 @@ class VanillaTransformer(nn.Module):
                 # Update decoder input (only in inference mode)
                 if not self.training:
                     decoder_input = torch.cat([decoder_input, next_token.argmax(dim=-1)], dim=1)
-            
+            # Final cleanup
+            del src_emb, tgt_emb, tgt_mask, tgt_key_padding_mask, decoder_input
+        
             return outputs
 
         
