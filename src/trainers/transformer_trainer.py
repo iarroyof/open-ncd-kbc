@@ -10,6 +10,7 @@ import wandb
 from tqdm import tqdm
 import gc
 import os
+from torch.cuda.amp import autocast, GradScaler
 
 from ..data.tsv_text2text_dataset import (
     CachedTSVDataset, 
@@ -163,85 +164,92 @@ class TransformerTrainer:
                 # Keep EOS token in the trimmed output (if desired)
                 return seq[: index + 1]
             return seq
-        
+
+
     def train_epoch(self, epoch: int) -> float:
-        """Train for one epoch"""
+        """Train for one epoch with mixed precision and retry on OOM"""
         self.model.train()
         total_loss = 0
         valid_batches = 0
         progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
-        
-        # Calculate teacher forcing ratio (can decay over epochs)
+    
         teacher_forcing_ratio = max(
             0.0,
             1.0 - (epoch / self.training_config['num_epochs'])
         )
-        
+    
         for batch_idx, batch in enumerate(progress_bar):
-            try:
-                # Move data to device
-                source_ids = batch['source_text'].to(self.device)
-                target_ids = batch['target_text'].to(self.device)
-                
-                # Ensure target has correct sequence length
-                if target_ids.size(1) != self.model_config['target_seq_len']:
-                    if target_ids.size(1) > self.model_config['target_seq_len']:
-                        target_ids = target_ids[:, :self.model_config['target_seq_len']]
-                    else:
-                        pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
-                        target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
-                
-                # Forward pass with teacher forcing
-                outputs = self.model(
-                    src=source_ids,
-                    tgt=target_ids,
-                    teacher_forcing_ratio=teacher_forcing_ratio
-                )
-                
-                # Calculate loss
-                outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
-                targets_flat = target_ids.contiguous().view(-1)
-                loss = self.criterion(outputs_flat, targets_flat)
-                
-                # Backward pass
-                self.optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                self.optimizer.step()
-                self.scheduler.step()
-                # Update metrics
-                total_loss += loss.item()
-                valid_batches += 1
-                avg_loss = total_loss / valid_batches
-                
-                progress_bar.set_postfix({
-                    'loss': f'{avg_loss:.4f}',
-                    'tf_ratio': f'{teacher_forcing_ratio:.2f}'
-                })
-                
-                if self.use_wandb:
-                    wandb.log({
-                        'batch_loss': loss.item(),
-                        'learning_rate': self.scheduler.get_last_lr()[0],
-                        'teacher_forcing_ratio': teacher_forcing_ratio
+            retry_attempted = False
+            while True:
+                try:
+                    # Move data to device
+                    source_ids = batch['source_text'].to(self.device)
+                    target_ids = batch['target_text'].to(self.device)
+    
+                    # Pad/trim target
+                    if target_ids.size(1) != self.model_config['target_seq_len']:
+                        if target_ids.size(1) > self.model_config['target_seq_len']:
+                            target_ids = target_ids[:, :self.model_config['target_seq_len']]
+                        else:
+                            pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
+                            target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
+    
+                    # Forward + loss under autocast
+                    with autocast():
+                        outputs = self.model(
+                            src=source_ids,
+                            tgt=target_ids,
+                            teacher_forcing_ratio=teacher_forcing_ratio
+                        )
+                        outputs_flat = outputs.view(-1, outputs.size(-1))
+                        targets_flat = target_ids.view(-1)
+                        loss = self.criterion(outputs_flat, targets_flat)
+    
+                    self.optimizer.zero_grad(set_to_none=True)
+                    self.scaler.scale(loss).backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    self.scheduler.step()
+    
+                    # Track loss
+                    total_loss += loss.item()
+                    valid_batches += 1
+                    avg_loss = total_loss / valid_batches
+    
+                    progress_bar.set_postfix({
+                        'loss': f'{avg_loss:.4f}',
+                        'tf_ratio': f'{teacher_forcing_ratio:.2f}'
                     })
-                
-                # Periodic memory cleanup
-                if batch_idx % 10 == 0:
-                    if torch.cuda.is_available():
+    
+                    if self.use_wandb:
+                        wandb.log({
+                            'batch_loss': loss.item(),
+                            'learning_rate': self.scheduler.get_last_lr()[0],
+                            'teacher_forcing_ratio': teacher_forcing_ratio
+                        })
+    
+                    # Periodic cache cleanup
+                    if batch_idx % 10 == 0 and torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                del outputs, outputs_flat, targets_flat, loss  # FREE UP GPU MEMORY
-                
-            except RuntimeError as e:
-                if "CUDA out of memory" in str(e):
-                    logging.warning(f"OOM at batch {batch_idx}, freeing cache")
-                    torch.cuda.empty_cache()
-                    gc.collect()
-                else:
-                    logging.error(f"Unexpected runtime error: {str(e)}")
-                continue
-
-        
+    
+                    del outputs, outputs_flat, targets_flat, loss
+                    break  # Success
+    
+                except RuntimeError as e:
+                    if "CUDA out of memory" in str(e):
+                        logging.warning(f"OOM at batch {batch_idx}, freeing cache")
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                        if retry_attempted:
+                            logging.error(f"Batch {batch_idx} failed twice due to OOM. Skipping.")
+                            break
+                        retry_attempted = True
+                        continue
+                    else:
+                        logging.error(f"Unexpected runtime error: {str(e)}")
+                        break
+    
         return total_loss / valid_batches if valid_batches > 0 else float('inf')
 
     @torch.no_grad()
