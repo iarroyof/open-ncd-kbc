@@ -103,7 +103,7 @@ class TransformerTrainer:
         
         # Initialize model
         self.model = VanillaTransformer(**self.model_config).to(self.device)
-        
+        self.scaler = GradScaler()
         # Initialize optimizer with transformer-specific parameters
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
