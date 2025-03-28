@@ -177,7 +177,11 @@ class TransformerTrainer:
             0.0,
             1.0 - (epoch / self.training_config['num_epochs'])
         )
-    
+        # Clear memory at the beginning of each epoch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
+            
         for batch_idx, batch in enumerate(progress_bar):
             retry_attempted = False
             while True:
@@ -231,7 +235,7 @@ class TransformerTrainer:
                         })
     
                     # Periodic cache cleanup
-                    if batch_idx % 10 == 0 and torch.cuda.is_available():
+                    if torch.cuda.is_available():
                         torch.cuda.empty_cache()
     
                     # Free memory
@@ -270,6 +274,10 @@ class TransformerTrainer:
         SAMPLE_COUNT_PER_BATCH = 2
         # Optionally, define a maximum number of samples to log overall
         MAX_SAMPLE_LOGS = 10
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
     
         for batch in tqdm(self.valid_loader, desc="Evaluating"):
             try:
@@ -313,9 +321,12 @@ class TransformerTrainer:
                             'prediction': self.train_dataset.tokenizer.decode(pred_trim)
                         })
                 del outputs, outputs_flat, targets_flat, loss, preds, source_ids, target_ids  # clear GPU tensors
-                torch.cuda.empty_cache()  # optional: force GC at end of batch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()  # optional: force GC at end of batch
 
             except Exception as e:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()  # optional: force GC at end of batch
                 logging.warning(f"Error in evaluation batch: {str(e)}")
                 continue
         
@@ -397,6 +408,10 @@ class TransformerTrainer:
                     best_metrics = val_metrics
                     self.save_checkpoint(epoch, val_metrics)
                     logging.info(f"Saved new best model with metrics: {val_metrics}")
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    gc.collect()
                     
         except KeyboardInterrupt:
             logging.info("Training interrupted by user")
