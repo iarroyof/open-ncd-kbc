@@ -557,8 +557,11 @@ class VanillaTransformer(nn.Module):
                 src_key_padding_mask=src_key_padding_mask,
                 tgt_key_padding_mask=tgt_key_padding_mask
             )
+            result = self.fc(out)
+            # Clean up intermediates to free memory
+            del out, tgt_emb, tgt_mask, tgt_key_padding_mask
             
-            return self.fc(out)
+            return result
         
         # For inference or when not using teacher forcing
         else:
