@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from transformers import Adafactor
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict
@@ -107,13 +108,22 @@ class TransformerTrainer:
         self.model = VanillaTransformer(**self.model_config).to(self.device)
         self.scaler = GradScaler()
         # Initialize optimizer with transformer-specific parameters
-        self.optimizer = torch.optim.AdamW(
+        #self.optimizer = torch.optim.AdamW(
+        #    self.model.parameters(),
+        #    lr=training_config['learning_rate'],
+        #    weight_decay=training_config.get('weight_decay', 0.01),
+        #    betas=(0.9, 0.98),  # Standard transformer betas
+        #    eps=1e-9  # Standard transformer epsilon
+        #)
+
+        self.optimizer = Adafactor(
             self.model.parameters(),
-            lr=training_config['learning_rate'],
-            weight_decay=training_config.get('weight_decay', 0.01),
-            betas=(0.9, 0.98),  # Standard transformer betas
-            eps=1e-9  # Standard transformer epsilon
+            scale_parameter=True,
+            relative_step=True,
+            warmup_init=True,
+            lr=None  # let Adafactor manage LR if using relative_step
         )
+
         
         # Learning rate scheduler with warmup
         warmup_steps = training_config.get('warmup_steps', 4000)
