@@ -386,12 +386,13 @@ class TransformerTrainer:
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict() if hasattr(self, 'scheduler') else None,
             'metrics': metrics,
             'model_config': self.model_config,
             'training_config': self.training_config
         }
         torch.save(checkpoint, self.log_dir / f'checkpoint_epoch_{epoch}.pt')
+
 
     def train(self):
         """Complete training loop"""
