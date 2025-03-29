@@ -180,6 +180,7 @@ class TransformerTrainer:
             1.0 - (epoch / self.training_config['num_epochs'])
         )
         # Clear memory at the beginning of each epoch
+        self.optimizer.zero_grad(set_to_none=True)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             gc.collect()
@@ -325,6 +326,8 @@ class TransformerTrainer:
                 del outputs, outputs_flat, targets_flat, loss, preds, source_ids, target_ids  # clear GPU tensors
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()  # optional: force GC at end of batch
+                    torch.cuda.synchronize()  # Force synchronization of CUDA operations
+                    gc.collect()
 
             except Exception as e:
                 if torch.cuda.is_available():
