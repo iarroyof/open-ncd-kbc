@@ -136,7 +136,7 @@ class TransformerTrainer:
             arg2 = step * (warmup_steps ** -1.5)
             return min(arg1, arg2)
         
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
+        #self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
         
         # Initialize loss function with label smoothing
         self.criterion = nn.CrossEntropyLoss(
@@ -228,8 +228,9 @@ class TransformerTrainer:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
-                    self.scheduler.step()
-    
+                    #self.scheduler.step()
+                    if hasattr(self, "scheduler"):
+                        self.scheduler.step()
                     # Track loss
                     total_loss += loss.item()
                     valid_batches += 1
