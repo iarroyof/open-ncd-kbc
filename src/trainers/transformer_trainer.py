@@ -242,11 +242,14 @@ class TransformerTrainer:
                     })
     
                     if self.use_wandb:
-                        wandb.log({
+                        log_data = {
                             'batch_loss': loss.item(),
-                            'learning_rate': self.scheduler.get_last_lr()[0],
                             'teacher_forcing_ratio': teacher_forcing_ratio
-                        })
+                        }
+                        current_lr = self.optimizer.param_groups[0]['lr']
+                        log_data['learning_rate'] = current_lr
+
+                        wandb.log(log_data)
     
                     # Periodic cache cleanup
                     if torch.cuda.is_available():
