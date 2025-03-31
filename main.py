@@ -20,6 +20,12 @@ from src.prediction_logging import PredictionLogger
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segments:True"
 import torch
+import socket
+
+workstation_name = socket.gethostname()
+logging.info("Workstation Name: ", workstation_name)
+os.environ["WORKSTATION_NAME"] = workstation_name
+
 # Global counter for round-robin GPU assignment
 current_gpu_index = 0
 
@@ -282,16 +288,27 @@ def train_with_wandb():
     with wandb.init() as run:
         config = wandb.config
         
-        workstation_id = int(os.environ.get('WORKSTATION_ID', 1))
         workstation_name = os.environ.get('WORKSTATION_NAME', 'santo')
+        cuda_visible_devices = os.getenv('CUDA_VISIBLE_DEVICES')
         
-        available_gpus = get_available_gpus()
-        if not available_gpus:
-            logging.error("No GPUs available in container. Exiting.")
-            return
-        
-        gpu_id = assign_gpu(config, available_gpus, workstation_id)
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        if cuda_visible_devices is not None:
+            logging.info(f"CUDA_VISIBLE_DEVICES is set to: {cuda_visible_devices}")
+        else:
+            logging.info("CUDA_VISIBLE_DEVICES is not set. So it will be assigned automatically...")
+            if workstation_name=='lizmark':
+                workstation_id = 3
+            elif workstation_name=='blue-demon':
+                workstation_id = 2
+            else:
+                workstation_id = 1
+            available_gpus = get_available_gpus()
+            if not available_gpus:
+                logging.error("No GPUs available in container. Exiting.")
+                return
+    
+            gpu_id = assign_gpu(config, available_gpus, workstation_id)
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+            
         logging.info(f"Assigned run to GPU {gpu_id} (Workstation {workstation_name}) with VRAM {estimate_vram_usage(config):.2f} GB")
         
         model_type = config['model_type']
