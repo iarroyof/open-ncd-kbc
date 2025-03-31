@@ -218,8 +218,9 @@ class TransformerTrainer:
                             tgt=target_ids,
                             teacher_forcing_ratio=teacher_forcing_ratio
                         )
-                        outputs_flat = outputs.view(-1, outputs.size(-1))
-                        targets_flat = target_ids.view(-1)
+                        outputs_flat = outputs.reshape(-1, outputs.size(-1))
+                        targets_flat = target_ids.reshape(-1)
+
                         loss = self.criterion(outputs_flat, targets_flat)
     
                     # Backward pass with gradient scaling
@@ -314,8 +315,9 @@ class TransformerTrainer:
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
                 
                 # Compute loss
-                outputs_flat = outputs.contiguous().view(-1, outputs.size(-1))
-                targets_flat = target_ids.contiguous().view(-1)
+                outputs_flat = outputs.reshape(-1, outputs.size(-1))
+                targets_flat = target_ids.reshape(-1)
+
                 loss = self.criterion(outputs_flat, targets_flat)
                 
                 total_loss += loss.item()
