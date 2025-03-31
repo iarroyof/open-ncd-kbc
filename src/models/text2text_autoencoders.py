@@ -519,7 +519,7 @@ class VanillaTransformer(nn.Module):
 
     def generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
         """Generate causal mask for decoder"""
-        return return torch.triu(torch.full((sz, sz), True), diagonal=1)
+        return torch.triu(torch.full((sz, sz), True), diagonal=1)
 
     def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
         # Truncate source sequence if needed (keeping right side)
