@@ -10,11 +10,7 @@ import os
 import time
 import ast
 
-from src.trainers.positional_autoencoder_trainer import AutoencoderTrainer
-from src.trainers.attention_gru_trainer import AttentionGRUTrainer
-from src.trainers.attention_lstm_trainer import AttentionLSTMTrainer
-from src.trainers.transformer_trainer import TransformerTrainer
-from src.trainers.conv_s2s_trainer import ConvS2STrainer
+from src.trainers.base_trainer import BaseTrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
 from src.prediction_logging import PredictionLogger
 
@@ -330,7 +326,8 @@ def train_with_wandb():
         
         train_configs, valid_configs = setup_data_configs(train_path, valid_path)
         
-        TrainerClass = get_trainer_class(config.model_type)
+        """TrainerClass = get_trainer_class(config.model_type)
+        
         trainer = TrainerClass(
                 model_config=model_config,
                 training_config=training_config,
@@ -340,8 +337,18 @@ def train_with_wandb():
                 #cache_dir=args.cache_dir,
                 log_dir=log_dir,
                 use_wandb=True
-        )
-        
+        )"""
+        trainer = BaseTrainer(
+            model_type=model_type,
+            model_config=model_config,
+            training_config=training_config,
+            train_configs=train_configs,
+            valid_configs=valid_configs,
+            tokenizer_path=args.tokenizer_path,  # or None
+            cache_dir=args.cache_dir,
+            log_dir=args.log_dir,
+            use_wandb=args.use_wandb
+        )        
         # Set up prediction logging dynamically
         trainer.prediction_logger = PredictionLogger.setup_prediction_logger(
             Path(log_dir), 
