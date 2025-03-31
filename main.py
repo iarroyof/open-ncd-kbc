@@ -293,6 +293,7 @@ def train_with_wandb():
         
         if cuda_visible_devices is not None:
             logging.info(f"CUDA_VISIBLE_DEVICES is set to: {cuda_visible_devices}")
+            gpu_id = cuda_visible_devices
         else:
             logging.info("CUDA_VISIBLE_DEVICES is not set. So it will be assigned automatically...")
             if workstation_name=='lizmark':
