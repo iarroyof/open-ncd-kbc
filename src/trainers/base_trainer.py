@@ -112,9 +112,10 @@ class BaseTrainer:
                 lr=training_config['learning_rate'],
                 weight_decay=training_config.get('weight_decay', 0.01)
             )
-
+            
+        pad_id = self.train_dataset.tokenizer.token_to_id("[PAD]")
         self.criterion = nn.CrossEntropyLoss(
-            ignore_index=0,
+            ignore_index=pad_id,
             label_smoothing=training_config.get('label_smoothing', 0.1)
         )
 
