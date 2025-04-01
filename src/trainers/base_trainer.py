@@ -1,5 +1,3 @@
-# src/trainers/base_trainer.py
-
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -21,7 +19,7 @@ from ..data.tsv_text2text_dataset import (
 )
 from ..metrics.evaluation import TextGenerationMetrics
 from ..prediction_logging import PredictionLogger
-from ..models.factory import build_model  # ✅ Use model factory here
+from ..models.factory import build_model
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -96,17 +94,24 @@ class BaseTrainer:
         )
 
         self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
-        self.model = build_model(model_type, self.model_config).to(self.device)  # ✅ Factory usage
+        self.model = build_model(model_type, self.model_config).to(self.device)
 
         self.scaler = GradScaler()
 
-        self.optimizer = Adafactor(
-            self.model.parameters(),
-            scale_parameter=True,
-            relative_step=True,
-            warmup_init=True,
-            lr=None
-        )
+        if training_config.get("optimizer", "adafactor") == "adafactor":
+            self.optimizer = Adafactor(
+                self.model.parameters(),
+                scale_parameter=True,
+                relative_step=True,
+                warmup_init=True,
+                lr=None
+            )
+        else:
+            self.optimizer = torch.optim.AdamW(
+                self.model.parameters(),
+                lr=training_config['learning_rate'],
+                weight_decay=training_config.get('weight_decay', 0.01)
+            )
 
         self.criterion = nn.CrossEntropyLoss(
             ignore_index=0,
@@ -132,10 +137,26 @@ class BaseTrainer:
             return seq[: seq.index(eos_token_id) + 1]
         return seq
 
+    def get_teacher_forcing_ratio(self, epoch):
+        num_epochs = self.training_config['num_epochs']
+        schedule = self.training_config.get('teacher_forcing_schedule', 'adaptive')
+
+        if schedule == 'linear':
+            return max(0.0, 1.0 - (epoch / num_epochs))
+        elif schedule == 'adaptive':
+            if num_epochs <= 3:
+                return 0.5
+            else:
+                return max(0.0, 0.95 * (0.95 ** epoch))
+        elif isinstance(schedule, float):
+            return schedule
+        else:
+            return max(0.0, 1.0 - (epoch / num_epochs))
+
     def train_epoch(self, epoch: int) -> float:
         self.model.train()
         total_loss, valid_batches = 0.0, 0
-        teacher_forcing_ratio = max(0.0, 1.0 - (epoch / self.training_config['num_epochs']))
+        teacher_forcing_ratio = self.get_teacher_forcing_ratio(epoch)
 
         for batch in tqdm(self.train_loader, desc=f"Epoch {epoch}"):
             try:
@@ -169,32 +190,20 @@ class BaseTrainer:
 
     @torch.no_grad()
     def evaluate(self) -> Dict[str, float]:
-        """Evaluate model without teacher forcing, while also gathering sample predictions for logging"""
         self.model.eval()
         total_loss = 0
         valid_batches = 0
         sample_predictions = []
         eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
+        sos_token_id = self.train_dataset.tokenizer.token_to_id("[SOS]")
 
         SAMPLE_COUNT_PER_BATCH = 2
         MAX_SAMPLE_LOGS = 10
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            gc.collect()
-
         for batch in tqdm(self.valid_loader, desc="Evaluating"):
             try:
                 source_ids = batch['source_text'].to(self.device)
-                target_ids = batch['target_text'].to(self.device)
-
-                if target_ids.size(1) != self.model_config['target_seq_len']:
-                    if target_ids.size(1) > self.model_config['target_seq_len']:
-                        target_ids = target_ids[:, :self.model_config['target_seq_len']]
-                    else:
-                        pad_len = self.model_config['target_seq_len'] - target_ids.size(1)
-                        target_ids = torch.nn.functional.pad(target_ids, (0, pad_len), value=0)
-
+                target_ids = self.pad_or_trim(batch['target_text'].to(self.device))
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
                 outputs_flat = outputs.reshape(-1, outputs.size(-1))
                 targets_flat = target_ids.reshape(-1)
@@ -215,35 +224,25 @@ class BaseTrainer:
                         decoded_target = self.train_dataset.tokenizer.decode(tgt_trim)
                         decoded_source = self.train_dataset.tokenizer.decode(src_trim)
 
-                        # Handle empty predictions gracefully
                         if not decoded_pred.strip():
                             decoded_pred = "[EMPTY] " + str(pred_trim[:5])
 
                         sample_predictions.append({
                             'source': decoded_source.strip(),
                             'target': decoded_target.strip(),
-                            'prediction': decoded_pred.strip()
+                            'prediction': decoded_pred.strip(),
+                            'pred_tensor': pred_trim
                         })
 
-                del outputs, outputs_flat, targets_flat, loss, preds, source_ids, target_ids
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                    torch.cuda.synchronize()
-                    gc.collect()
+                        logging.debug(f"Prediction tokens (first 5): {pred_trim[:5]}")
 
             except Exception as e:
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
                 logging.warning(f"Error in evaluation batch: {str(e)}")
                 continue
 
         avg_loss = total_loss / valid_batches if valid_batches > 0 else float('inf')
-
-        trimmed_preds = []
-        trimmed_refs = []
-        for sp in sample_predictions:
-            trimmed_preds.append(torch.tensor(self.train_dataset.tokenizer.encode(sp['prediction']).ids))
-            trimmed_refs.append(torch.tensor(self.train_dataset.tokenizer.encode(sp['target']).ids))
+        trimmed_preds = [torch.tensor(self.train_dataset.tokenizer.encode(sp['prediction']).ids) for sp in sample_predictions]
+        trimmed_refs = [torch.tensor(self.train_dataset.tokenizer.encode(sp['target']).ids) for sp in sample_predictions]
 
         try:
             metrics = self.metrics.compute_metrics(trimmed_preds, trimmed_refs)
@@ -252,16 +251,8 @@ class BaseTrainer:
             metrics = {'bleu': 0.0, 'rouge1': 0.0, 'rouge2': 0.0, 'rougeL': 0.0, 'meteor': 0.0}
 
         metrics['val_loss'] = avg_loss
-
         PredictionLogger.log_evaluation_samples(self, sample_predictions)
-        del trimmed_preds, trimmed_refs, sample_predictions
-        gc.collect()
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
         return metrics
-
 
     def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
         checkpoint = {
@@ -297,4 +288,4 @@ class BaseTrainer:
 
     def __del__(self):
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()    
+            torch.cuda.empty_cache()
