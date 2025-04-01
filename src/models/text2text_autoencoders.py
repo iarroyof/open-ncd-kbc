@@ -219,7 +219,9 @@ class ConvS2S(nn.Module):
         self.vocab_size = vocab_size
         self.source_seq_len = source_seq_len
         self.target_seq_len = target_seq_len
-        self.pad_idx = 0
+        self.pad_id = 0
+        self.sos_id = None
+        self.eos_id = None
 
         # Encoder and Decoder
         self.encoder = ConvS2SEncoder(
@@ -248,7 +250,7 @@ class ConvS2S(nn.Module):
             src = src[:, -self.source_seq_len:]
 
         # Build a mask for padding tokens (pad_idx=0 or custom if needed)
-        src_padding_mask = (src == self.pad_idx)
+        src_padding_mask = (src == self.pad_id)
         encoder_out = self.encoder(src, src_padding_mask)
         
         # Decide training vs generation
@@ -258,7 +260,7 @@ class ConvS2S(nn.Module):
                 tgt = tgt[:, :self.target_seq_len]
             elif tgt.size(1) < self.target_seq_len:
                 pad_len = self.target_seq_len - tgt.size(1)
-                tgt = torch.nn.functional.pad(tgt, (0, pad_len), value=self.pad_idx)
+                tgt = torch.nn.functional.pad(tgt, (0, pad_len), value=self.pad_id)
 
             decoder_out = self.decoder(
                 prev_output_tokens=tgt,
@@ -277,7 +279,7 @@ class ConvS2S(nn.Module):
         device = encoder_out.device
 
         # SOS token assumed to be 1 by default, or customize if needed
-        decoder_input = torch.full((batch_size, 1), sos_id, dtype=torch.long, device=device)
+        decoder_input = torch.full((batch_size, 1), self.sos_id, dtype=torch.long, device=device)
         outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
 
         for step in range(self.target_seq_len):
@@ -432,6 +434,9 @@ class AttentionLSTMSeq2Seq(nn.Module):
 
         # Weight init
         self._init_weights()
+        self.pad_id = None
+        self.sos_id = None
+        self.eos_id = None
 
     def _init_weights(self):
         for p in self.parameters():
@@ -496,7 +501,7 @@ class AttentionLSTMSeq2Seq(nn.Module):
         # Inference
         else:
             outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
-            decoder_input = self.embedding(torch.full((batch_size, 1), sos_id, dtype=torch.long, device=device)).squeeze(1)
+            decoder_input = self.embedding(torch.full((batch_size, 1), self.sos_id, dtype=torch.long, device=device)).squeeze(1)
 
             for t in range(self.target_seq_len):
                 if self.use_attention:
@@ -576,7 +581,9 @@ class VanillaTransformer(nn.Module):
         # Final projection layer
         self.fc = nn.Linear(d_model, vocab_size)
         self.vocab_size = vocab_size
-
+        self.pad_id = None
+        self.sos_id = None
+        self.eos_id = None
         # Initialize weights
         self._init_weights()
 
@@ -606,7 +613,7 @@ class VanillaTransformer(nn.Module):
             src = src[:, -self.source_seq_len:]
         
         # Create source mask for padding tokens
-        src_key_padding_mask = (src == pad_id).to(src.device)
+        src_key_padding_mask = (src == self.pad_id).to(src.device)
 
         # Embed and add positional encoding to source
         src_emb = self.embedding(src) * math.sqrt(self.d_model)
@@ -622,7 +629,7 @@ class VanillaTransformer(nn.Module):
             
             # Create target masks
             tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.size(1)).to(tgt.device)
-            tgt_key_padding_mask = (tgt == pad_id).to(tgt.device)
+            tgt_key_padding_mask = (tgt == self.pad_id).to(tgt.device)
 
             
             # Embed and add positional encoding to target
@@ -649,7 +656,7 @@ class VanillaTransformer(nn.Module):
             device = src.device
             
             # Initialize decoder input with SOS token (assumed to be 1)
-            decoder_input = torch.full((batch_size, 1), sos_id, dtype=torch.long, device=device)
+            decoder_input = torch.full((batch_size, 1), self.sos_id, dtype=torch.long, device=device)
             outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Pre-allocate outputs
             
             for t in range(self.target_seq_len):
@@ -775,6 +782,9 @@ class PositionalAutoencoder(nn.Module):
 
         # Final projection
         self.fc = nn.Linear(d_model, vocab_size)
+        self.pad_id = None
+        self.sos_id = None
+        self.eos_id = None
         self._init_weights()
 
     def _init_weights(self):
@@ -1020,6 +1030,9 @@ class AttentionGRUModel(nn.Module):
             dropout=dropout,
             use_attention=use_attention
         )
+        self.pad_id = None
+        self.sos_id = None
+        self.eos_id = None
 
     def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
         # Truncate source
@@ -1030,11 +1043,11 @@ class AttentionGRUModel(nn.Module):
         device = src.device
 
         # Build mask (pad_idx=0 assumed)
-        src_mask = (src != 0).bool()
+        src_mask = (src != self.pad_id).bool()
         encoder_outputs, encoder_hidden = self.encoder(src)
 
         # For generation logic
-        decoder_input = torch.full((batch_size, 1), sos_id, dtype=torch.long, device=device)
+        decoder_input = torch.full((batch_size, 1), self.sos_id, dtype=torch.long, device=device)
         decoder_hidden = encoder_hidden
 
         # Pre-allocate outputs
