@@ -277,7 +277,7 @@ class ConvS2S(nn.Module):
         device = encoder_out.device
 
         # SOS token assumed to be 1 by default, or customize if needed
-        decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
+        decoder_input = torch.full((batch_size, 1), sos_id, dtype=torch.long, device=device)
         outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
 
         for step in range(self.target_seq_len):
@@ -496,7 +496,7 @@ class AttentionLSTMSeq2Seq(nn.Module):
         # Inference
         else:
             outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
-            decoder_input = self.embedding(torch.ones(batch_size, 1, dtype=torch.long, device=device)).squeeze(1)
+            decoder_input = self.embedding(torch.full((batch_size, 1), sos_id, dtype=torch.long, device=device)).squeeze(1)
 
             for t in range(self.target_seq_len):
                 if self.use_attention:
@@ -606,8 +606,8 @@ class VanillaTransformer(nn.Module):
             src = src[:, -self.source_seq_len:]
         
         # Create source mask for padding tokens
-        src_key_padding_mask = (src == 0).to(src.device)
-        
+        src_key_padding_mask = (src == pad_id).to(src.device)
+
         # Embed and add positional encoding to source
         src_emb = self.embedding(src) * math.sqrt(self.d_model)
         src_emb = self.pos_encoder(src_emb)
@@ -622,7 +622,8 @@ class VanillaTransformer(nn.Module):
             
             # Create target masks
             tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.size(1)).to(tgt.device)
-            tgt_key_padding_mask = (tgt == 0).to(tgt.device)
+            tgt_key_padding_mask = (tgt == pad_id).to(tgt.device)
+
             
             # Embed and add positional encoding to target
             tgt_emb = self.embedding(tgt) * math.sqrt(self.d_model)
@@ -648,7 +649,7 @@ class VanillaTransformer(nn.Module):
             device = src.device
             
             # Initialize decoder input with SOS token (assumed to be 1)
-            decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
+            decoder_input = torch.full((batch_size, 1), sos_id, dtype=torch.long, device=device)
             outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Pre-allocate outputs
             
             for t in range(self.target_seq_len):
@@ -1033,7 +1034,7 @@ class AttentionGRUModel(nn.Module):
         encoder_outputs, encoder_hidden = self.encoder(src)
 
         # For generation logic
-        decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)  # SOS=1 assumption
+        decoder_input = torch.full((batch_size, 1), sos_id, dtype=torch.long, device=device)
         decoder_hidden = encoder_hidden
 
         # Pre-allocate outputs
