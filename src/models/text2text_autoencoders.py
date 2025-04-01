@@ -199,44 +199,100 @@ class ConvS2SDecoder(nn.Module):
         return self.proj(x)
 
 class ConvS2S(nn.Module):
-    """Complete Convolutional Sequence-to-Sequence model with optional attention"""
-    def __init__(self, vocab_size: int, embed_dim: int = 512, hidden_dim: int = 512, num_layers: int = 4, kernel_size: int = 3, dropout: float = 0.1, max_seq_len: int = 512, target_seq_len: int = 64, use_attention: bool = True):
+    """
+    Complete Convolutional Sequence-to-Sequence model with optional attention.
+    Updated to use source_seq_len instead of max_seq_len, so no extra ambiguity.
+    """
+    def __init__(
+        self,
+        vocab_size: int,
+        embed_dim: int = 512,
+        hidden_dim: int = 512,
+        num_layers: int = 4,
+        kernel_size: int = 3,
+        dropout: float = 0.1,
+        source_seq_len: int = 512,  # replaces max_seq_len
+        target_seq_len: int = 64,
+        use_attention: bool = True
+    ):
         super().__init__()
-        self.vocab_size = vocab_size  # Store vocab_size as instance attribute
-        self.encoder = ConvS2SEncoder(vocab_size=vocab_size, embed_dim=embed_dim, hidden_dim=hidden_dim, num_layers=num_layers, kernel_size=kernel_size, dropout=dropout, max_positions=max_seq_len)
-        self.decoder = ConvS2SDecoder(vocab_size=vocab_size, embed_dim=embed_dim, hidden_dim=hidden_dim, num_layers=num_layers, kernel_size=kernel_size, dropout=dropout, max_positions=max_seq_len, use_attention=use_attention)
+        self.vocab_size = vocab_size
+        self.source_seq_len = source_seq_len
         self.target_seq_len = target_seq_len
         self.pad_idx = 0
 
+        # Encoder and Decoder
+        self.encoder = ConvS2SEncoder(
+            vocab_size=vocab_size,
+            embed_dim=embed_dim,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            kernel_size=kernel_size,
+            dropout=dropout,
+            max_positions=self.source_seq_len
+        )
+        self.decoder = ConvS2SDecoder(
+            vocab_size=vocab_size,
+            embed_dim=embed_dim,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            kernel_size=kernel_size,
+            dropout=dropout,
+            max_positions=self.source_seq_len,
+            use_attention=use_attention
+        )
+
     def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
+        # Truncate source if needed
+        if src.size(1) > self.source_seq_len:
+            src = src[:, -self.source_seq_len:]
+
+        # Build a mask for padding tokens (pad_idx=0 or custom if needed)
         src_padding_mask = (src == self.pad_idx)
         encoder_out = self.encoder(src, src_padding_mask)
         
+        # Decide training vs generation
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
-            decoder_out = self.decoder(prev_output_tokens=tgt, encoder_out=encoder_out, encoder_padding_mask=src_padding_mask, output_length=self.target_seq_len)
+            # ensure target is sized up to self.target_seq_len
+            if tgt.size(1) > self.target_seq_len:
+                tgt = tgt[:, :self.target_seq_len]
+            elif tgt.size(1) < self.target_seq_len:
+                pad_len = self.target_seq_len - tgt.size(1)
+                tgt = torch.nn.functional.pad(tgt, (0, pad_len), value=self.pad_idx)
+
+            decoder_out = self.decoder(
+                prev_output_tokens=tgt,
+                encoder_out=encoder_out,
+                encoder_padding_mask=src_padding_mask,
+                output_length=self.target_seq_len
+            )
         else:
-            decoder_out = self._generate(encoder_out=encoder_out, encoder_padding_mask=src_padding_mask)
-        
+            decoder_out = self._generate(encoder_out, src_padding_mask)
+
         return decoder_out
 
     def _generate(self, encoder_out: torch.Tensor, encoder_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Autoregressive generation loop."""
         batch_size = encoder_out.size(0)
         device = encoder_out.device
+
+        # SOS token assumed to be 1 by default, or customize if needed
         decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
-        outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Use self.vocab_size
-        
+        outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
+
         for step in range(self.target_seq_len):
-            decoder_out = self.decoder(
+            out = self.decoder(
                 prev_output_tokens=decoder_input,
                 encoder_out=encoder_out,
                 encoder_padding_mask=encoder_padding_mask,
                 output_length=step + 1
             )
-            outputs[:, step:step+1, :] = decoder_out[:, -1:, :]
-            next_token = decoder_out[:, -1:, :].argmax(dim=-1)
+            outputs[:, step:step+1, :] = out[:, -1:, :]
+            next_token = out[:, -1:, :].argmax(dim=-1)
             decoder_input = torch.cat([decoder_input, next_token], dim=1)
-        
+
         return outputs
+
     
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model: int, max_len: int = 5000, mode: str = 'fixed', 
@@ -313,144 +369,157 @@ class LSTMAttention(nn.Module):
         return context, attn_weights
 
 class AttentionLSTMSeq2Seq(nn.Module):
+    """
+    Bahdanau-style LSTM with optional attention for seq2seq.
+    Updated to rename max_seq_len -> source_seq_len.
+    """
     def __init__(
         self,
         vocab_size: int,
+        source_seq_len: int = 512,  # was max_seq_len
         target_seq_len: int = 64,
         embed_size: int = 256,
         hidden_size: int = 512,
         num_layers: int = 2,
         dropout: float = 0.1,
-        max_seq_len: int = 512,
         bidirectional_encoder: bool = True,
-        use_attention: bool = True  # New parameter to toggle attention
+        use_attention: bool = True
     ):
         super().__init__()
         self.vocab_size = vocab_size
+        self.source_seq_len = source_seq_len
         self.target_seq_len = target_seq_len
         self.embed_size = embed_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.max_seq_len = max_seq_len
         self.bidirectional_encoder = bidirectional_encoder
         self.use_attention = use_attention
         self.dropout = dropout
 
-        # Embedding layer
+        # Embedding
         self.embedding = nn.Embedding(vocab_size, embed_size)
-        
-        # Encoder LSTM
+
+        # LSTM encoder
         encoder_hidden_size = hidden_size // 2 if bidirectional_encoder else hidden_size
         self.encoder_lstm = nn.LSTM(
-            embed_size,
-            encoder_hidden_size,
+            input_size=embed_size,
+            hidden_size=encoder_hidden_size,
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0,
             bidirectional=bidirectional_encoder
         )
-        
-        # Decoder LSTM input size depends on attention
+
+        # Decoder
         decoder_input_size = embed_size + (encoder_hidden_size * 2 if bidirectional_encoder else encoder_hidden_size) if use_attention else embed_size
         self.decoder_lstm = nn.LSTM(
-            decoder_input_size,
-            hidden_size,
+            input_size=decoder_input_size,
+            hidden_size=hidden_size,
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0
         )
-        
-        # Attention mechanism (only if enabled)
+
+        # Attention
         self.attention = LSTMAttention(hidden_size) if use_attention else None
-        
-        # Output layer size depends on attention
+
+        # Output projection
         fc_input_size = hidden_size + (encoder_hidden_size * 2 if bidirectional_encoder else encoder_hidden_size) if use_attention else hidden_size
         self.fc = nn.Linear(fc_input_size, vocab_size)
-        
+
         # Dropout
         self.dropout_layer = nn.Dropout(dropout)
-        
-        # Initialize weights
+
+        # Weight init
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize weights using Xavier uniform initialization"""
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
     def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
-        # Truncate source sequence if needed
-        if src.size(1) > self.max_seq_len:
-            src = src[:, -self.max_seq_len:]
-        
-        batch_size = src.size(0)
-        device = src.device
-        
-        # Encoder
-        src_emb = self.dropout_layer(self.embedding(src))  # [batch_size, src_seq_len, embed_size]
-        encoder_outputs, (hidden, cell) = self.encoder_lstm(src_emb)  # [batch_size, src_seq_len, hidden_size], [num_layers * directions, batch_size, hidden_size]
-        
-        # Adjust hidden and cell states for bidirectional encoder
+        # Truncate source if needed
+        if src.size(1) > self.source_seq_len:
+            src = src[:, -self.source_seq_len:]
+
+        batch_size, device = src.size(0), src.device
+
+        # Encode
+        src_emb = self.dropout_layer(self.embedding(src))
+        encoder_outputs, (hidden, cell) = self.encoder_lstm(src_emb)
+
+        # Adjust if bidirectional
         if self.bidirectional_encoder:
             hidden = hidden.view(self.num_layers, 2, batch_size, -1).transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)
             cell = cell.view(self.num_layers, 2, batch_size, -1).transpose(1, 2).contiguous().view(self.num_layers, batch_size, -1)
-    
+
         # Training with teacher forcing
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
             if tgt.size(1) > self.target_seq_len:
                 tgt = tgt[:, :self.target_seq_len]
-            elif tgt.size(1) < self.target_seq_len:
-                tgt = torch.nn.functional.pad(tgt, (0, self.target_seq_len - tgt.size(1)), value=0)
-            
-            tgt_emb = self.dropout_layer(self.embedding(tgt))  # [batch_size, tgt_seq_len, embed_size]
-            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Pre-allocate outputs
-            decoder_input = tgt_emb[:, 0, :]  # [batch_size, embed_size]
-            
+            else:
+                pad_len = self.target_seq_len - tgt.size(1)
+                if pad_len > 0:
+                    tgt = torch.nn.functional.pad(tgt, (0, pad_len), value=0)
+
+            tgt_emb = self.dropout_layer(self.embedding(tgt))
+            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
+            decoder_input = tgt_emb[:, 0, :]
+
             for t in range(self.target_seq_len):
                 if self.use_attention:
-                    context, _ = self.attention(hidden[-1], encoder_outputs)  # [batch_size, hidden_size]
-                    decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)  # [batch_size, embed_size + encoder_hidden_size]
+                    context, _ = self.attention(hidden[-1], encoder_outputs)
+                    decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)
                 else:
                     decoder_input_with_context = decoder_input
-                
+
                 decoder_output, (hidden, cell) = self.decoder_lstm(
                     decoder_input_with_context.unsqueeze(1), (hidden, cell)
-                )  # [batch_size, 1, hidden_size]
-                
-                combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1) if self.use_attention else decoder_output.squeeze(1)
-                output = self.fc(combined_output)  # [batch_size, vocab_size]
-                outputs[:, t:t+1, :] = output.unsqueeze(1)  # Fill pre-allocated tensor
-                
-                decoder_input = tgt_emb[:, t, :] if t < self.target_seq_len - 1 else torch.zeros_like(decoder_input)
-            
+                )
+                if self.use_attention:
+                    combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1)
+                else:
+                    combined_output = decoder_output.squeeze(1)
+
+                step_output = self.fc(combined_output)
+                outputs[:, t:t+1, :] = step_output.unsqueeze(1)
+
+                # Update decoder_input
+                if t < self.target_seq_len - 1:
+                    decoder_input = tgt_emb[:, t+1, :]
+                else:
+                    decoder_input = torch.zeros_like(decoder_input)
+
             return outputs
         
-        # Inference (autoregressive generation)
+        # Inference
         else:
-            batch_size = src.size(0)
-            device = src.device
-            decoder_input = self.embedding(torch.ones(batch_size, 1, dtype=torch.long, device=device)).squeeze(1)  # [batch_size, embed_size]
-            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Pre-allocate outputs
-            hidden, cell = hidden, cell
-            
+            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
+            decoder_input = self.embedding(torch.ones(batch_size, 1, dtype=torch.long, device=device)).squeeze(1)
+
             for t in range(self.target_seq_len):
                 if self.use_attention:
-                    context, _ = self.attention(hidden[-1], encoder_outputs)  # [batch_size, hidden_size]
-                    decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)  # [batch_size, embed_size + encoder_hidden_size]
+                    context, _ = self.attention(hidden[-1], encoder_outputs)
+                    decoder_input_with_context = torch.cat((decoder_input, context), dim=-1)
                 else:
                     decoder_input_with_context = decoder_input
-                
+
                 decoder_output, (hidden, cell) = self.decoder_lstm(
                     decoder_input_with_context.unsqueeze(1), (hidden, cell)
-                )  # [batch_size, 1, hidden_size]
-                
-                combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1) if self.use_attention else decoder_output.squeeze(1)
-                output = self.fc(combined_output)  # [batch_size, vocab_size]
-                outputs[:, t:t+1, :] = output.unsqueeze(1)  # Fill pre-allocated tensor
-                
-                decoder_input = self.embedding(output.argmax(dim=-1))  # [batch_size, embed_size]
-            
+                )
+                if self.use_attention:
+                    combined_output = torch.cat((decoder_output.squeeze(1), context), dim=-1)
+                else:
+                    combined_output = decoder_output.squeeze(1)
+
+                step_output = self.fc(combined_output)
+                outputs[:, t] = step_output
+
+                # Next input
+                next_token = step_output.argmax(dim=-1)
+                decoder_input = self.embedding(next_token)
+
             return outputs
 
 # src/models/text2text_autoencoders.py
@@ -604,16 +673,20 @@ class VanillaTransformer(nn.Module):
 
         
 class PositionalAutoencoder(nn.Module):
+    """
+    Simple (non-autoregressive) autoencoder that uses positional encodings.
+    Updated to rename max_seq_len -> source_seq_len, removing ambiguity.
+    """
     def __init__(
         self,
         vocab_size: int,
-        target_seq_len: int = 3,
+        target_seq_len: int = 64,
         d_model: int = 512,
         hidden_dim: int = 256,
         num_encoder_layers: int = 3,
         dropout: float = 0.1,
         activation: str = "relu",
-        max_seq_len: int = 5000,
+        source_seq_len: int = 5000,    # replaces old max_seq_len
         pe_mode: str = 'fixed',
         use_normalization: bool = True,
         norm_type: str = 'batch',
@@ -621,12 +694,11 @@ class PositionalAutoencoder(nn.Module):
         learned_scale: float = 1.0
     ):
         super().__init__()
-        # Store configuration
         self.vocab_size = vocab_size
         self.d_model = d_model
-        self.target_seq_len = target_seq_len
-        self.max_seq_len = max_seq_len
         self.hidden_dim = hidden_dim
+        self.source_seq_len = source_seq_len  # was max_seq_len
+        self.target_seq_len = target_seq_len
         self.use_normalization = use_normalization
         self.norm_type = norm_type
 
@@ -636,7 +708,7 @@ class PositionalAutoencoder(nn.Module):
         # Positional encoding
         self.pos_encoder = PositionalEncoding(
             d_model=d_model,
-            max_len=max_seq_len,
+            max_len=source_seq_len,  # pass in new param
             mode=pe_mode,
             fixed_scale=fixed_scale,
             learned_scale=learned_scale
@@ -666,7 +738,7 @@ class PositionalAutoencoder(nn.Module):
             current_dim = hidden_dim
         self.encoder = nn.Sequential(*encoder_layers)
 
-        # Bottleneck - adjusted for target sequence length
+        # Bottleneck
         bottleneck_dim = hidden_dim // 2
         self.bottleneck_dim = bottleneck_dim
         self.bottleneck = nn.Sequential(
@@ -690,68 +762,52 @@ class PositionalAutoencoder(nn.Module):
             current_dim = out_dim
         self.decoder = nn.Sequential(*decoder_layers)
 
-        # Output projection
+        # Final projection
         self.fc = nn.Linear(d_model, vocab_size)
-        
-        # Initialize weights
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize model weights using Xavier uniform initialization"""
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
     def forward(self, src: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass of the model.
-        
-        Args:
-            src (torch.Tensor): Input tensor of shape (batch_size, seq_len)
-            
-        Returns:
-            torch.Tensor: Output tensor of shape (batch_size, target_seq_len, vocab_size)
+        Non-autoregressive. Output size = (batch_size, target_seq_len, vocab_size)
         """
-        # Input shape check
         if len(src.shape) != 2:
             raise ValueError(f"Expected 2D input tensor (batch_size, seq_len), got shape {src.shape}")
-        
-        batch_size = src.size(0)
-        
-        # Truncate input if needed (keeping right side for source)
-        if src.size(1) > self.max_seq_len:
-            src = src[:, -self.max_seq_len:]
-        
-        # Embedding and positional encoding
-        x = self.embedding(src) * math.sqrt(self.d_model)  # (batch_size, seq_len, d_model)
-        x = self.pos_encoder(x)  # (batch_size, seq_len, d_model)
-        
-        # Reshape for encoder
-        seq_len = x.size(1)
-        x = x.reshape(-1, self.d_model)  # (batch_size * seq_len, d_model)
-        
-        # Encode
+
+        batch_size, src_len = src.size(0), src.size(1)
+        if src_len > self.source_seq_len:
+            # truncate right side
+            src = src[:, -self.source_seq_len:]
+
+        # embed + positional encode
+        x = self.embedding(src) * math.sqrt(self.d_model)
+        x = self.pos_encoder(x)  # shape = (batch_size, seq_len, d_model)
+
+        # Flatten for encoder
+        x = x.reshape(batch_size * x.size(1), self.d_model)
         x = self.encoder(x)  # (batch_size * seq_len, hidden_dim)
-        
-        # Reshape for bottleneck
-        x = x.reshape(batch_size, seq_len, -1)  # (batch_size, seq_len, hidden_dim)
+
+        # Reshape + average across sequence
+        x = x.reshape(batch_size, -1, self.hidden_dim)
         x = x.mean(dim=1)  # (batch_size, hidden_dim)
-        
+
         # Bottleneck
         x = self.bottleneck(x)  # (batch_size, bottleneck_dim * target_seq_len)
-        x = x.reshape(batch_size, self.target_seq_len, self.bottleneck_dim)  # (batch_size, target_seq_len, bottleneck_dim)
-        
-        # Decode
-        x = x.reshape(-1, self.bottleneck_dim)  # (batch_size * target_seq_len, bottleneck_dim)
+        x = x.reshape(batch_size, self.target_seq_len, self.bottleneck_dim)
+
+        # Decoder
+        x = x.reshape(batch_size * self.target_seq_len, self.bottleneck_dim)
         x = self.decoder(x)  # (batch_size * target_seq_len, d_model)
-        
-        # Reshape back
-        x = x.reshape(batch_size, self.target_seq_len, self.d_model)  # (batch_size, target_seq_len, d_model)
-        
-        # Final projection to vocabulary
-        logits = self.fc(x)  # (batch_size, target_seq_len, vocab_size)
-        
+        x = x.reshape(batch_size, self.target_seq_len, self.d_model)
+
+        # Final projection
+        logits = self.fc(x)
         return logits
+
 
 class GRUAttention(nn.Module):
     """Bahdanau attention mechanism"""
@@ -913,7 +969,10 @@ class AttentionGRUDecoder(nn.Module):
         return output, hidden, attention_weights
 
 class AttentionGRUModel(nn.Module):
-    """Complete encoder-decoder model with optional attention"""
+    """
+    Complete encoder-decoder GRU model with optional attention.
+    Updated to rename max_seq_len -> source_seq_len for clarity.
+    """
     def __init__(
         self,
         vocab_size: int,
@@ -921,17 +980,16 @@ class AttentionGRUModel(nn.Module):
         hidden_size: int = 512,
         num_layers: int = 2,
         dropout: float = 0.1,
+        source_seq_len: int = 512,  # replaced old max_seq_len
         target_seq_len: int = 64,
-        max_seq_len: int = 512,
         bidirectional_encoder: bool = True,
-        use_attention: bool = True  # New parameter to toggle attention
+        use_attention: bool = True
     ):
         super().__init__()
         self.vocab_size = vocab_size
+        self.source_seq_len = source_seq_len
         self.target_seq_len = target_seq_len
-        self.max_seq_len = max_seq_len
-        
-        # Initialize encoder and decoder
+
         self.encoder = AttentionGRUEncoder(
             vocab_size=vocab_size,
             embed_size=embed_size,
@@ -940,47 +998,51 @@ class AttentionGRUModel(nn.Module):
             dropout=dropout,
             bidirectional=bidirectional_encoder
         )
-        
         self.decoder = AttentionGRUDecoder(
             vocab_size=vocab_size,
             embed_size=embed_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
             dropout=dropout,
-            use_attention=use_attention  # Pass use_attention to decoder
+            use_attention=use_attention
         )
-        
-    def forward(
-        self,
-        src: torch.Tensor,
-        tgt: Optional[torch.Tensor] = None,
-        teacher_forcing_ratio: float = 1.0
-    ) -> torch.Tensor:
+
+    def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
+        # Truncate source
+        if src.size(1) > self.source_seq_len:
+            src = src[:, -self.source_seq_len:]
+
         batch_size = src.size(0)
         device = src.device
-        
-        if src.size(1) > self.max_seq_len:
-            src = src[:, -self.max_seq_len:]
-            
+
+        # Build mask (pad_idx=0 assumed)
         src_mask = (src != 0).bool()
         encoder_outputs, encoder_hidden = self.encoder(src)
-        
-        decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)
+
+        # For generation logic
+        decoder_input = torch.ones(batch_size, 1, dtype=torch.long, device=device)  # SOS=1 assumption
         decoder_hidden = encoder_hidden
+
+        # Pre-allocate outputs
         outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
-        
+
         for t in range(self.target_seq_len):
             output, decoder_hidden, _ = self.decoder(
-                decoder_input,
-                decoder_hidden,
-                encoder_outputs,
-                src_mask
+                input_step=decoder_input,
+                last_hidden=decoder_hidden,
+                encoder_outputs=encoder_outputs,
+                src_mask=src_mask
             )
             outputs[:, t] = output
-            
-            if tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
+
+            if (self.training and tgt is not None 
+                    and torch.rand(1).item() < teacher_forcing_ratio 
+                    and t < tgt.size(1)):
+                # teacher forcing
                 decoder_input = tgt[:, t:t+1]
             else:
-                decoder_input = output.argmax(dim=1, keepdim=True)
-                
+                # choose next token from model output
+                next_token = output.argmax(dim=-1, keepdim=True)
+                decoder_input = next_token
+
         return outputs
