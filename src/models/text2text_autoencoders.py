@@ -771,7 +771,10 @@ class PositionalAutoencoder(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src: torch.Tensor) -> torch.Tensor:
+    def forward(self, src: torch.Tensor, 
+                tgt: Optional[torch.Tensor] = None,              # IGNORE this
+                teacher_forcing_ratio: float = 1.0               # IGNORE this
+               ) -> torch.Tensor:
         """
         Non-autoregressive. Output size = (batch_size, target_seq_len, vocab_size)
         """
