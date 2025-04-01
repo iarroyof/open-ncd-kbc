@@ -587,8 +587,18 @@ class VanillaTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
-        """Generate causal mask for decoder"""
-        return torch.triu(torch.full((sz, sz), True), diagonal=1)
+        """
+        Generate a causal mask for size sz:
+        - 0.0 in the lower-triangular part (allowing tokens to attend to earlier tokens)
+        - -inf in the upper-triangular part (preventing tokens from attending to future tokens)
+        """
+        # Create a matrix of shape [sz, sz] filled with float(0.0)
+        mask = torch.zeros(sz, sz)
+        # Fill everything above the main diagonal with -inf
+        mask = mask.fill_(float(0.0)).float()
+        mask = mask.masked_fill(torch.triu(torch.ones(sz, sz), diagonal=1).bool(), float('-inf'))
+        return mask
+
 
     def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
         # Truncate source sequence if needed (keeping right side)
