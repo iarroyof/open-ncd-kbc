@@ -95,7 +95,14 @@ class BaseTrainer:
 
         self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
         self.model = build_model(model_type, self.model_config).to(self.device)
-
+        pad_id = self.train_dataset.tokenizer.token_to_id("[PAD]")
+        sos_id = self.train_dataset.tokenizer.token_to_id("[SOS]")
+        eos_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
+        print(f"[PAD]={pad_id},\n[SOS]={sos_id},\n[EOS]={eos_id}\n")
+        model.pad_id = pad_id
+        model.sos_id = sos_id
+        model.eos_id = eos_id
+        
         self.scaler = GradScaler()
 
         if training_config.get("optimizer", "adafactor") == "adafactor":
@@ -113,17 +120,12 @@ class BaseTrainer:
                 weight_decay=training_config.get('weight_decay', 0.01)
             )
             
-        pad_id = self.train_dataset.tokenizer.token_to_id("[PAD]")
         self.criterion = nn.CrossEntropyLoss(
             ignore_index=pad_id,
             label_smoothing=training_config.get('label_smoothing', 0.1)
         )
 
         self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
-        pad_id = self.train_dataset.tokenizer.token_to_id("[PAD]")
-        sos_id = self.train_dataset.tokenizer.token_to_id("[SOS]")
-        eos_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
-        print(f"[PAD]={pad_id},\n[SOS]={sos_id},\n[EOS]={eos_id}\n")
 
         self.use_wandb = use_wandb
         if use_wandb:
