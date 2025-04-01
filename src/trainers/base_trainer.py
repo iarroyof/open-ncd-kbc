@@ -119,6 +119,10 @@ class BaseTrainer:
         )
 
         self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
+        pad_id = self.train_dataset.tokenizer.token_to_id("[PAD]")
+        sos_id = self.train_dataset.tokenizer.token_to_id("[SOS]")
+        eos_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
+        print(f"[PAD]={pad_id},\n[SOS]={sos_id},\n[EOS]={eos_id}\n")
 
         self.use_wandb = use_wandb
         if use_wandb:
