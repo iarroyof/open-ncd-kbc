@@ -17,7 +17,7 @@ parameters:
   target_seq_len:
     values: [128]  # High-memory length
   num_epochs:
-    value: 3
+    value: 10
 
   autoencoder_d_model:
     values: [2048]
