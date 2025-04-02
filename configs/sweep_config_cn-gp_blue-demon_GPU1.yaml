@@ -7,7 +7,7 @@ metric:
   goal: minimize
 parameters:
   model_type:
-    values: ['autoencoder', 'conv_s2s'[ #, 'transformer']
+    values: ['autoencoder', 'conv_s2s'] #, 'transformer']
   data_path:
     value: ['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/conceptnet_gp/conceptnet_gp_valid.tsv']
   batch_size:
