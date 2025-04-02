@@ -99,9 +99,9 @@ class BaseTrainer:
         sos_id = self.train_dataset.tokenizer.token_to_id("[SOS]")
         eos_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
         print(f"[PAD]={pad_id},\n[SOS]={sos_id},\n[EOS]={eos_id}\n")
-        model.pad_id = pad_id
-        model.sos_id = sos_id
-        model.eos_id = eos_id
+        self.model.pad_id = pad_id
+        self.model.sos_id = sos_id
+        self.model.eos_id = eos_id
         
         self.scaler = GradScaler()
 
