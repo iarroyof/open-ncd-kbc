@@ -18,7 +18,7 @@ parameters:
   target_seq_len:
     values: [16, 64]  # Moderate lengths
   num_epochs:
-    value: 3
+    value: 10
 
   attention_gru_embed_size:
     values: [512, 1024]  # Moderate sizes
