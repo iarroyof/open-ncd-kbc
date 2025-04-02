@@ -1,7 +1,7 @@
 # sweep_config_santo.yaml
 
 program: main.py
-name: Santo
+name: ncd-gp-cn_santo_GPU0
 method: bayes
 metric:
   name: val_loss
