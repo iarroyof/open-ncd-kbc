@@ -122,7 +122,7 @@ class BaseTrainer:
             
         self.criterion = nn.CrossEntropyLoss(
             ignore_index=pad_id,
-            label_smoothing=training_config.get('label_smoothing', 0.1)
+            label_smoothing=training_config.get('label_smoothing', 0.05)
         )
 
         self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
