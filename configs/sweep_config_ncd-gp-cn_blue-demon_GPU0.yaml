@@ -1,6 +1,6 @@
 # configs/sweep_config_blue_demon.yaml
 program: main.py
-name: blue-demon
+name: ncd-gp-cn_blue-demon_GPU0
 method: bayes
 metric:
   name: val_loss
