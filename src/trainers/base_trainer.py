@@ -209,7 +209,7 @@ class BaseTrainer:
         valid_batches = 0
         sample_predictions = []
         eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
-        sos_token_id = self.train_dataset.tokenizer.token_to_id("[SOS]")
+        sos_token_id = self.train_dataset.tokenizer.token_to_id("[BOS]")
 
         SAMPLE_COUNT_PER_BATCH = 2
         MAX_SAMPLE_LOGS = 10
