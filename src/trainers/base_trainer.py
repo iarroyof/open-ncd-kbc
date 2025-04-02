@@ -96,7 +96,7 @@ class BaseTrainer:
         self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
         self.model = build_model(model_type, self.model_config).to(self.device)
         pad_id = self.train_dataset.tokenizer.token_to_id("[PAD]")
-        sos_id = self.train_dataset.tokenizer.token_to_id("[SOS]")
+        sos_id = self.train_dataset.tokenizer.token_to_id("[BOS]")
         eos_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
         print(f"[PAD]={pad_id},\n[SOS]={sos_id},\n[EOS]={eos_id}\n")
         self.model.pad_id = pad_id
