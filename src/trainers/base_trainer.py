@@ -92,20 +92,12 @@ class BaseTrainer:
             prefetch_factor=1,
             persistent_workers=False
         )
-        # In BaseTrainer.__init__ after creating self.train_loader
-        print("First few training batch target sequences:")
-        for i, batch in enumerate(self.train_loader):
-            if i >= 5:  # Print a few batches
-                break
-            print("Batch:")
-            print(batch['target_text'])
-
+        
         self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
         self.model = build_model(model_type, self.model_config).to(self.device)
         pad_id = self.train_dataset.tokenizer.token_to_id("[PAD]")
         sos_id = self.train_dataset.tokenizer.token_to_id("[BOS]")
         eos_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
-        print(f"[PAD]={pad_id},\n[SOS]={sos_id},\n[EOS]={eos_id}\n")
         self.model.pad_id = pad_id
         self.model.sos_id = sos_id
         self.model.eos_id = eos_id
