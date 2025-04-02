@@ -7,16 +7,9 @@ metric:
   goal: minimize
 parameters:
   model_type:
-    values: ['autoencoder', 'conv_s2s', 'transformer']
+    values: ['autoencoder', 'conv_s2s'] #, 'transformer']
   data_path:
     value: ['data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv']
-  #train_data_path:
-  #  values: ['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv']
-  #valid_data_path:
-  #  distribution: categorical
-  #  values: 
-  #    - 'data/conceptnet_gp/conceptnet_gp_valid.tsv'
-  #    - 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'
   batch_size:
     values: [16, 64]  # Smaller sizes for 24 GB
   learning_rate:
