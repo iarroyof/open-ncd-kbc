@@ -1,4 +1,4 @@
-# configs/sweep_config_lizmark.yaml
+# configs/sweep_config_ncd-gp-cn_lizmark_GPU0.yaml
 program: main.py
 name: ncd-gp-cn_lizmark_GPU0
 method: bayes
