@@ -1,4 +1,4 @@
-# configs/sweep_config_cn-gp_blue-demon.yaml
+# configs/sweep_config_cn-gp_blue-demon_GPU1.yaml
 program: main.py
 name: cn-gp_blue-demon_GPU1
 method: bayes
