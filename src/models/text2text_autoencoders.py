@@ -679,7 +679,8 @@ class VanillaTransformer(nn.Module):
                 
                 # Get next token prediction
                 next_token = self.fc(out[:, -1:])  # Only take last position
-                print(f"Step {t}: decoder_input = {decoder_input}, next_token = {next_token.argmax(dim=-1)}")
+                #print(f"Step {t}: decoder_input = {decoder_input}, next_token = {next_token.argmax(dim=-1)}")
+                print(f"Step {t}, next_token = {next_token.cpu().tolist()}")
                 outputs[:, t:t+1, :] = next_token  # Fill pre-allocated tensor
                 
                 # Update decoder input (only in inference mode)
