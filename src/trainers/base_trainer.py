@@ -92,6 +92,13 @@ class BaseTrainer:
             prefetch_factor=1,
             persistent_workers=False
         )
+        # In BaseTrainer.__init__ after creating self.train_loader
+        print("First few training batch target sequences:")
+        for i, batch in enumerate(self.train_loader):
+            if i >= 5:  # Print a few batches
+                break
+            print("Batch:")
+            print(batch['target_text'])
 
         self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
         self.model = build_model(model_type, self.model_config).to(self.device)
