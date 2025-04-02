@@ -662,7 +662,7 @@ class VanillaTransformer(nn.Module):
             for t in range(self.target_seq_len):
                 # Create target mask
                 tgt_mask = self.transformer.generate_square_subsequent_mask(decoder_input.size(1)).to(device)
-                tgt_key_padding_mask = (decoder_input == 0).to(device)
+                tgt_key_padding_mask = (decoder_input == self.pad_id).to(device)
                 
                 # Embed and add positional encoding to decoder input
                 tgt_emb = self.embedding(decoder_input) * math.sqrt(self.d_model)
