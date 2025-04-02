@@ -151,7 +151,7 @@ class BaseTrainer:
         if schedule == 'linear':
             return max(0.0, 1.0 - (epoch / num_epochs))
         elif schedule == 'adaptive':
-            if num_epochs <= 3:
+            if num_epochs <= 5:
                 return 0.5
             else:
                 return max(0.0, 0.95 * (0.95 ** epoch))
