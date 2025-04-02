@@ -1,4 +1,4 @@
-# sweep_config_santo.yaml
+# configs/sweep_config_ncd-gp-cn_santo.yaml
 
 program: main.py
 name: ncd-gp-cn_santo_GPU0
