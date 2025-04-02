@@ -17,7 +17,7 @@ parameters:
   target_seq_len:
     values: [3, 16, 64]  # Include 3 for Autoencoder
   num_epochs:
-    value: 3
+    value: 10
 
   autoencoder_d_model:
     values: [512, 1024]  # Moderate sizes
