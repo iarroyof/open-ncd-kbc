@@ -359,7 +359,10 @@ def train_with_wandb():
             log_dir=str(log_dir),
             use_wandb=True
         )
-        
+        trainer.prediction_logger = PredictionLogger.setup_prediction_logger(
+            Path(log_dir),
+            logger_name=f'predictions_{model_type}'
+        )
         # Note: We do not set per-batch prediction logging.
         trainer.train()
         
