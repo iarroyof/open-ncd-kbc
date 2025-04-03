@@ -24,6 +24,9 @@ WB_PROJECT_NAME = "standard_models"
 # Global counter for round-robin GPU assignment
 current_gpu_index = 0
 
+# Global flag for debug prediction logging (will be set in main)
+DEBUG_LOG_PREDICTIONS = False
+
 def estimate_vram_usage(config: Dict) -> float:
     model_type = config['model_type']
     batch_size = config['batch_size']
@@ -237,7 +240,6 @@ def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
     prefix = f"{model_type}_"
     for key, value in full_config.items():
         if key.startswith(prefix):
-            # Optionally, remove the prefix for logging clarity.
             new_key = key[len(prefix):]
             filtered[new_key] = value
     return filtered
@@ -255,7 +257,6 @@ def get_trainer_class(model_type: str):
     return trainers[model_type]
 
 def setup_data_configs(train_path: str, valid_path: str) -> tuple:
-    
     train_configs = [
         ColumnConfig(
             file_path=train_path,
@@ -280,8 +281,7 @@ def setup_data_configs(train_path: str, valid_path: str) -> tuple:
 
 def setup_logging(log_dir: str):
     log_path = Path(log_dir)
-    
-    log_path.mkdir(exist_ok=True)
+    log_path.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -292,37 +292,26 @@ def setup_logging(log_dir: str):
     )
 
 def train_with_wandb():
-    wandb_config_defaults = {
-        'log_frequency': 100,
-        'disable_code': True,
-        'save_code': False,
-        'log_model': False,
-        'watch': False,
-        'system_interval': 30,
-    }
-    os.environ["WANDB_SYSTEM_METRICS"] = "system.cpu,system.gpu.0.memory,system.gpu.1.memory,system.gpu.0.temp,system.gpu.1.temp,system.gpu.0.powerPercent,system.gpu.1.powerPercent,system.disk.free"
+    os.environ["WANDB_SYSTEM_METRICS"] = ("system.cpu,system.gpu.0.memory,system.gpu.1.memory,"
+                                           "system.gpu.0.temp,system.gpu.1.temp,"
+                                           "system.gpu.0.powerPercent,system.gpu.1.powerPercent,"
+                                           "system.disk.free")
     with wandb.init() as run:
-        config = wandb.config  # This is the full config from the sweep
-        
-        # First, determine current model type.
+        config = wandb.config  # Full sweep config
         model_type = config['model_type']
-        
-        # Filter configuration to include only hyperparameters relevant for the current model type.
         filtered_config = filter_wandb_config(dict(config), model_type)
-        # Log this filtered configuration to wandb (this updates the run config visible in the UI)
         wandb.config.update(filtered_config, allow_val_change=True)
         
         workstation_name = os.environ.get('WORKSTATION_NAME', 'santo')
         cuda_visible_devices = os.getenv('CUDA_VISIBLE_DEVICES')
-        
         if cuda_visible_devices is not None:
             logging.info(f"CUDA_VISIBLE_DEVICES is set to: {cuda_visible_devices}")
             gpu_id = cuda_visible_devices
         else:
-            logging.info("CUDA_VISIBLE_DEVICES is not set. So it will be assigned automatically...")
-            if workstation_name=='lizmark':
+            logging.info("CUDA_VISIBLE_DEVICES is not set. Assigning automatically...")
+            if workstation_name == 'lizmark':
                 workstation_id = 3
-            elif workstation_name=='blue-demon':
+            elif workstation_name == 'blue-demon':
                 workstation_id = 2
             else:
                 workstation_id = 1
@@ -330,29 +319,34 @@ def train_with_wandb():
             if not available_gpus:
                 logging.error("No GPUs available in container. Exiting.")
                 return
-    
             gpu_id = assign_gpu(config, available_gpus, workstation_id)
             os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            
+        
         logging.info(f"Assigned run to GPU {gpu_id} (Workstation {workstation_name}) with VRAM {estimate_vram_usage(config):.2f} GB")
         
         train_path = config['data_path'][0]
         valid_path = config['data_path'][1]
         
-        log_dir = f"logs/sweep_{run.id}"
-        setup_logging(log_dir)
-        logging.info(f"Starting sweep run {run.id} with model type: {model_type} on GPU {gpu_id}")
+        # Build log directory as: log_dir/<sweep_id>/<run_id>
+        parent_log_dir = Path("logs")
+        sweep_id = wandb.run.sweep_id if wandb.run.sweep_id is not None else "default_sweep"
+        log_dir = parent_log_dir / sweep_id / wandb.run.id
+        log_dir.mkdir(parents=True, exist_ok=True)
+        setup_logging(str(log_dir))
+        logging.info(f"Starting sweep run {wandb.run.id} (sweep: {sweep_id}) with model type: {model_type} on GPU {gpu_id}")
         
-        # Get model and training configurations specific to the model type.
         model_config = get_model_config(model_type, config)
         training_config = get_training_config(model_type, config)
-        
-        # Log these configurations as part of the run configuration.
         wandb.log({'model_config': model_config, 'training_config': training_config})
         
-        training_config['log_predictions'] = True
-        training_config['prediction_log_freq'] = config.get('prediction_log_freq', 50)
+        # Configure prediction logging based on debug flag
         training_config['prediction_samples'] = config.get('prediction_samples', 3)
+        if DEBUG_LOG_PREDICTIONS:
+            training_config['log_predictions'] = True
+            training_config['prediction_log_freq'] = config.get('prediction_log_freq', 50)
+        else:
+            training_config['log_predictions'] = False
+            training_config['prediction_log_freq'] = None
         
         train_configs, valid_configs = setup_data_configs(train_path, valid_path)
         
@@ -362,30 +356,32 @@ def train_with_wandb():
             training_config=training_config,
             train_configs=train_configs,
             valid_configs=valid_configs,
-            log_dir=log_dir,
+            log_dir=str(log_dir),
             use_wandb=True
-        )        
-        
-        trainer.prediction_logger = PredictionLogger.setup_prediction_logger(
-            Path(log_dir), 
-            logger_name=f'predictions_{model_type}'
         )
         
-        if not hasattr(trainer, '_log_predictions'):
-            trainer._log_predictions = lambda batch, outputs, batch_idx, phase: \
-                PredictionLogger.log_predictions(
-                    trainer, batch, outputs, batch_idx, phase, 
-                    max_samples=training_config['prediction_samples']
-                )
-        
-        if not hasattr(trainer, 'generate_samples'):
-            trainer.generate_samples = lambda num_samples=10: \
-                PredictionLogger.generate_samples(trainer, num_samples)
-        
+        # Note: We do not set per-batch prediction logging.
         trainer.train()
         
         num_final_samples = config.get('final_samples', 10)
-        trainer.generate_samples(num_samples=num_final_samples)
+        final_samples = trainer.generate_samples(num_samples=num_final_samples)
+        
+        # Print final predictions to stdout
+        logging.info("Final Predictions:")
+        for sample in final_samples:
+            logging.info(f"Source: {sample.get('source', '')}")
+            logging.info(f"Target: {sample.get('target', '')}")
+            logging.info(f"Prediction: {sample.get('prediction', '')}")
+            logging.info("-" * 50)
+        
+        # Store final predictions in the run's log directory
+        predictions_file = log_dir / "final_predictions.txt"
+        with open(predictions_file, "w") as f:
+            for sample in final_samples:
+                f.write(f"Source: {sample.get('source', '')}\n")
+                f.write(f"Target: {sample.get('target', '')}\n")
+                f.write(f"Prediction: {sample.get('prediction', '')}\n")
+                f.write("-" * 50 + "\n")
         
         del trainer
         torch.cuda.empty_cache()
@@ -413,8 +409,14 @@ def main():
                         help='Run W&B sweep instead of single run')
     parser.add_argument('--yaml', type=str, default=None,
                         help='Run W&B sweep yaml file')
+    parser.add_argument('--debug_log_predictions', action='store_true',
+                        help='Enable frequent prediction logging for debugging purposes')
     
     args, unknown = parser.parse_known_args()
+    
+    # Set global debug flag for prediction logging.
+    global DEBUG_LOG_PREDICTIONS
+    DEBUG_LOG_PREDICTIONS = args.debug_log_predictions
     
     Path(args.cache_dir).mkdir(exist_ok=True)
     Path(args.log_dir).mkdir(exist_ok=True)
@@ -443,6 +445,16 @@ def main():
             
             model_config = get_model_config(args.model_type)
             training_config = get_training_config(args.model_type)
+            
+            # Configure prediction logging based on the debug flag.
+            if args.debug_log_predictions:
+                training_config['log_predictions'] = True
+                training_config['prediction_log_freq'] = 50
+            else:
+                training_config['log_predictions'] = False
+                training_config['prediction_log_freq'] = None
+            training_config['prediction_samples'] = training_config.get('prediction_samples', 3)
+            
             train_path, val_path = ast.literal_eval(args.data_path)
             train_configs, valid_configs = setup_data_configs(train_path, val_path)
             
