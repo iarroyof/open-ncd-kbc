@@ -127,14 +127,6 @@ class BaseTrainer:
         self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
 
         self.use_wandb = use_wandb
-        if use_wandb:
-            wandb.init(
-                project=f"{model_type}-trainer",
-                config={
-                    "model_config": self.model_config,
-                    "training_config": training_config
-                }
-            )
 
     def trim_sequence_at_eos(self, seq, eos_token_id):
         if hasattr(seq, "tolist"):
