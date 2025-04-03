@@ -1,5 +1,3 @@
-# main.py
-
 import logging
 import argparse
 from pathlib import Path
@@ -19,7 +17,7 @@ import torch
 import socket
 
 workstation_name = socket.gethostname()
-logging.info("Workstation Name: ", workstation_name)
+logging.info("Workstation Name: %s", workstation_name)
 os.environ["WORKSTATION_NAME"] = workstation_name
 
 # Global counter for round-robin GPU assignment
@@ -163,11 +161,10 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
                 config[key] = wandb_config[wandb_key]
         if 'target_seq_len' in wandb_config:
             config['target_seq_len'] = wandb_config['target_seq_len']
-        if 'max_seq_len' in wandb_config:
-            config['max_seq_len'] = wandb_config['max_seq_len']
+        if 'source_seq_len' in wandb_config:
+            config['source_seq_len'] = wandb_config['source_seq_len']
 
     return config
-
 
 def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
     base_config = {
@@ -221,6 +218,29 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
     
     return config
 
+def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
+    """
+    Returns a filtered dictionary containing only the hyperparameters relevant
+    for the current model type plus generic ones (like data_path, batch_size, etc.).
+    It also includes parameters that have been updated via the sweep.
+    """
+    filtered = {}
+    # Generic keys to always log.
+    generic_keys = ['model_type', 'data_path', 'batch_size', 'learning_rate',
+                    'target_seq_len', 'source_seq_len', 'num_epochs',
+                    'log_frequency', 'prediction_log_freq', 'prediction_samples', 'final_samples']
+    for key in generic_keys:
+        if key in full_config:
+            filtered[key] = full_config[key]
+    # Keys specific to the current model type are expected to be prefixed.
+    prefix = f"{model_type}_"
+    for key, value in full_config.items():
+        if key.startswith(prefix):
+            # Optionally, remove the prefix for logging clarity.
+            new_key = key[len(prefix):]
+            filtered[new_key] = value
+    return filtered
+
 def get_trainer_class(model_type: str):
     trainers = {
         'autoencoder': AutoencoderTrainer,
@@ -271,7 +291,7 @@ def setup_logging(log_dir: str):
     )
 
 def train_with_wandb():
-    wandb_config = {
+    wandb_config_defaults = {
         'log_frequency': 100,
         'disable_code': True,
         'save_code': False,
@@ -280,9 +300,16 @@ def train_with_wandb():
         'system_interval': 30,
     }
     os.environ["WANDB_SYSTEM_METRICS"] = "system.cpu,system.gpu.0.memory,system.gpu.1.memory,system.gpu.0.temp,system.gpu.1.temp,system.gpu.0.powerPercent,system.gpu.1.powerPercent,system.disk.free"
-    # config=None, settings=wandb.Settings(**wandb_config)
     with wandb.init() as run:
-        config = wandb.config
+        config = wandb.config  # This is the full config from the sweep
+        
+        # First, determine current model type.
+        model_type = config['model_type']
+        
+        # Filter configuration to include only hyperparameters relevant for the current model type.
+        filtered_config = filter_wandb_config(dict(config), model_type)
+        # Log this filtered configuration to wandb (this updates the run config visible in the UI)
+        wandb.config.update(filtered_config, allow_val_change=True)
         
         workstation_name = os.environ.get('WORKSTATION_NAME', 'santo')
         cuda_visible_devices = os.getenv('CUDA_VISIBLE_DEVICES')
@@ -308,7 +335,6 @@ def train_with_wandb():
             
         logging.info(f"Assigned run to GPU {gpu_id} (Workstation {workstation_name}) with VRAM {estimate_vram_usage(config):.2f} GB")
         
-        model_type = config['model_type']
         train_path = config['data_path'][0]
         valid_path = config['data_path'][1]
         
@@ -316,46 +342,34 @@ def train_with_wandb():
         setup_logging(log_dir)
         logging.info(f"Starting sweep run {run.id} with model type: {model_type} on GPU {gpu_id}")
         
+        # Get model and training configurations specific to the model type.
         model_config = get_model_config(model_type, config)
         training_config = get_training_config(model_type, config)
         
-        # Add prediction logging configuration
+        # Log these configurations as part of the run configuration.
+        wandb.log({'model_config': model_config, 'training_config': training_config})
+        
         training_config['log_predictions'] = True
-        training_config['prediction_log_freq'] = config.get('prediction_log_freq', 50)  # Default to every 50 batches
-        training_config['prediction_samples'] = config.get('prediction_samples', 3)     # Default to 3 samples per batch
+        training_config['prediction_log_freq'] = config.get('prediction_log_freq', 50)
+        training_config['prediction_samples'] = config.get('prediction_samples', 3)
         
         train_configs, valid_configs = setup_data_configs(train_path, valid_path)
         
-        """TrainerClass = get_trainer_class(config.model_type)
-        
-        trainer = TrainerClass(
-                model_config=model_config,
-                training_config=training_config,
-                train_configs=train_configs,
-                valid_configs=valid_configs,
-                #tokenizer_path=args.tokenizer_path,
-                #cache_dir=args.cache_dir,
-                log_dir=log_dir,
-                use_wandb=True
-        )"""
         trainer = BaseTrainer(
             model_type=model_type,
             model_config=model_config,
             training_config=training_config,
             train_configs=train_configs,
             valid_configs=valid_configs,
-            #tokenizer_path=args.tokenizer_path,  # or None
-            #cache_dir=args.cache_dir,
             log_dir=log_dir,
             use_wandb=True
         )        
-        # Set up prediction logging dynamically
+        
         trainer.prediction_logger = PredictionLogger.setup_prediction_logger(
             Path(log_dir), 
             logger_name=f'predictions_{model_type}'
         )
         
-        # Monkey patch prediction logging methods if they don't exist
         if not hasattr(trainer, '_log_predictions'):
             trainer._log_predictions = lambda batch, outputs, batch_idx, phase: \
                 PredictionLogger.log_predictions(
@@ -367,23 +381,20 @@ def train_with_wandb():
             trainer.generate_samples = lambda num_samples=10: \
                 PredictionLogger.generate_samples(trainer, num_samples)
         
-        # Train the model
         trainer.train()
         
-        # Generate final samples
         num_final_samples = config.get('final_samples', 10)
         trainer.generate_samples(num_samples=num_final_samples)
         
         del trainer
         torch.cuda.empty_cache()
 
-
 def main():
     parser = argparse.ArgumentParser(description='Train sequence-to-sequence models with W&B sweeps in Docker')
     parser.add_argument('--model_type', type=str, default='autoencoder',
                         choices=['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s'],
                         help='Type of model to train (ignored if using sweep)')
-    parser.add_argument('--data_path', type=str, #default='data/ncd_gp_conceptnet',
+    parser.add_argument('--data_path', type=str,
                         help='Base path to data directory (ignored if using sweep)')
     parser.add_argument('--cache_dir', type=str, default='/app/cache',
                         help='Directory for caching datasets inside container')
@@ -432,12 +443,7 @@ def main():
             model_config = get_model_config(args.model_type)
             training_config = get_training_config(args.model_type)
             train_path, val_path = ast.literal_eval(args.data_path)
-            train_configs, valid_configs = setup_data_configs(
-                train_path,
-                #f"{args.data_path}/ncd_gp_conceptnet_train.tsv",
-                val_path
-                #f"{args.data_path}/ncd_gp_conceptnet_valid.tsv"
-            )
+            train_configs, valid_configs = setup_data_configs(train_path, val_path)
             
             TrainerClass = get_trainer_class(args.model_type)
             trainer = TrainerClass(
