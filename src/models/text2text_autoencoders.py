@@ -32,17 +32,11 @@ class WeightNormConv1d(nn.Module):
         x = F.pad(x, (pad_left, 0))
         return F.conv1d(x, weight, self.conv.bias, padding=0)
 
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from typing import Optional
-
 class ConvS2SAttention(nn.Module):
     """Multi-step attention for ConvS2S, using a projection from decoder state."""
     def __init__(self, decoder_dim: int, encoder_dim: int, hidden_dim: int):
         super().__init__()
-        # decoder_dim is now expected to be the embed_dim.
+        # decoder_dim is expected to be the dimension of the decoder state (e.g. embed_dim)
         self.decoder_proj = nn.Linear(decoder_dim, hidden_dim, bias=False)
         self.encoder_proj = nn.Linear(encoder_dim, hidden_dim, bias=False)
         self.output_proj = nn.Linear(hidden_dim, 1, bias=False)
@@ -50,23 +44,47 @@ class ConvS2SAttention(nn.Module):
 
     def forward(self, decoder_state: torch.Tensor, encoder_out: torch.Tensor,
                 encoder_padding_mask: Optional[torch.Tensor] = None) -> tuple:
-        # decoder_state: [batch_size, seq_len, decoder_dim] (decoder_dim = embed_dim)
-        # encoder_out: [batch_size, src_seq_len, encoder_dim]
-        decoder_hidden = self.decoder_proj(decoder_state)  # -> [batch_size, seq_len, hidden_dim]
-        encoder_hidden = self.encoder_proj(encoder_out)      # -> [batch_size, src_seq_len, hidden_dim]
-        # Expand dimensions to allow broadcast for addition.
-        decoder_hidden = decoder_hidden.unsqueeze(2)         # -> [batch_size, seq_len, 1, hidden_dim]
-        encoder_hidden = encoder_hidden.unsqueeze(1)         # -> [batch_size, 1, src_seq_len, hidden_dim]
+        """
+        Args:
+            decoder_state: Tensor of shape [B, L, decoder_dim] (e.g. embed_dim)
+            encoder_out: Tensor of shape [B, S, encoder_dim]
+            encoder_padding_mask: Optional mask of shape [B, S]
+        Returns:
+            context: Tensor of shape [B, L, encoder_dim] (after weighting encoder_out)
+            attn_weights: Tensor of shape [B, L, S]
+        """
+        # Project decoder state and encoder outputs to hidden_dim.
+        decoder_hidden = self.decoder_proj(decoder_state)  # [B, L, hidden_dim]
+        encoder_hidden = self.encoder_proj(encoder_out)      # [B, S, hidden_dim]
+        
+        # Expand dimensions to enable addition:
+        # decoder_hidden becomes [B, L, 1, hidden_dim]
+        # encoder_hidden becomes [B, 1, S, hidden_dim]
+        decoder_hidden = decoder_hidden.unsqueeze(2)
+        encoder_hidden = encoder_hidden.unsqueeze(1)
+        
+        # Combine and scale, then compute attention scores.
         combined = torch.tanh(decoder_hidden + encoder_hidden) * self.scaling
-        attn_scores = self.output_proj(combined).squeeze(-1)   # -> [batch_size, seq_len, src_seq_len]
+        attn_scores = self.output_proj(combined).squeeze(-1)  # [B, L, S]
+        
+        # Apply padding mask if provided.
         if encoder_padding_mask is not None:
-            # Expand mask to [batch_size, 1, src_seq_len]
             attn_scores = attn_scores.masked_fill(encoder_padding_mask.unsqueeze(1), float('-inf'))
-        attn_weights = F.softmax(attn_scores, dim=-1)
-        # Compute context as weighted sum of encoder outputs.
-        context = torch.bmm(attn_weights.view(-1, attn_weights.size(-1)),
-                            encoder_out.view(-1, encoder_out.size(1), encoder_out.size(2)))
-        context = context.view(decoder_state.size(0), decoder_state.size(1), -1)
+        
+        attn_weights = F.softmax(attn_scores, dim=-1)  # [B, L, S]
+        
+        # To compute context:
+        # For each batch element and each decoder time step, weight the encoder outputs.
+        B, L, S = attn_weights.size()
+        _, S, D = encoder_out.size()
+        # Expand encoder_out to [B, L, S, D] so that each of L time steps gets the encoder outputs.
+        encoder_out_expanded = encoder_out.unsqueeze(1).expand(-1, L, -1, -1).contiguous().view(B * L, S, D)
+        # Reshape attn_weights to [B * L, S] and then unsqueeze to [B * L, 1, S].
+        attn_weights_reshaped = attn_weights.view(B * L, S).unsqueeze(1)
+        # Perform batched matrix multiplication: [B*L, 1, S] x [B*L, S, D] -> [B*L, 1, D]
+        context = torch.bmm(attn_weights_reshaped, encoder_out_expanded)  # [B*L, 1, D]
+        context = context.view(B, L, D)
+        
         return context, attn_weights
 
 class ConvS2SBlock(nn.Module):
