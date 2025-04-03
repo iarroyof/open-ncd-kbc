@@ -15,8 +15,10 @@ parameters:
     values: [16, 64, 128]  # 4 values: min, mid-low, mid-high, max
   learning_rate:
     values: [1e-4, 1e-3, 1e-2]  # 4 values: low, mid-low, mid-high, high
+  source_seq_len:
+    values: [8, 16, 32]
   target_seq_len:
-    values: [3, 16, 64, 128]  # 4 values: min (autoencoder), mid-low, default, high
+    values: [32, 64, 128]  # 4 values: min (autoencoder), mid-low, default, high
   num_epochs:
     value: 10  # Fixed to save time; can be swept if needed
 
