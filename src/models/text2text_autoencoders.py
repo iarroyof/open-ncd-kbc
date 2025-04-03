@@ -151,7 +151,9 @@ class ConvS2SEncoder(nn.Module):
 
 class ConvS2SDecoder(nn.Module):
     """Convolutional decoder with optional attention"""
-    def __init__(self, vocab_size: int, embed_dim: int, hidden_dim: int, num_layers: int = 4, kernel_size: int = 3, dropout: float = 0.1, max_positions: int = 512, use_attention: bool = True):
+    def __init__(self, vocab_size: int, embed_dim: int, hidden_dim: int,
+                 num_layers: int = 4, kernel_size: int = 3, dropout: float = 0.1,
+                 max_positions: int = 512, use_attention: bool = True):
         super().__init__()
         self.max_positions = max_positions
         self.use_attention = use_attention
@@ -166,7 +168,8 @@ class ConvS2SDecoder(nn.Module):
         self.layers = nn.ModuleList()
         for idx in range(num_layers):
             if use_attention:
-                self.layers.append(ConvS2SAttention(hidden_dim, embed_dim, hidden_dim))
+                # Updated: Use embed_dim (e.g., 1024) as the decoder state dimension.
+                self.layers.append(ConvS2SAttention(embed_dim, embed_dim, hidden_dim))
             self.layers.append(ConvS2SBlock(
                 input_dim=embed_dim if idx == 0 and not use_attention else hidden_dim,
                 output_dim=hidden_dim,
@@ -179,24 +182,6 @@ class ConvS2SDecoder(nn.Module):
         self.proj = nn.Linear(hidden_dim, vocab_size)
         nn.init.normal_(self.proj.weight, mean=0, std=hidden_dim ** -0.5)
         nn.init.constant_(self.proj.bias, 0.0)
-
-    def forward(self, prev_output_tokens: torch.Tensor, encoder_out: torch.Tensor, encoder_padding_mask: Optional[torch.Tensor] = None, output_length: Optional[int] = None) -> torch.Tensor:
-        seq_len = min(prev_output_tokens.size(1), output_length or self.max_positions)
-        prev_output_tokens = prev_output_tokens[:, :seq_len]
-        
-        positions = self.position_ids[:, :prev_output_tokens.size(1)]
-        x = self.embed_tokens(prev_output_tokens) + self.embed_positions(positions)
-        x = self.embed_layer_norm(x)
-        
-        # Process layers dynamically
-        for layer in self.layers:
-            if self.use_attention and isinstance(layer, ConvS2SAttention):
-                attn_out, _ = layer(x, encoder_out, encoder_padding_mask)
-                x = x + attn_out
-            else:
-                x = layer(x)
-        
-        return self.proj(x)
         
 
 class ConvS2S(nn.Module):
