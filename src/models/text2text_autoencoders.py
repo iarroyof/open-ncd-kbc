@@ -197,11 +197,12 @@ class ConvS2SDecoder(nn.Module):
                 x = layer(x)
         
         return self.proj(x)
+        
 
 class ConvS2S(nn.Module):
     """
     Complete Convolutional Sequence-to-Sequence model with optional attention.
-    Updated to use source_seq_len instead of max_seq_len, so no extra ambiguity.
+    The encoder uses source_seq_len for its maximum positions and the decoder uses target_seq_len.
     """
     def __init__(
         self,
@@ -211,8 +212,8 @@ class ConvS2S(nn.Module):
         num_layers: int = 4,
         kernel_size: int = 3,
         dropout: float = 0.1,
-        source_seq_len: int = 512,  # replaces max_seq_len
-        target_seq_len: int = 64,
+        source_seq_len: int = 512,  # For encoder
+        target_seq_len: int = 64,   # For decoder
         use_attention: bool = True
     ):
         super().__init__()
@@ -220,10 +221,10 @@ class ConvS2S(nn.Module):
         self.source_seq_len = source_seq_len
         self.target_seq_len = target_seq_len
         self.pad_id = 0
-        self.sos_id = None
-        self.eos_id = None
+        self.sos_id = None  # Should be set appropriately before training
+        self.eos_id = None  # Should be set appropriately before training
 
-        # Encoder and Decoder
+        # Encoder: positional embeddings up to source_seq_len
         self.encoder = ConvS2SEncoder(
             vocab_size=vocab_size,
             embed_dim=embed_dim,
@@ -233,6 +234,7 @@ class ConvS2S(nn.Module):
             dropout=dropout,
             max_positions=self.source_seq_len
         )
+        # Decoder: positional embeddings up to target_seq_len
         self.decoder = ConvS2SDecoder(
             vocab_size=vocab_size,
             embed_dim=embed_dim,
@@ -240,28 +242,27 @@ class ConvS2S(nn.Module):
             num_layers=num_layers,
             kernel_size=kernel_size,
             dropout=dropout,
-            max_positions=self.source_seq_len,
+            max_positions=self.target_seq_len,
             use_attention=use_attention
         )
 
     def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
-        # Truncate source if needed
+        # Truncate source to source_seq_len if needed
         if src.size(1) > self.source_seq_len:
             src = src[:, -self.source_seq_len:]
-
-        # Build a mask for padding tokens (pad_idx=0 or custom if needed)
+        
+        # Build a padding mask for the source
         src_padding_mask = (src == self.pad_id)
         encoder_out = self.encoder(src, src_padding_mask)
         
-        # Decide training vs generation
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
-            # ensure target is sized up to self.target_seq_len
+            # Adjust target: truncate or pad to target_seq_len
             if tgt.size(1) > self.target_seq_len:
                 tgt = tgt[:, :self.target_seq_len]
             elif tgt.size(1) < self.target_seq_len:
                 pad_len = self.target_seq_len - tgt.size(1)
-                tgt = torch.nn.functional.pad(tgt, (0, pad_len), value=self.pad_id)
-
+                tgt = F.pad(tgt, (0, pad_len), value=self.pad_id)
+            
             decoder_out = self.decoder(
                 prev_output_tokens=tgt,
                 encoder_out=encoder_out,
@@ -270,18 +271,17 @@ class ConvS2S(nn.Module):
             )
         else:
             decoder_out = self._generate(encoder_out, src_padding_mask)
-
+        
         return decoder_out
 
     def _generate(self, encoder_out: torch.Tensor, encoder_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Autoregressive generation loop."""
+        """Autoregressive generation loop for inference."""
         batch_size = encoder_out.size(0)
         device = encoder_out.device
-
-        # SOS token assumed to be 1 by default, or customize if needed
+        # Initialize decoder input with SOS token
         decoder_input = torch.full((batch_size, 1), self.sos_id, dtype=torch.long, device=device)
         outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
-
+        
         for step in range(self.target_seq_len):
             out = self.decoder(
                 prev_output_tokens=decoder_input,
@@ -292,7 +292,6 @@ class ConvS2S(nn.Module):
             outputs[:, step:step+1, :] = out[:, -1:, :]
             next_token = out[:, -1:, :].argmax(dim=-1)
             decoder_input = torch.cat([decoder_input, next_token], dim=1)
-
         return outputs
 
     
