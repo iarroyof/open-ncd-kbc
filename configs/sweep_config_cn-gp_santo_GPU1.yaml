@@ -9,7 +9,7 @@ metric:
   goal: minimize
 parameters:
   model_type:
-    values: ['attention_gru', 'attention_lstm', 'transformer']
+    values: ['attention_gru', 'attention_lstm'] #, 'transformer']
   data_path:
     value: ['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/conceptnet_gp/conceptnet_gp_valid.tsv']
   # Santo is assigned a mid-range batch size
