@@ -8,7 +8,7 @@ metric:
   goal: minimize
 parameters:
   model_type:
-    values: ['autoencoder', 'attention_gru', 'attention_lstm', 'conv_s2s', 'transformer']
+    values: ['autoencoder', 'attention_gru', 'attention_lstm', 'conv_s2s'] #, 'transformer']
   data_path:
     value: ['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/conceptnet_gp/conceptnet_gp_valid.tsv']
   # Lizmark is assigned the heaviest batch size
