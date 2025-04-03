@@ -526,7 +526,6 @@ class AttentionLSTMSeq2Seq(nn.Module):
 
             return outputs
 
-# src/models/text2text_autoencoders.py
 
 class VanillaTransformer(nn.Module):
     def __init__(
@@ -540,7 +539,6 @@ class VanillaTransformer(nn.Module):
         dim_feedforward: int = 2048,
         dropout: float = 0.1,
         activation: str = "relu",
-        # Remove independent max_seq_len parameter; use source_seq_len instead.
         source_seq_len: int = 64,
         pe_mode: str = 'fixed',
         fixed_scale: float = 1.0,
@@ -550,12 +548,15 @@ class VanillaTransformer(nn.Module):
         self.d_model = d_model
         self.target_seq_len = target_seq_len
         self.source_seq_len = source_seq_len
+        self.vocab_size = vocab_size
+        self.pad_id = None
+        self.sos_id = None
+        self.eos_id = None
 
         # Embedding layer
         self.embedding = nn.Embedding(vocab_size, d_model)
         
-        # Initialize positional encoder with a maximum length that covers both source and
-        # potential decoder sequence lengths (decoder may temporarily grow to target_seq_len+1).
+        # Compute maximum length for positional encoding
         max_len_for_pos = max(self.source_seq_len, self.target_seq_len + 1)
         self.pos_encoder = PositionalEncoding(
             d_model=d_model,
@@ -579,63 +580,42 @@ class VanillaTransformer(nn.Module):
         
         # Final projection layer
         self.fc = nn.Linear(d_model, vocab_size)
-        self.vocab_size = vocab_size
-        self.pad_id = None
-        self.sos_id = None
-        self.eos_id = None
-        # Initialize weights
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize weights using Xavier uniform initialization"""
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
     def generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
-        """
-        Generate a causal mask for size sz:
-        - 0.0 in the lower-triangular part (allowing tokens to attend to earlier tokens)
-        - -inf in the upper-triangular part (preventing tokens from attending to future tokens)
-        """
-        # Create a matrix of shape [sz, sz] filled with float(0.0)
         mask = torch.zeros(sz, sz)
-        # Fill everything above the main diagonal with -inf
-        mask = mask.fill_(float(0.0)).float()
         mask = mask.masked_fill(torch.triu(torch.ones(sz, sz), diagonal=1).bool(), float('-inf'))
         return mask
 
-
-    def forward(self, src: torch.Tensor, tgt: Optional[torch.Tensor] = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
-        # Truncate source sequence if needed (keeping right side)
+    def forward(self, src: torch.Tensor, tgt: torch.Tensor = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
+        # Truncate source if needed.
         if src.size(1) > self.source_seq_len:
             src = src[:, -self.source_seq_len:]
-        
-        # Create source mask for padding tokens
         src_key_padding_mask = (src == self.pad_id).to(src.device)
-
-        # Embed and add positional encoding to source
+        
+        # Embed and add positional encoding for source.
         src_emb = self.embedding(src) * math.sqrt(self.d_model)
         src_emb = self.pos_encoder(src_emb)
         
-        # For training with teacher forcing
         if self.training and tgt is not None and torch.rand(1).item() < teacher_forcing_ratio:
-            # Prepare target sequence using target_seq_len
+            # Process target to have length exactly target_seq_len.
             if tgt.size(1) > self.target_seq_len:
                 tgt = tgt[:, :self.target_seq_len]
             elif tgt.size(1) < self.target_seq_len:
-                tgt = torch.nn.functional.pad(tgt, (0, self.target_seq_len - tgt.size(1)), value=0)
+                tgt = torch.nn.functional.pad(tgt, (0, self.target_seq_len - tgt.size(1)), value=self.pad_id)
             
-            # Create target masks
-            tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.size(1)).to(tgt.device)
+            tgt_mask = self.generate_square_subsequent_mask(tgt.size(1)).to(tgt.device)
             tgt_key_padding_mask = (tgt == self.pad_id).to(tgt.device)
-
             
-            # Embed and add positional encoding to target
+            # Embed and add positional encoding for target.
             tgt_emb = self.embedding(tgt) * math.sqrt(self.d_model)
             tgt_emb = self.pos_encoder(tgt_emb)
             
-            # Transformer forward pass with teacher forcing
             out = self.transformer(
                 src=src_emb,
                 tgt=tgt_emb,
@@ -644,30 +624,18 @@ class VanillaTransformer(nn.Module):
                 tgt_key_padding_mask=tgt_key_padding_mask
             )
             result = self.fc(out)
-            # Clean up intermediates to free memory
-            del out, tgt_emb, tgt_mask, tgt_key_padding_mask
-            
             return result
-        
-        # For inference or when not using teacher forcing
         else:
+            # Inference: autoregressively generate output
             batch_size = src.size(0)
             device = src.device
-            
-            # Initialize decoder input with SOS token (assumed to be 1)
             decoder_input = torch.full((batch_size, 1), self.sos_id, dtype=torch.long, device=device)
-            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)  # Pre-allocate outputs
-            
+            outputs = torch.zeros(batch_size, self.target_seq_len, self.vocab_size, device=device)
             for t in range(self.target_seq_len):
-                # Create target mask
-                tgt_mask = self.transformer.generate_square_subsequent_mask(decoder_input.size(1)).to(device)
+                tgt_mask = self.generate_square_subsequent_mask(decoder_input.size(1)).to(device)
                 tgt_key_padding_mask = (decoder_input == self.pad_id).to(device)
-                
-                # Embed and add positional encoding to decoder input
                 tgt_emb = self.embedding(decoder_input) * math.sqrt(self.d_model)
                 tgt_emb = self.pos_encoder(tgt_emb)
-                
-                # Transformer forward pass
                 out = self.transformer(
                     src=src_emb,
                     tgt=tgt_emb,
@@ -675,26 +643,21 @@ class VanillaTransformer(nn.Module):
                     src_key_padding_mask=src_key_padding_mask,
                     tgt_key_padding_mask=tgt_key_padding_mask
                 )
-                
-                # Get next token prediction
-                next_token = self.fc(out[:, -1:])  # Only take last position
-                #print(f"Step {t}: decoder_input = {decoder_input}, next_token = {next_token.argmax(dim=-1)}")
-                print(f"Step {t}, next_token = {next_token.cpu().tolist()}\n\n\n")
-                outputs[:, t:t+1, :] = next_token  # Fill pre-allocated tensor
-                
-                # Update decoder input (only in inference mode)
-                if not self.training:
-                    decoder_input = torch.cat([decoder_input, next_token.argmax(dim=-1)], dim=1)
-            # Final cleanup
-            del src_emb, tgt_emb, tgt_mask, tgt_key_padding_mask, decoder_input
-        
+                next_token = self.fc(out[:, -1:, :])
+                outputs[:, t:t+1, :] = next_token
+                decoder_input = torch.cat([decoder_input, next_token.argmax(dim=-1)], dim=1)
             return outputs
 
         
+import torch
+import torch.nn as nn
+import math
+import torch.nn.functional as F
+
 class PositionalAutoencoder(nn.Module):
     """
-    Simple (non-autoregressive) autoencoder that uses positional encodings.
-    Updated to rename max_seq_len -> source_seq_len, removing ambiguity.
+    Non-autoregressive autoencoder that uses positional encodings.
+    Uses source_seq_len for the input and target_seq_len for the output.
     """
     def __init__(
         self,
@@ -705,7 +668,7 @@ class PositionalAutoencoder(nn.Module):
         num_encoder_layers: int = 3,
         dropout: float = 0.1,
         activation: str = "relu",
-        source_seq_len: int = 5000,    # replaces old max_seq_len
+        source_seq_len: int = 5000,    # Renamed from max_seq_len
         pe_mode: str = 'fixed',
         use_normalization: bool = True,
         norm_type: str = 'batch',
@@ -716,18 +679,19 @@ class PositionalAutoencoder(nn.Module):
         self.vocab_size = vocab_size
         self.d_model = d_model
         self.hidden_dim = hidden_dim
-        self.source_seq_len = source_seq_len  # was max_seq_len
+        self.source_seq_len = source_seq_len
         self.target_seq_len = target_seq_len
         self.use_normalization = use_normalization
         self.norm_type = norm_type
 
         # Input embedding
         self.embedding = nn.Embedding(vocab_size, d_model)
+        nn.init.normal_(self.embedding.weight, mean=0, std=d_model ** -0.5)
         
-        # Positional encoding
+        # Positional encoding for source (input) sequence
         self.pos_encoder = PositionalEncoding(
             d_model=d_model,
-            max_len=source_seq_len,  # pass in new param
+            max_len=source_seq_len,
             mode=pe_mode,
             fixed_scale=fixed_scale,
             learned_scale=learned_scale
@@ -757,7 +721,7 @@ class PositionalAutoencoder(nn.Module):
             current_dim = hidden_dim
         self.encoder = nn.Sequential(*encoder_layers)
 
-        # Bottleneck
+        # Bottleneck: output will be reshaped to (batch_size, target_seq_len, bottleneck_dim)
         bottleneck_dim = hidden_dim // 2
         self.bottleneck_dim = bottleneck_dim
         self.bottleneck = nn.Sequential(
@@ -793,46 +757,45 @@ class PositionalAutoencoder(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src: torch.Tensor, 
-                tgt: Optional[torch.Tensor] = None,              # IGNORE this
-                teacher_forcing_ratio: float = 1.0               # IGNORE this
-               ) -> torch.Tensor:
+    def forward(self, src: torch.Tensor, tgt: torch.Tensor = None, teacher_forcing_ratio: float = 1.0) -> torch.Tensor:
         """
-        Non-autoregressive. Output size = (batch_size, target_seq_len, vocab_size)
+        Non-autoregressive autoencoding.
+        Expects src as a 2D tensor of shape (batch_size, seq_len).
+        The encoder operates on source_seq_len and the bottleneck is reshaped to target_seq_len.
         """
         if len(src.shape) != 2:
-            raise ValueError(f"Expected 2D input tensor (batch_size, seq_len), got shape {src.shape}")
+            raise ValueError(f"Expected 2D tensor (batch_size, seq_len), got shape {src.shape}")
 
         batch_size, src_len = src.size(0), src.size(1)
         if src_len > self.source_seq_len:
-            # truncate right side
+            # Truncate from the right side
             src = src[:, -self.source_seq_len:]
 
-        # embed + positional encode
+        # Embed and add positional encoding for source
         x = self.embedding(src) * math.sqrt(self.d_model)
-        x = self.pos_encoder(x)  # shape = (batch_size, seq_len, d_model)
+        x = self.pos_encoder(x)  # shape: (batch_size, seq_len, d_model)
 
-        # Flatten for encoder
+        # Flatten sequence dimension for encoder
         x = x.reshape(batch_size * x.size(1), self.d_model)
-        x = self.encoder(x)  # (batch_size * seq_len, hidden_dim)
+        x = self.encoder(x)  # shape: (batch_size * seq_len, hidden_dim)
 
-        # Reshape + average across sequence
+        # Reshape and average across sequence (you might choose a different strategy)
         x = x.reshape(batch_size, -1, self.hidden_dim)
-        x = x.mean(dim=1)  # (batch_size, hidden_dim)
+        x = x.mean(dim=1)  # shape: (batch_size, hidden_dim)
 
-        # Bottleneck
-        x = self.bottleneck(x)  # (batch_size, bottleneck_dim * target_seq_len)
+        # Bottleneck: project to bottleneck_dim * target_seq_len and reshape
+        x = self.bottleneck(x)  # shape: (batch_size, bottleneck_dim * target_seq_len)
         x = x.reshape(batch_size, self.target_seq_len, self.bottleneck_dim)
 
-        # Decoder
+        # Decoder: project from bottleneck_dim to d_model
         x = x.reshape(batch_size * self.target_seq_len, self.bottleneck_dim)
-        x = self.decoder(x)  # (batch_size * target_seq_len, d_model)
+        x = self.decoder(x)  # shape: (batch_size * target_seq_len, d_model)
         x = x.reshape(batch_size, self.target_seq_len, self.d_model)
 
-        # Final projection
+        # Final projection to vocabulary logits
         logits = self.fc(x)
         return logits
-
+        
 
 class GRUAttention(nn.Module):
     """Bahdanau attention mechanism"""
