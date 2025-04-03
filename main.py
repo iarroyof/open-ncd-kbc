@@ -19,6 +19,7 @@ import socket
 workstation_name = socket.gethostname()
 logging.info("Workstation Name: %s", workstation_name)
 os.environ["WORKSTATION_NAME"] = workstation_name
+WB_PROJECT_NAME = "standard_models"
 
 # Global counter for round-robin GPU assignment
 current_gpu_index = 0
@@ -427,7 +428,7 @@ def main():
                 yaml_file = args.yaml
             with open(yaml_file, 'r') as f:
                 sweep_config = yaml.safe_load(f)
-            sweep_id = wandb.sweep(sweep_config, project="standard_models")
+            sweep_id = wandb.sweep(sweep_config, project=WB_PROJECT_NAME)
             for attempt in range(3):
                 try:
                     wandb.agent(sweep_id, function=train_with_wandb, count=50)
