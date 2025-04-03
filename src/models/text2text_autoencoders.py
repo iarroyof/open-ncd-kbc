@@ -32,26 +32,53 @@ class WeightNormConv1d(nn.Module):
         x = F.pad(x, (pad_left, 0))
         return F.conv1d(x, weight, self.conv.bias, padding=0)
 
-class ConvS2SBlock(nn.Module):
-    """Causal convolutional block with GLU activation"""
-    def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        kernel_size: int,
-        layer_idx: int,
-        num_layers: int,
-        dropout: float = 0.1
-    ):
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Optional
+
+class ConvS2SAttention(nn.Module):
+    """Multi-step attention for ConvS2S, using a projection from decoder state."""
+    def __init__(self, decoder_dim: int, encoder_dim: int, hidden_dim: int):
         super().__init__()
+        # decoder_dim is now expected to be the embed_dim.
+        self.decoder_proj = nn.Linear(decoder_dim, hidden_dim, bias=False)
+        self.encoder_proj = nn.Linear(encoder_dim, hidden_dim, bias=False)
+        self.output_proj = nn.Linear(hidden_dim, 1, bias=False)
+        self.scaling = 1.0 / math.sqrt(hidden_dim)
+
+    def forward(self, decoder_state: torch.Tensor, encoder_out: torch.Tensor,
+                encoder_padding_mask: Optional[torch.Tensor] = None) -> tuple:
+        # decoder_state: [batch_size, seq_len, decoder_dim] (decoder_dim = embed_dim)
+        # encoder_out: [batch_size, src_seq_len, encoder_dim]
+        decoder_hidden = self.decoder_proj(decoder_state)  # -> [batch_size, seq_len, hidden_dim]
+        encoder_hidden = self.encoder_proj(encoder_out)      # -> [batch_size, src_seq_len, hidden_dim]
+        # Expand dimensions to allow broadcast for addition.
+        decoder_hidden = decoder_hidden.unsqueeze(2)         # -> [batch_size, seq_len, 1, hidden_dim]
+        encoder_hidden = encoder_hidden.unsqueeze(1)         # -> [batch_size, 1, src_seq_len, hidden_dim]
+        combined = torch.tanh(decoder_hidden + encoder_hidden) * self.scaling
+        attn_scores = self.output_proj(combined).squeeze(-1)   # -> [batch_size, seq_len, src_seq_len]
+        if encoder_padding_mask is not None:
+            # Expand mask to [batch_size, 1, src_seq_len]
+            attn_scores = attn_scores.masked_fill(encoder_padding_mask.unsqueeze(1), float('-inf'))
+        attn_weights = F.softmax(attn_scores, dim=-1)
+        # Compute context as weighted sum of encoder outputs.
+        context = torch.bmm(attn_weights.view(-1, attn_weights.size(-1)),
+                            encoder_out.view(-1, encoder_out.size(1), encoder_out.size(2)))
+        context = context.view(decoder_state.size(0), decoder_state.size(1), -1)
+        return context, attn_weights
+
+class ConvS2SBlock(nn.Module):
+    """A convolutional block (unchanged from your implementation)"""
+    def __init__(self, input_dim: int, output_dim: int, kernel_size: int, layer_idx: int, num_layers: int, dropout: float = 0.1):
+        super().__init__()
+        # Implementation details of ConvS2SBlock remain as before.
+        # (Assuming your original implementation is correct.)
         self.layer_idx = layer_idx
         self.num_layers = num_layers
         self.kernel_size = kernel_size
-        self.conv = WeightNormConv1d(
-            in_channels=input_dim,
-            out_channels=2 * output_dim,
-            kernel_size=kernel_size
-        )
+        self.conv = WeightNormConv1d(input_dim, 2 * output_dim, kernel_size)
         self.residual = nn.Linear(input_dim, output_dim) if input_dim != output_dim else None
         self.layer_norm = nn.LayerNorm(output_dim)
         self.dropout = nn.Dropout(dropout)
@@ -70,33 +97,83 @@ class ConvS2SBlock(nn.Module):
             x = x.masked_fill(padding_mask.unsqueeze(-1), 0.0)
         return self.dropout(x)
 
-class ConvS2SAttention(nn.Module):
-    """Multi-step attention as described in the paper"""
-    def __init__(self, decoder_dim: int, encoder_dim: int, hidden_dim: int):
+class ConvS2SDecoder(nn.Module):
+    """Updated convolutional decoder with optional attention.
+    
+    This decoder uses target_seq_len (via max_positions) for its positional embeddings.
+    It accepts keyword arguments to match the expected interface.
+    """
+    def __init__(self, vocab_size: int, embed_dim: int, hidden_dim: int,
+                 num_layers: int = 4, kernel_size: int = 3, dropout: float = 0.1,
+                 max_positions: int = 512, use_attention: bool = True):
         super().__init__()
-        self.decoder_proj = nn.Linear(decoder_dim, hidden_dim, bias=False)
-        self.encoder_proj = nn.Linear(encoder_dim, hidden_dim, bias=False)
-        self.output_proj = nn.Linear(hidden_dim, 1, bias=False)
-        self.scaling = 1.0 / math.sqrt(hidden_dim)
-        
-    def forward(
-        self,
-        decoder_state: torch.Tensor,
-        encoder_out: torch.Tensor,
-        encoder_padding_mask: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        decoder_hidden = self.decoder_proj(decoder_state)
-        encoder_hidden = self.encoder_proj(encoder_out)
-        decoder_hidden = decoder_hidden.unsqueeze(2)
-        encoder_hidden = encoder_hidden.unsqueeze(1)
-        combined = torch.tanh(decoder_hidden + encoder_hidden) * self.scaling
-        attn_scores = self.output_proj(combined).squeeze(-1)
-        if encoder_padding_mask is not None:
-            attn_scores = attn_scores.masked_fill(encoder_padding_mask.unsqueeze(1), float('-inf'))
-        attn_weights = F.softmax(attn_scores, dim=-1)
-        context = torch.bmm(attn_weights, encoder_out)
-        return context, attn_weights
+        self.max_positions = max_positions  # Should be set to target_seq_len
+        self.use_attention = use_attention
+        self.embed_dim = embed_dim
+        self.hidden_dim = hidden_dim
 
+        # Token and positional embeddings.
+        self.embed_tokens = nn.Embedding(vocab_size, embed_dim)
+        nn.init.normal_(self.embed_tokens.weight, mean=0, std=embed_dim ** -0.5)
+        self.embed_positions = nn.Embedding(max_positions, embed_dim)
+        nn.init.normal_(self.embed_positions.weight, mean=0, std=embed_dim ** -0.5)
+        self.register_buffer('position_ids', torch.arange(max_positions).unsqueeze(0))
+        self.embed_layer_norm = nn.LayerNorm(embed_dim)
+
+        # Build decoder layers.
+        self.layers = nn.ModuleList()
+        for idx in range(num_layers):
+            if use_attention:
+                # Pass embed_dim (i.e. the decoder state dimension) to the attention module.
+                self.layers.append(ConvS2SAttention(embed_dim, embed_dim, hidden_dim))
+            # For the first block, if no attention is used, input_dim is embed_dim; otherwise, after attention addition, input is hidden_dim.
+            input_dim = embed_dim if (idx == 0 and not use_attention) else hidden_dim
+            self.layers.append(ConvS2SBlock(
+                input_dim=input_dim,
+                output_dim=hidden_dim,
+                kernel_size=kernel_size,
+                layer_idx=idx,
+                num_layers=num_layers,
+                dropout=dropout
+            ))
+        
+        # Final projection from hidden_dim to vocab_size.
+        self.proj = nn.Linear(hidden_dim, vocab_size)
+        nn.init.normal_(self.proj.weight, mean=0, std=hidden_dim ** -0.5)
+        nn.init.constant_(self.proj.bias, 0.0)
+
+    def forward(self, prev_output_tokens: torch.Tensor, encoder_out: torch.Tensor,
+                encoder_padding_mask: Optional[torch.Tensor] = None,
+                output_length: Optional[int] = None) -> torch.Tensor:
+        """
+        Args:
+            prev_output_tokens: Tensor of shape [batch_size, seq_len] with previous tokens (including BOS).
+            encoder_out: Encoder output tensor.
+            encoder_padding_mask: Optional mask for encoder outputs.
+            output_length: Desired length of output (defaults to max_positions if not provided).
+        Returns:
+            Logits tensor of shape [batch_size, seq_len, vocab_size].
+        """
+        seq_len = min(prev_output_tokens.size(1), output_length or self.max_positions)
+        prev_output_tokens = prev_output_tokens[:, :seq_len]
+        
+        # Obtain token embeddings and add positional encodings.
+        positions = self.position_ids[:, :prev_output_tokens.size(1)]
+        x = self.embed_tokens(prev_output_tokens) + self.embed_positions(positions)
+        x = self.embed_layer_norm(x)
+        
+        # Pass through decoder layers.
+        for layer in self.layers:
+            if self.use_attention and isinstance(layer, ConvS2SAttention):
+                # Add attention output.
+                attn_out, _ = layer(x, encoder_out, encoder_padding_mask)
+                x = x + attn_out
+            else:
+                x = layer(x)
+        
+        # Project to logits.
+        return self.proj(x)
+                    
 class ConvS2SEncoder(nn.Module):
     """Convolutional encoder with improved sequence handling"""
     def __init__(
@@ -148,40 +225,6 @@ class ConvS2SEncoder(nn.Module):
         if self.output_projection is not None:
             x = self.output_projection(x)
         return x
-
-class ConvS2SDecoder(nn.Module):
-    """Convolutional decoder with optional attention"""
-    def __init__(self, vocab_size: int, embed_dim: int, hidden_dim: int,
-                 num_layers: int = 4, kernel_size: int = 3, dropout: float = 0.1,
-                 max_positions: int = 512, use_attention: bool = True):
-        super().__init__()
-        self.max_positions = max_positions
-        self.use_attention = use_attention
-        
-        self.embed_tokens = nn.Embedding(vocab_size, embed_dim)
-        nn.init.normal_(self.embed_tokens.weight, mean=0, std=embed_dim ** -0.5)
-        self.embed_positions = nn.Embedding(max_positions, embed_dim)
-        nn.init.normal_(self.embed_positions.weight, mean=0, std=embed_dim ** -0.5)
-        self.register_buffer('position_ids', torch.arange(max_positions).unsqueeze(0))
-        self.embed_layer_norm = nn.LayerNorm(embed_dim)
-        
-        self.layers = nn.ModuleList()
-        for idx in range(num_layers):
-            if use_attention:
-                # Updated: Use embed_dim (e.g., 1024) as the decoder state dimension.
-                self.layers.append(ConvS2SAttention(embed_dim, embed_dim, hidden_dim))
-            self.layers.append(ConvS2SBlock(
-                input_dim=embed_dim if idx == 0 and not use_attention else hidden_dim,
-                output_dim=hidden_dim,
-                kernel_size=kernel_size,
-                layer_idx=idx,
-                num_layers=num_layers,
-                dropout=dropout
-            ))
-        
-        self.proj = nn.Linear(hidden_dim, vocab_size)
-        nn.init.normal_(self.proj.weight, mean=0, std=hidden_dim ** -0.5)
-        nn.init.constant_(self.proj.bias, 0.0)
         
 
 class ConvS2S(nn.Module):
