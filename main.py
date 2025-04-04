@@ -176,19 +176,20 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
         'weight_decay': 0.01,
         'num_workers': 4,
         'chunk_size': 10000,
-        'seed': 42
+        'seed': 42,
+        'optimizer': 'adafactor' # otherwise AdamW
     }
     if model_type == 'transformer':
         config = {
             **base_config,
-            'learning_rate': 1e-4,
+            'learning_rate': None if base_config['optimizer']=='adafactor' else 1e-4,
             'warmup_steps': 4000,
             'label_smoothing': 0.1
         }
     elif model_type == 'attention_gru':
         config = {
             **base_config,
-            'learning_rate': 1e-3,
+            'learning_rate': None if base_config['optimizer']=='adafactor' else 1e-3,
             'weight_decay': 1e-5,
             'gradient_clip': 1.0
         }
@@ -201,7 +202,7 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
     elif model_type == 'conv_s2s':
         config = {
             **base_config,
-            'learning_rate': 0.25,
+            'learning_rate': None if base_config['optimizer']=='adafactor' else 0.25,
             'weight_decay': 0.0,
             'label_smoothing': 0.1,
             'warmup_steps': 4000,
@@ -211,13 +212,16 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
     else:
         config = {
             **base_config,
-            'learning_rate': 1e-3
+            'learning_rate': None if base_config['optimizer']=='adafactor' else 1e-3
         }
 
     if wandb_config:
         for key in ['batch_size', 'learning_rate', 'num_epochs']:
             if key in wandb_config:
-                config[key] = wandb_config[key]
+                if key in wandb_config and (key != 'learning_rate' or ('optimizer' in wandb_config and wandb_config['optimizer'] != 'adafactor')):
+                    config[key] = wandb_config[key]
+                else:
+                    config[key] = None
     
     return config
 
