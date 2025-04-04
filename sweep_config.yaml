@@ -20,7 +20,7 @@ parameters:
   target_seq_len:
     values: [32, 64, 128]  # 4 values: min (autoencoder), mid-low, default, high
   num_epochs:
-    value: 10  # Fixed to save time; can be swept if needed
+    value: 2  # Fixed to save time; can be swept if needed
 
   # Autoencoder
   autoencoder_d_model:
