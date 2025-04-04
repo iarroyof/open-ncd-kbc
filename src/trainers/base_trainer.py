@@ -9,6 +9,8 @@ import wandb
 from tqdm import tqdm
 import gc
 import os
+import random
+import numpy as np
 from torch.amp import GradScaler, autocast
 
 # Assuming these imports are available in your project structure
@@ -19,7 +21,6 @@ from ..data.tsv_text2text_dataset import (
     collate_fn
 )
 from ..metrics.evaluation import TextGenerationMetrics
-from ..prediction_logging import PredictionLogger
 from ..models.factory import build_model
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
