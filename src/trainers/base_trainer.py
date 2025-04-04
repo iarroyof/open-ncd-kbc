@@ -41,6 +41,7 @@ class BaseTrainer:
         self.model_config = model_config.copy()
         self.training_config = training_config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.current_epoch = 0
 
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(exist_ok=True)
@@ -136,6 +137,7 @@ class BaseTrainer:
 
     def train_epoch(self, epoch: int) -> float:
         """Train for one epoch."""
+        self.current_epoch = epoch
         self.model.train()
         total_loss, valid_batches = 0.0, 0
         teacher_forcing_ratio = self.get_teacher_forcing_ratio(epoch)
@@ -187,46 +189,104 @@ class BaseTrainer:
         else:
             return max(0.0, 1.0 - (epoch / num_epochs))
 
-    def generate_samples(self, num_samples: int = 10) -> List[Dict[str, str]]:
-        """Generate a specified number of prediction samples from the validation set."""
+    def generate_seeded_samples(self, num_samples: int = 10, seed: int = 42) -> List[Dict[str, str]]:
+        """
+        Generate a specified number of prediction samples from the validation set using a fixed seed.
+        
+        Args:
+            num_samples (int): Number of samples to generate
+            seed (int): Random seed for reproducibility
+            
+        Returns:
+            List[Dict[str, str]]: List of dictionaries containing source, target, and prediction text
+        """
+        # Set random seeds for reproducibility
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+        
         self.model.eval()
         sample_predictions = []
         eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
-
+        
+        # Get total validation dataset size
+        total_samples = len(self.valid_dataset)
+        
+        # Generate random indices to sample from
+        if num_samples >= total_samples:
+            # If requesting more samples than available, use all samples
+            indices = list(range(total_samples))
+            random.shuffle(indices)
+            indices = indices[:num_samples]
+        else:
+            indices = random.sample(range(total_samples), num_samples)
+        
+        # Sort indices to access them in order for efficiency
+        indices.sort()
+        
+        # Create a dictionary to keep track of which indices we still need to process
+        remaining_indices = set(indices)
+        
         with torch.no_grad():
-            for batch in self.valid_loader:
-                if len(sample_predictions) >= num_samples:
-                    break
+            for batch_idx, batch in enumerate(self.valid_loader):
+                # Calculate which samples in this batch correspond to our target indices
+                batch_size = len(batch['source_text'])
+                batch_start_idx = batch_idx * self.training_config['batch_size']
+                batch_end_idx = batch_start_idx + batch_size
+                
+                # Find which indices we need from this batch
+                batch_indices_to_use = [
+                    i - batch_start_idx for i in indices 
+                    if i in remaining_indices and batch_start_idx <= i < batch_end_idx
+                ]
+                
+                # If no indices in this batch match our target indices, skip to next batch
+                if not batch_indices_to_use:
+                    continue
+                
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
+                
+                # Only run model if we have indices to process
                 outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
                 preds = outputs.argmax(dim=-1)
-
-                for i in range(preds.size(0)):
-                    if len(sample_predictions) >= num_samples:
-                        break
-                    src_trim = self.trim_sequence_at_eos(source_ids[i].cpu(), eos_token_id)
-                    tgt_trim = self.trim_sequence_at_eos(target_ids[i].cpu(), eos_token_id)
-                    pred_trim = self.trim_sequence_at_eos(preds[i].cpu(), eos_token_id)
-
+                
+                for batch_idx in batch_indices_to_use:
+                    global_idx = batch_start_idx + batch_idx
+                    remaining_indices.remove(global_idx)
+                    
+                    src_trim = self.trim_sequence_at_eos(source_ids[batch_idx].cpu(), eos_token_id)
+                    tgt_trim = self.trim_sequence_at_eos(target_ids[batch_idx].cpu(), eos_token_id)
+                    pred_trim = self.trim_sequence_at_eos(preds[batch_idx].cpu(), eos_token_id)
+                    
                     decoded_pred = self.train_dataset.tokenizer.decode(pred_trim)
                     decoded_target = self.train_dataset.tokenizer.decode(tgt_trim)
                     decoded_source = self.train_dataset.tokenizer.decode(src_trim)
-
+                    
                     if not decoded_pred.strip():
                         decoded_pred = "[EMPTY]"
-
+                    
+                    # Compute metrics for this sample
+                    metrics_result = self.metrics.compute_metrics(
+                        [torch.tensor(pred_trim)],
+                        [torch.tensor(tgt_trim)]
+                    )
+                    
+                    sample_bleu = metrics_result.get("bleu", 0.0)
+                    
                     sample_predictions.append({
                         'source': decoded_source.strip(),
                         'target': decoded_target.strip(),
-                        'prediction': decoded_pred.strip()
+                        'prediction': decoded_pred.strip(),
+                        'bleu': sample_bleu
                     })
-
-                    # Optional: Log to stdout
-                    print(f"Sample {len(sample_predictions)} - Source: {decoded_source.strip()}")
-                    print(f"Target: {decoded_target.strip()}")
-                    print(f"Prediction: {decoded_pred.strip()}\n")
-
+                
+                # If we've found all the samples we need, break
+                if not remaining_indices:
+                    break
+                
         return sample_predictions
 
     def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
@@ -241,29 +301,80 @@ class BaseTrainer:
         }
         torch.save(checkpoint, self.log_dir / f'checkpoint_epoch_{epoch}.pt')
 
-    def train(self):
-        """Train the model and log predictions only at the final epoch."""
+    def evaluate(self, epoch: int = None) -> Dict[str, float]:
+        """Evaluate the model on the validation set."""
+        self.model.eval()
+        total_loss = 0.0
+        all_predictions = []
+        all_targets = []
+        
+        with torch.no_grad():
+            for batch in tqdm(self.valid_loader, desc="Evaluating"):
+                source_ids = batch['source_text'].to(self.device)
+                target_ids = batch['target_text'].to(self.device)
+                target_ids = self.pad_or_trim(target_ids)
+                
+                with autocast(device_type="cuda"):
+                    outputs = self.model(src=source_ids, tgt=target_ids, teacher_forcing_ratio=0.0)
+                    loss = self.criterion(outputs.reshape(-1, outputs.size(-1)), target_ids.reshape(-1))
+                
+                total_loss += loss.item()
+                
+                # Process predictions for metrics
+                preds = outputs.argmax(dim=-1).cpu()
+                
+                eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
+                
+                for i in range(preds.size(0)):
+                    pred_trim = self.trim_sequence_at_eos(preds[i], eos_token_id)
+                    tgt_trim = self.trim_sequence_at_eos(target_ids[i].cpu(), eos_token_id)
+                    
+                    all_predictions.append(torch.tensor(pred_trim))
+                    all_targets.append(torch.tensor(tgt_trim))
+        
+        # Calculate metrics
+        metrics_results = self.metrics.compute_metrics(all_predictions, all_targets)
+        
+        # Add loss to metrics
+        metrics_results['val_loss'] = total_loss / len(self.valid_loader)
+        
+        # Log metrics
+        logging.info(f"Epoch {epoch if epoch is not None else 'N/A'} - Validation Metrics: {metrics_results}")
+        
+        if self.use_wandb:
+            if epoch is not None:
+                metrics_results['epoch'] = epoch
+            wandb.log(metrics_results)
+            
+        return metrics_results
+
+    def train(self, num_final_samples: int = 10, seed: int = 42):
+        """
+        Train the model and log predictions only at the final epoch.
+        
+        Args:
+            num_final_samples (int): Number of samples to log at the final epoch
+            seed (int): Random seed for sample selection
+        """
         best_metrics = {'val_loss': float('inf'), 'bleu': 0.0}
         num_epochs = self.training_config['num_epochs']
 
         for epoch in range(num_epochs):
             train_loss = self.train_epoch(epoch)
-            # Optional evaluation during training (not required for final predictions)
-            # val_metrics = self.evaluate(epoch)
+            val_metrics = self.evaluate(epoch)
+            
             if self.use_wandb:
                 wandb.log({"epoch": epoch, "train_loss": train_loss})
 
             # Log predictions only at the final epoch
             if epoch == num_epochs - 1:
-                final_samples = self.generate_samples(num_samples=10)
+                final_samples = self.generate_seeded_samples(num_samples=num_final_samples, seed=seed)
                 PredictionLogger.log_predictions(self, final_samples)
-                if self.use_wandb:
-                    wandb.log({"final_predictions": final_samples})
 
-            # Optional checkpointing (uncomment if needed)
-            # if val_metrics['val_loss'] < best_metrics['val_loss']:
-            #     best_metrics = val_metrics
-            #     self.save_checkpoint(epoch, val_metrics)
+            # Save checkpoint if we have better validation metrics
+            if val_metrics['val_loss'] < best_metrics['val_loss']:
+                best_metrics = val_metrics
+                self.save_checkpoint(epoch, val_metrics)
 
     def pad_or_trim(self, target_ids):
         """Pad or trim target IDs to match target sequence length."""
