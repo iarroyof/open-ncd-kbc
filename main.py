@@ -19,7 +19,6 @@ import socket
 workstation_name = socket.gethostname()
 logging.info("Workstation Name: %s", workstation_name)
 os.environ["WORKSTATION_NAME"] = workstation_name
-WB_PROJECT_NAME = "standard_models"
 
 # Global counter for round-robin GPU assignment
 current_gpu_index = 0
@@ -408,8 +407,8 @@ def main():
                         help='Run only evaluation on validation set')
     parser.add_argument('--checkpoint_path', type=str, default=None,
                         help='Path to model checkpoint for evaluation')
-    parser.add_argument('--sweep', action='store_true',
-                        help='Run W&B sweep instead of single run')
+    parser.add_argument('--project', type=str, default="standard_models",
+                        help='Run W&B sweep as part of a given project instead of the default.')
     parser.add_argument('--yaml', type=str, default=None,
                         help='Run W&B sweep yaml file')
     parser.add_argument('--debug_log_predictions', action='store_true',
@@ -433,7 +432,7 @@ def main():
                 yaml_file = args.yaml
             with open(yaml_file, 'r') as f:
                 sweep_config = yaml.safe_load(f)
-            sweep_id = wandb.sweep(sweep_config, project=WB_PROJECT_NAME)
+            sweep_id = wandb.sweep(sweep_config, project=args.project)
             for attempt in range(3):
                 try:
                     wandb.agent(sweep_id, function=train_with_wandb, count=50)
