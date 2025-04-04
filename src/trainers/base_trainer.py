@@ -256,7 +256,7 @@ class BaseTrainer:
             # Log predictions only at the final epoch
             if epoch == num_epochs - 1:
                 final_samples = self.generate_samples(num_samples=10)
-                PredictionLogger.log_final_predictions(self, final_samples)
+                PredictionLogger.log_predictions(self, final_samples)
                 if self.use_wandb:
                     wandb.log({"final_predictions": final_samples})
 
