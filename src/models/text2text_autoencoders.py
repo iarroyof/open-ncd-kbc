@@ -240,7 +240,7 @@ class ConvS2S(nn.Module):
             num_layers=num_layers,
             kernel_size=kernel_size,
             dropout=dropout,
-            max_positions=self.source_seq_len,
+            max_positions=self.target_seq_len,
             use_attention=use_attention
         )
 
