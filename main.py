@@ -17,31 +17,6 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segmen
 import torch
 import socket
 
-workstation_name = os.environ.get("WORKSTATION_NAME", socket.gethostname()).lower()
-logging.info("Workstation Name: %s", workstation_name)
-
-def estimate_vram_usage(config: Dict) -> float:
-    model_type = config['model_type']
-    batch_size = config['batch_size']
-    target_seq_len = config['target_seq_len']
-    token_mem = 0.0001
-    if model_type == 'autoencoder':
-        d_model = config['autoencoder_d_model']
-        num_layers = config['autoencoder_num_encoder_layers']
-    elif model_type == 'attention_gru':
-        d_model = config['attention_gru_embed_size']
-        num_layers = config['attention_gru_num_layers']
-    elif model_type == 'attention_lstm':
-        d_model = config['attention_lstm_embed_size']
-        num_layers = config['attention_lstm_num_layers']
-    elif model_type == 'transformer':
-        d_model = config['transformer_d_model']
-        num_layers = config['transformer_num_encoder_layers'] + config['transformer_num_decoder_layers']
-    elif model_type == 'conv_s2s':
-        d_model = config['conv_s2s_embed_dim']
-        num_layers = config['conv_s2s_num_layers']
-    vram = batch_size * target_seq_len * d_model * num_layers * token_mem + 5
-    return vram
 
 def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
     base_config = {
@@ -311,11 +286,12 @@ def main():
                         help='Enable frequent prediction logging for debugging purposes')
     
     args, unknown = parser.parse_known_args()
-    
+    workstation_name = os.environ.get("WORKSTATION_NAME", socket.gethostname())
+    logging.info("Workstation Name: %s", workstation_name)
     run_config = {
         "parent_log_dir": Path(args.log_dir),
         "debug_log_predictions": args.debug_log_predictions,
-        "workstation_name": os.environ.get("WORKSTATION_NAME", "santo").lower()
+        "workstation_name": workstation_name
     }
     
     Path(args.cache_dir).mkdir(exist_ok=True)
