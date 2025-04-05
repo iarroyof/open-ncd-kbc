@@ -17,19 +17,14 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segmen
 import torch
 import socket
 
-workstation_name = socket.gethostname()
+workstation_name = os.environ.get("WORKSTATION_NAME", socket.gethostname()).lower()
 logging.info("Workstation Name: %s", workstation_name)
-os.environ["WORKSTATION_NAME"] = workstation_name
-
-# Global counter for round-robin GPU assignment
-current_gpu_index = 0
 
 def estimate_vram_usage(config: Dict) -> float:
     model_type = config['model_type']
     batch_size = config['batch_size']
     target_seq_len = config['target_seq_len']
     token_mem = 0.0001
-    
     if model_type == 'autoencoder':
         d_model = config['autoencoder_d_model']
         num_layers = config['autoencoder_num_encoder_layers']
@@ -45,46 +40,8 @@ def estimate_vram_usage(config: Dict) -> float:
     elif model_type == 'conv_s2s':
         d_model = config['conv_s2s_embed_dim']
         num_layers = config['conv_s2s_num_layers']
-    
     vram = batch_size * target_seq_len * d_model * num_layers * token_mem + 5
     return vram
-
-def get_available_gpus() -> list:
-    try:
-        num_gpus = torch.cuda.device_count()
-        available_gpus = list(range(num_gpus))
-        logging.info(f"Detected {num_gpus} available GPUs in container: {available_gpus}")
-        return available_gpus
-    except Exception as e:
-        logging.warning(f"GPU detection failed: {str(e)}. Defaulting to CPU.")
-        return []
-
-def assign_gpu(config: Dict, available_gpus: list, workstation_id: int) -> int:
-    global current_gpu_index
-    vram = estimate_vram_usage(config)
-    logging.info(f"Estimated VRAM usage: {vram:.2f} GB")
-    
-    gpu_capacities = {0: 24, 1: 24, 2: 24, 3: 24, 4: 48, 5: 48}
-    
-    if workstation_id == 1:  # Santo
-        base_gpus = [0, 1]
-    elif workstation_id == 2:  # Blue-Demon
-        base_gpus = [2, 3]
-    elif workstation_id == 3:  # Lizmark
-        base_gpus = [4, 5]
-    else:
-        raise ValueError(f"Invalid workstation_id: {workstation_id}")
-    
-    viable_gpus = [gpu for gpu in available_gpus if base_gpus[gpu] in gpu_capacities and vram <= gpu_capacities[base_gpus[gpu]]]
-    
-    if not viable_gpus:
-        logging.warning(f"No viable GPU for VRAM {vram:.2f} GB. Defaulting to first available.")
-        gpu_id = base_gpus[0] if available_gpus else base_gpus[0]
-    else:
-        gpu_id = base_gpus[viable_gpus[current_gpu_index % len(viable_gpus)]]
-        current_gpu_index += 1
-    logging.info(f"Dynamically assigned GPU {gpu_id} from available GPUs")
-    return gpu_id
 
 def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
     base_config = {
@@ -148,7 +105,6 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
         }
     else:
         raise ValueError(f"Unknown model type: {model_type}")
-
     if wandb_config:
         prefix = f"{model_type}_"
         for key in config:
@@ -159,7 +115,6 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
             config['target_seq_len'] = wandb_config['target_seq_len']
         if 'source_seq_len' in wandb_config:
             config['source_seq_len'] = wandb_config['source_seq_len']
-
     return config
 
 def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
@@ -207,12 +162,10 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
             **base_config,
             'learning_rate': None if base_config['optimizer'] == 'adafactor' else 1e-3
         }
-
     if wandb_config:
         for key in ['batch_size', 'learning_rate', 'num_epochs']:
             if key in wandb_config:
                 config[key] = wandb_config[key]
-    
     return config
 
 def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
@@ -226,8 +179,7 @@ def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
     prefix = f"{model_type}_"
     for key, value in full_config.items():
         if key.startswith(prefix):
-            new_key = key[len(prefix):]
-            filtered[new_key] = value
+            filtered[key[len(prefix):]] = value
     return filtered
 
 def get_trainer_class(model_type: str):
@@ -279,9 +231,10 @@ def setup_logging(log_dir: str):
 
 def train_with_wandb(run_config: Dict):
     """
-    run_config is a dictionary that includes:
-        - parent_log_dir: Path object to the parent log directory.
-        - debug_log_predictions: bool flag.
+    The run_config dictionary includes:
+      - parent_log_dir: Path object for the parent log directory.
+      - debug_log_predictions: Boolean flag.
+      - workstation_name: The workstation name.
     """
     os.environ["WANDB_SYSTEM_METRICS"] = (
         "system.cpu,system.gpu.0.memory,system.gpu.1.memory,"
@@ -295,28 +248,7 @@ def train_with_wandb(run_config: Dict):
         filtered_config = filter_wandb_config(dict(config), model_type)
         wandb.config.update(filtered_config, allow_val_change=True)
         
-        workstation_name = os.environ.get('WORKSTATION_NAME', 'santo')
-        cuda_visible_devices = os.getenv('CUDA_VISIBLE_DEVICES')
-        if cuda_visible_devices is not None:
-            logging.info(f"CUDA_VISIBLE_DEVICES is set to: {cuda_visible_devices}")
-            gpu_id = cuda_visible_devices
-        else:
-            logging.info("CUDA_VISIBLE_DEVICES is not set. Assigning automatically...")
-            if workstation_name == 'lizmark':
-                workstation_id = 3
-            elif workstation_name == 'blue-demon':
-                workstation_id = 2
-            else:
-                workstation_id = 1
-            available_gpus = get_available_gpus()
-            if not available_gpus:
-                logging.error("No GPUs available in container. Exiting.")
-                return
-            gpu_id = assign_gpu(config, available_gpus, workstation_id)
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-        
-        logging.info(f"Assigned run to GPU {gpu_id} (Workstation {workstation_name}) with VRAM {estimate_vram_usage(config):.2f} GB")
-        
+        logging.info(f"Using workstation: {run_config['workstation_name']}")
         train_path = config['data_path'][0]
         valid_path = config['data_path'][1]
         
@@ -325,7 +257,7 @@ def train_with_wandb(run_config: Dict):
         log_dir = parent_log_dir / sweep_id / wandb.run.id
         log_dir.mkdir(parents=True, exist_ok=True)
         setup_logging(str(log_dir))
-        logging.info(f"Starting sweep run {wandb.run.id} (sweep: {sweep_id}) with model type: {model_type} on GPU {gpu_id}")
+        logging.info(f"Starting sweep run {wandb.run.id} (sweep: {sweep_id}) with model type: {model_type}")
         
         model_config = get_model_config(model_type, config)
         training_config = get_training_config(model_type, config)
@@ -372,18 +304,18 @@ def main():
     parser.add_argument('--checkpoint_path', type=str, default=None,
                         help='Path to model checkpoint for evaluation')
     parser.add_argument('--project', type=str, default="standard_models",
-                        help='Run W&B sweep as part of a given project instead of the default.')
+                        help='W&B project name')
     parser.add_argument('--yaml', type=str, default=None,
-                        help='Run W&B sweep yaml file')
+                        help='W&B sweep yaml file')
     parser.add_argument('--debug_log_predictions', action='store_true',
                         help='Enable frequent prediction logging for debugging purposes')
     
     args, unknown = parser.parse_known_args()
     
-    # Prepare the run_config dictionary (more modular design).
     run_config = {
         "parent_log_dir": Path(args.log_dir),
-        "debug_log_predictions": args.debug_log_predictions
+        "debug_log_predictions": args.debug_log_predictions,
+        "workstation_name": os.environ.get("WORKSTATION_NAME", "santo").lower()
     }
     
     Path(args.cache_dir).mkdir(exist_ok=True)
@@ -392,23 +324,19 @@ def main():
     try:
         if args.use_wandb:
             if not args.yaml:
-                workstation_name = os.environ.get("WORKSTATION_NAME", "santo").lower().replace('-', '_')
-                yaml_file = f'sweep_config_{workstation_name}.yaml'
+                yaml_file = f'sweep_config_{run_config["workstation_name"]}.yaml'
             else:
                 yaml_file = args.yaml
             with open(yaml_file, 'r') as f:
                 sweep_config = yaml.safe_load(f)
             sweep_id = wandb.sweep(sweep_config, project=args.project)
-            
-            # Then, for the wandb agent, use partial:
-            agent_function = partial(train_with_wandb, run_config)
-
+            agent_fn = partial(train_with_wandb, run_config)
             for attempt in range(3):
                 try:
-                    wandb.agent(sweep_id, function=agent_function, count=50)
+                    wandb.agent(sweep_id, function=agent_fn, count=50)
                     break
                 except Exception as e:
-                    logging.error(f"Sweep attempt {attempt + 1} failed on {workstation_name}: {str(e)}. Retrying in 60 seconds...")
+                    logging.error(f"Sweep attempt {attempt + 1} failed on {run_config['workstation_name']}: {str(e)}. Retrying in 60 seconds...")
                     time.sleep(60)
         else:
             setup_logging(args.log_dir)
@@ -439,6 +367,7 @@ def main():
                 log_dir=args.log_dir,
                 use_wandb=args.use_wandb
             )
+            
             if args.eval_only:
                 logging.info("Running evaluation...")
                 metrics = trainer.evaluate()
