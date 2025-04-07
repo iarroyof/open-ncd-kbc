@@ -95,7 +95,7 @@ parameters:
   conv_s2s_num_layers:
     values: [2, 4, 6]  # 3 values: shallow, mid, deep
   conv_s2s_use_attention:
-    values: [true]  # 2 values: binary toggle
+    values: [true, false]  # 2 values: binary toggle
   # Less critical parameters
   conv_s2s_kernel_size:
     value: 3  # Fixed: standard from paper
