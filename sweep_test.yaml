@@ -21,7 +21,9 @@ parameters:
   target_seq_len:
     values: [32] # [16, 64, 128]  # 4 values: min (autoencoder), mid-low, default, high
   num_epochs:
-    value: 5  # Fixed to save time; can be swept if needed
+    value: 3  # Fixed to save time; can be swept if needed
+  optimizer:
+    value: 'adafactor'
 
   # Transformer (with blocks)
   transformer_d_model:
