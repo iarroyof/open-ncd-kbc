@@ -71,20 +71,15 @@ class ConvS2SBlock(nn.Module):
         return self.dropout(x)
 
 class ConvS2SAttention(nn.Module):
-    """Multi-step attention as described in the paper"""
     def __init__(self, decoder_dim: int, encoder_dim: int, hidden_dim: int):
         super().__init__()
         self.decoder_proj = nn.Linear(decoder_dim, hidden_dim, bias=False)
         self.encoder_proj = nn.Linear(encoder_dim, hidden_dim, bias=False)
         self.output_proj = nn.Linear(hidden_dim, 1, bias=False)
+        self.context_proj = nn.Linear(encoder_dim, decoder_dim, bias=False)  # New projection
         self.scaling = 1.0 / math.sqrt(hidden_dim)
         
-    def forward(
-        self,
-        decoder_state: torch.Tensor,
-        encoder_out: torch.Tensor,
-        encoder_padding_mask: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, decoder_state: torch.Tensor, encoder_out: torch.Tensor, encoder_padding_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         decoder_hidden = self.decoder_proj(decoder_state)
         encoder_hidden = self.encoder_proj(encoder_out)
         decoder_hidden = decoder_hidden.unsqueeze(2)
@@ -94,7 +89,8 @@ class ConvS2SAttention(nn.Module):
         if encoder_padding_mask is not None:
             attn_scores = attn_scores.masked_fill(encoder_padding_mask.unsqueeze(1), float('-inf'))
         attn_weights = F.softmax(attn_scores, dim=-1)
-        context = torch.bmm(attn_weights, encoder_out)
+        context = torch.bmm(attn_weights, encoder_out)  # (batch_size, tgt_len, encoder_dim)
+        context = self.context_proj(context)  # (batch_size, tgt_len, decoder_dim)
         return context, attn_weights
 
 class ConvS2SEncoder(nn.Module):
