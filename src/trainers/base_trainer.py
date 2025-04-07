@@ -22,7 +22,7 @@ from ..data.tsv_text2text_dataset import (
 )
 from ..metrics.evaluation import TextGenerationMetrics
 from ..models.factory import build_model
-from ..trainers.prediction_logging import PredictionLogger
+from ..prediction_logging import PredictionLogger
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
