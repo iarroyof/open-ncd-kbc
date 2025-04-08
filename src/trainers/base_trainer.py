@@ -126,7 +126,7 @@ class BaseTrainer:
             label_smoothing=training_config.get('label_smoothing', 0.05)
         )
 
-        self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
+        self.metrics = TextGenerationMetrics(self.valid_dataset.tokenizer)
         self.use_wandb = use_wandb
 
     def trim_sequence_at_eos(self, seq, eos_token_id):
