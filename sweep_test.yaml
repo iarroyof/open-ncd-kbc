@@ -13,7 +13,7 @@ parameters:
   
   # Key shared hyperparameters (3-5 values for critical ones)
   batch_size:
-    values: [32] #[16, 64, 128]  # 4 values: min, mid-low, mid-high, max
+    values: [128] #[16, 64, 128]  # 4 values: min, mid-low, mid-high, max
   learning_rate:
     values: [1e-3]  # 4 values: low, mid-low, mid-high, high
   source_seq_len:
@@ -27,13 +27,13 @@ parameters:
 
   # Transformer (with blocks)
   transformer_d_model:
-    values: [512] # [256, 1024, 2048]  # 3 values: low, mid, high
+    values: [1024] # [256, 1024, 2048]  # 3 values: low, mid, high
   transformer_nhead:
-    values: [8] # [4, 8, 16]  # 3 values: low, mid, high
+    values: [16] # [4, 8, 16]  # 3 values: low, mid, high
   transformer_num_encoder_layers:  # Key block parameter
-    values: [1] # [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
+    values: [4] # [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
   transformer_num_decoder_layers:  # Key block parameter
-    values: [1] # [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
+    values: [4] # [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
   transformer_dim_feedforward:
     values: [2048] # [512, 1024, 4096]  # Less critical, broader range for flexibility
   # Less critical parameters
