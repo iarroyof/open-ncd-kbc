@@ -24,6 +24,8 @@ parameters:
     values: [32]
   num_epochs:
     value: 10
+  optimizer:
+    value: 'adafactor'
 
   autoencoder_d_model:
     values: [2048]
