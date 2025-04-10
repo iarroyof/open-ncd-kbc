@@ -315,6 +315,16 @@ def train_with_wandb(run_config: Dict):
         model_type = config['model_type']
         filtered_config = filter_wandb_config(dict(config), model_type)
         wandb.config.update(filtered_config, allow_val_change=True)
+        if torch.cuda.is_available():
+                current_device = torch.cuda.current_device()
+                total_memory = torch.cuda.get_device_properties(current_device).total_memory
+                total_memory_gb = total_memory / (1024 ** 3)
+                memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
+                fraction = estimate_memory_fraction(**memory_kwargs)
+                torch.cuda.set_per_process_memory_fraction(fraction, device=current_device)                
+                logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
+        else:
+                print("CUDA not available.")
         
         logging.info(f"Using workstation: {run_config['workstation_name']}")
         train_path = config['data_path'][0]
@@ -400,17 +410,6 @@ def main():
                 sweep_config = yaml.safe_load(f)
             sweep_id = wandb.sweep(sweep_config, project=args.project)
             agent_fn = partial(train_with_wandb, run_config)
-            if torch.cuda.is_available():
-                current_device = torch.cuda.current_device()
-                total_memory = torch.cuda.get_device_properties(current_device).total_memory
-                total_memory_gb = total_memory / (1024 ** 3)
-                memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
-                fraction = estimate_memory_fraction(**memory_kwargs)
-                torch.cuda.set_per_process_memory_fraction(fraction, device=current_device)                
-                logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
-            else:
-                print("CUDA not available.")
-
 
             for attempt in range(3):
                 try:
