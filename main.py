@@ -319,6 +319,7 @@ def train_with_wandb(run_config: Dict):
             total_memory_gb = 24 if run_config["workstation_name"] != 'lizmark' else 48
             memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
             fraction = estimate_memory_fraction(**memory_kwargs)
+            current_device = os.environ["CUDA_VISIBLE_DEVICES"] 
             torch.cuda.set_per_process_memory_fraction(fraction, device=current_device)                
             logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
         except (RuntimeError, AssertionError, AttributeError) as e:
