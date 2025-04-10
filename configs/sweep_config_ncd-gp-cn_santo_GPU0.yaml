@@ -23,6 +23,8 @@ parameters:
     values: [16]
   num_epochs:
     value: 10
+  optimizer:
+    value: 'adafactor'
 
   attention_gru_embed_size:
     values: [512, 1024]
