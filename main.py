@@ -13,11 +13,104 @@ from src.trainers.base_trainer import BaseTrainer
 from src.data.tsv_text2text_dataset import ColumnConfig
 from src.prediction_logging import PredictionLogger
 
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segments:True"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64"
 import torch
 import socket
 
 
+import math
+
+def estimate_memory_fraction(
+    model_type: str,
+    num_layers: int,
+    hidden_size: int,
+    seq_len_input: int,
+    seq_len_output: int,
+    batch_size: int,
+    mixed_precision: bool = True,
+    optimizer: str = "adafactor",
+    gpu_total_memory_gb: float = 24.0,
+    safety_buffer: float = 0.05
+) -> float:
+    dtype_size = 2 if mixed_precision else 4  # bytes per element
+    vocab_size = 30000  # assume standard
+    num_heads = max(1, hidden_size // 64)
+
+    # Estimate params: encoder + decoder layers
+    if model_type.lower() == "transformer":
+        params = 12 * hidden_size**2 * num_layers
+    elif model_type.lower() in {"attention_gru", "attention_lstm"}:
+        params = 6 * hidden_size**2 * num_layers
+    elif model_type.lower() in ['autoencoder', 'conv_s2s']:
+        params = 4 * hidden_size**2 * num_layers
+    else:
+        logging.error(f"Model type {model_type} is not implemented, so we are going to terminate...")
+        exit()
+
+    param_mem = params * dtype_size / 1e9  # in GB
+
+    # Activation memory (forward + backward)
+    act_tokens = batch_size * (seq_len_input + seq_len_output)
+    act_mem = act_tokens * hidden_size * num_layers * dtype_size * 2 / 1e9  # in GB
+
+    # Optimizer memory
+    if optimizer.lower() == "adafactor":
+        opt_mem = 0.5 * param_mem
+    else:  # e.g., Adam
+        opt_mem = 2 * param_mem
+
+    # Total estimated
+    total_mem = param_mem + act_mem + opt_mem
+
+    # Leave headroom
+    total_mem *= (1 + safety_buffer)
+
+    return min(round(total_mem / gpu_total_memory_gb, 2), 0.98)  # Cap at 98%
+
+def get_memory_estimate_kwargs(config, total_vram=24, safety_buff=0.05):
+    model_type = config["model_type"].lower()
+    base_kwargs = {
+        "model_type": model_type,
+        "seq_len_input": config["source_seq_len"],
+        "seq_len_output": config["target_seq_len"],
+        "batch_size": config["batch_size"],
+        "mixed_precision": config["mixed_precision"] if "mixed_precision" in config else True,
+        "optimizer": config["optimizer"],
+        "gpu_total_memory_gb": total_vram,
+        "safety_buffer": safety_buff,
+    }
+
+    # Map per-model architecture keys
+    if model_type == "transformer":
+        base_kwargs.update({
+            "hidden_size": config["transformer_d_model"],
+            "num_layers": config["transformer_num_encoder_layers"] + config["transformer_num_decoder_layers"],
+        })
+    elif model_type == "attention_gru":
+        base_kwargs.update({
+            "hidden_size": config["attention_gru_hidden_size"],
+            "num_layers": config["attention_gru_num_layers"],
+        })
+    elif model_type == "attention_lstm":
+        base_kwargs.update({
+            "hidden_size": config["attention_lstm_hidden_size"],
+            "num_layers": config["attention_lstm_num_layers"],
+        })
+    elif model_type == "conv_s2s":
+        base_kwargs.update({
+            "hidden_size": config["conv_s2s_hidden_dim"],
+            "num_layers": config["conv_s2s_num_layers"],
+        })
+    elif model_type == "autoencoder":
+        base_kwargs.update({
+            "hidden_size": config["autoencoder_hidden_dim"],
+            "num_layers": config["autoencoder_num_encoder_layers"],  # Assuming symmetrical AE
+        })
+    else:
+        raise ValueError(f"Unknown model_type '{model_type}'")
+
+    return base_kwargs
+    
 def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
     base_config = {
         'vocab_size': 32000,
@@ -307,6 +400,18 @@ def main():
                 sweep_config = yaml.safe_load(f)
             sweep_id = wandb.sweep(sweep_config, project=args.project)
             agent_fn = partial(train_with_wandb, run_config)
+            if torch.cuda.is_available():
+                current_device = torch.cuda.current_device()
+                total_memory = torch.cuda.get_device_properties(device).total_memory
+                total_memory_gb = total_memory / (1024 ** 3)
+                memory_kwargs = get_memory_estimate_kwargs(config, total_vram=total_memory_gb, safety_buff=0.05)
+                fraction = estimate_memory_fraction(**memory_kwargs)
+                torch.cuda.set_per_process_memory_fraction(fraction, device=current_device)                
+                logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
+            else:
+                print("CUDA not available.")
+
+
             for attempt in range(3):
                 try:
                     wandb.agent(sweep_id, function=agent_fn, count=50)
