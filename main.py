@@ -315,16 +315,14 @@ def train_with_wandb(run_config: Dict):
         model_type = config['model_type']
         filtered_config = filter_wandb_config(dict(config), model_type)
         wandb.config.update(filtered_config, allow_val_change=True)
-        if torch.cuda.is_available():
-                current_device = torch.cuda.current_device()
-                total_memory = torch.cuda.get_device_properties(current_device).total_memory
-                total_memory_gb = total_memory / (1024 ** 3)
-                memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
-                fraction = estimate_memory_fraction(**memory_kwargs)
-                torch.cuda.set_per_process_memory_fraction(fraction, device=current_device)                
-                logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
-        else:
-                print("CUDA not available.")
+        try:
+            total_memory_gb 24 if run_config["workstation_name"] != 'lizmark' else 48
+            memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
+            fraction = estimate_memory_fraction(**memory_kwargs)
+            torch.cuda.set_per_process_memory_fraction(fraction, device=current_device)                
+            logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
+        except:
+            print("CUDA not available.")
         
         logging.info(f"Using workstation: {run_config['workstation_name']}")
         train_path = config['data_path'][0]
