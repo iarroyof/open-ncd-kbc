@@ -321,8 +321,14 @@ def train_with_wandb(run_config: Dict):
             fraction = estimate_memory_fraction(**memory_kwargs)
             torch.cuda.set_per_process_memory_fraction(fraction, device=current_device)                
             logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
-        except:
-            print("CUDA not available.")
+        except (RuntimeError, AssertionError, AttributeError) as e:
+            logging.warning(f"[WARN] Failed to set memory fraction — likely due to early CUDA iitialization: {e}")
+        except ImportError as e:
+            logging.error(f"[ERROR] Torch or wandb not found: {e}")
+        except KeyError as e:
+            logging.error(f"[ERROR] Missing config key: {e}")
+        except Exception as e:
+            logging.exception("[ERROR] Unexpected exception during CUDA memory fraction setup")
         
         logging.info(f"Using workstation: {run_config['workstation_name']}")
         train_path = config['data_path'][0]
