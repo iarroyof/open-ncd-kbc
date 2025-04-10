@@ -402,7 +402,7 @@ def main():
             agent_fn = partial(train_with_wandb, run_config)
             if torch.cuda.is_available():
                 current_device = torch.cuda.current_device()
-                total_memory = torch.cuda.get_device_properties(device).total_memory
+                total_memory = torch.cuda.get_device_properties(current_device).total_memory
                 total_memory_gb = total_memory / (1024 ** 3)
                 memory_kwargs = get_memory_estimate_kwargs(config, total_vram=total_memory_gb, safety_buff=0.05)
                 fraction = estimate_memory_fraction(**memory_kwargs)
