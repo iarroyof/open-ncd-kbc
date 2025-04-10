@@ -81,7 +81,7 @@ class BaseTrainer:
             shuffle=True,
             collate_fn=collate_fn,
             num_workers=training_config.get('num_workers', 2),
-            pin_memory=True,
+            pin_memory=False,
             prefetch_factor=1,
             persistent_workers=False
         )
@@ -92,7 +92,7 @@ class BaseTrainer:
             shuffle=False,
             collate_fn=collate_fn,
             num_workers=training_config.get('num_workers', 2),
-            pin_memory=True,
+            pin_memory=False,
             prefetch_factor=1,
             persistent_workers=False
         )
