@@ -320,7 +320,7 @@ def train_with_wandb(run_config: Dict):
             memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
             fraction = estimate_memory_fraction(**memory_kwargs)
             torch.cuda.set_per_process_memory_fraction(fraction, device=0)                
-            logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
+            logging.info(f"The current CUDA device was assigned {fraction}% GPU memory to the current process.")
         except (RuntimeError, AssertionError, AttributeError) as e:
             logging.warning(f"[WARN] Failed to set memory fraction — likely due to early CUDA iitialization: {e}")
         except ImportError as e:
