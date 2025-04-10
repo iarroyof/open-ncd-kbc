@@ -404,7 +404,7 @@ def main():
                 current_device = torch.cuda.current_device()
                 total_memory = torch.cuda.get_device_properties(current_device).total_memory
                 total_memory_gb = total_memory / (1024 ** 3)
-                memory_kwargs = get_memory_estimate_kwargs(config, total_vram=total_memory_gb, safety_buff=0.05)
+                memory_kwargs = get_memory_estimate_kwargs(sweep_config, total_vram=total_memory_gb, safety_buff=0.05)
                 fraction = estimate_memory_fraction(**memory_kwargs)
                 torch.cuda.set_per_process_memory_fraction(fraction, device=current_device)                
                 logging.info(f"The current CUDA device index: {current_device} was assigned {fraction}% GPU memory to the current process.")
