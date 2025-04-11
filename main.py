@@ -389,6 +389,8 @@ def main():
                         help='W&B project name')
     parser.add_argument('--yaml', type=str, default=None,
                         help='W&B sweep yaml file')
+    parser.add_argument('--sweep', type=str, default=None,
+                        help='W&B sweep id')
     parser.add_argument('--debug_log_predictions', action='store_true',
                         help='Enable frequent prediction logging for debugging purposes')
     
@@ -412,12 +414,15 @@ def main():
                 yaml_file = args.yaml
             with open(yaml_file, 'r') as f:
                 sweep_config = yaml.safe_load(f)
-            sweep_id = wandb.sweep(sweep_config, project=args.project)
+            if args.sweep:
+                sweep_id = args.sweep
+            else:
+                sweep_id = wandb.sweep(sweep_config, project=args.project)
             agent_fn = partial(train_with_wandb, run_config)
 
             for attempt in range(3):
                 try:
-                    wandb.agent(sweep_id, function=agent_fn, count=50)
+                    wandb.agent(sweep_id, function=agent_fn)
                     break
                 except Exception as e:
                     logging.error(f"Sweep attempt {attempt + 1} failed on {run_config['workstation_name']}: {str(e)}. Retrying in 60 seconds...")
