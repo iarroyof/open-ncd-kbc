@@ -440,16 +440,14 @@ def main():
             train_path, val_path = ast.literal_eval(args.data_path)
             train_configs, valid_configs = setup_data_configs(train_path, val_path)
             
-            TrainerClass = get_trainer_class(args.model_type)
-            trainer = TrainerClass(
+            trainer = BaseTrainer(
+                model_type=model_type,
                 model_config=model_config,
                 training_config=training_config,
                 train_configs=train_configs,
                 valid_configs=valid_configs,
-                tokenizer_path=args.tokenizer_path,
-                cache_dir=args.cache_dir,
-                log_dir=args.log_dir,
-                use_wandb=args.use_wandb
+                log_dir=str(log_dir),
+                use_wandb=True
             )
             
             if args.eval_only:
