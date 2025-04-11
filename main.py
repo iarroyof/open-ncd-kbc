@@ -379,7 +379,7 @@ def main():
                         help='Directory for logs and checkpoints inside container')
     parser.add_argument('--tokenizer_path', type=str, default=None,
                         help='Path to pretrained tokenizer (optional)')
-    parser.add_argument('--use_wandb', action='store_true',
+    parser.add_argument('--avoid_wandb', action='store_true',
                         help='Use Weights & Biases logging and sweeps')
     parser.add_argument('--eval_only', action='store_true',
                         help='Run only evaluation on validation set')
@@ -405,7 +405,7 @@ def main():
     Path(args.log_dir).mkdir(exist_ok=True)
     
     try:
-        if args.use_wandb:
+        if not args.avoid_wandb:
             if not args.yaml:
                 yaml_file = f'sweep_config_{run_config["workstation_name"]}.yaml'
             else:
@@ -447,7 +447,7 @@ def main():
                 train_configs=train_configs,
                 valid_configs=valid_configs,
                 log_dir=str(args.log_dir),
-                use_wandb=True
+                use_wandb=False
             )
             
             if args.eval_only:
