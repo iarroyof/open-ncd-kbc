@@ -441,12 +441,12 @@ def main():
             train_configs, valid_configs = setup_data_configs(train_path, val_path)
             
             trainer = BaseTrainer(
-                model_type=model_type,
+                model_type=args.model_type,
                 model_config=model_config,
                 training_config=training_config,
                 train_configs=train_configs,
                 valid_configs=valid_configs,
-                log_dir=str(log_dir),
+                log_dir=str(args.log_dir),
                 use_wandb=True
             )
             
