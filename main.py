@@ -286,8 +286,11 @@ def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
         if key.startswith(prefix):
             filtered[key[len(prefix):]] = value
     if full_config['optimizer'] == 'adafactor':
-        del filtered['learning_rate']
-
+        try:
+            del filtered['learning_rate']
+        except KeyError as e:
+            logging.warning(f"[WARN: {e}] No learning rate given to sweep, but using default; optimizer is {full_config['optimizer']}")
+            
     return filtered
 
 def get_trainer_class(model_type: str):
