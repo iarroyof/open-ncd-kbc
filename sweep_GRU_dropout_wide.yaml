@@ -1,7 +1,7 @@
 # sweep_GRU_dropout_wide.yaml
 program: main.py
 method: bayes  # Bayesian optimization for hyperparameter search
-name: GRU_test
+name: GRU_dropout_wide
 metric:
   name: val_loss
   goal: minimize
