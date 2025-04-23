@@ -239,7 +239,7 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
 def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
     filtered = {}
     generic_keys = ['model_type', 'data_path', 'batch_size', 'learning_rate',
-                    'target_seq_len', 'source_seq_len', 'num_epochs',
+                    'target_seq_len', 'source_seq_len', 'num_epochs', 'dropout',
                     'log_frequency', 'prediction_log_freq', 'prediction_samples', 'final_samples']
     for key in generic_keys:
         if key in full_config:
