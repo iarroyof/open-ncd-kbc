@@ -9,7 +9,7 @@ parameters:
   model_type:
     values: ['attention_gru'] #['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s']
   data_path:
-    value: ['data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv'] #['data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'] #  
+    value: ['data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'] #  
   
   # Key shared hyperparameters (3-5 values for critical ones)
   batch_size:
@@ -27,7 +27,7 @@ parameters:
   dropout:
     distribution: 'uniform'
     min: 0.0
-    max: 0.7
+    max: 0.95
 
   # Attention GRU
   attention_gru_embed_size:
