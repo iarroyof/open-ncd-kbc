@@ -1,4 +1,4 @@
-# sweep_GRU_test.yaml
+# sweep_GRU_dropout_wide.yaml
 program: main.py
 method: bayes  # Bayesian optimization for hyperparameter search
 name: GRU_test
