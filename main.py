@@ -235,6 +235,43 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
 
     return config
 
+def filter_sweep_config(sweep_config: Dict, model_type: str) -> Dict:
+    """Filter wandb sweep configuration to include only relevant parameters for the selected model."""
+    filtered = copy.deepcopy(sweep_config)  # Make a deep copy to avoid modifying the original
+    
+    # Keep method, metric, early_terminate, etc.
+    
+    # Filter parameters section
+    if 'parameters' in filtered:
+        parameters = filtered['parameters']
+        keys_to_remove = []
+        
+        # Mark parameters that don't match the model type
+        for key in parameters:
+            # Keep generic parameters
+            if key in ['model_type', 'data_path', 'batch_size', 'num_epochs', 'dropout']:
+                continue
+                
+            # Keep parameters with matching prefix
+            if key.startswith(f"{model_type}_"):
+                continue
+                
+            # Mark other model-specific parameters for removal
+            if any(key.startswith(prefix) for prefix in ['attention_gru_', 'transformer_', 'lstm_', 'conv_s2s_']):
+                keys_to_remove.append(key)
+        
+        # Remove marked parameters
+        for key in keys_to_remove:
+            del parameters[key]
+            
+        # Ensure model_type is fixed to the selected type
+        if 'model_type' in parameters:
+            parameters['model_type'] = {'value': model_type}
+        else:
+            parameters['model_type'] = {'value': model_type}
+            
+    return filtered
+    
 def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
     filtered = {}
     generic_keys = ['model_type', 'data_path', 'batch_size', 'learning_rate', 'optimizer',
