@@ -361,11 +361,11 @@ def train_with_wandb(run_config: Dict):
         "system.disk.free"
     )
     with wandb.init() as run:
-        config = wandb.config
-        model_type = config['model_type']
+        
+        model_type = wandb.config['model_type']
         #filtered_config = filter_wandb_config(dict(config), model_type)
         #wandb.config.update(filtered_config, allow_val_change=True)
-        config = filter_wandb_config(dict(config), model_type)
+        config = filter_wandb_config(dict(wandb.config), model_type)
         try:
             total_memory_gb = 24 if run_config["workstation_name"] != 'lizmark' else 48
             memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
@@ -395,8 +395,10 @@ def train_with_wandb(run_config: Dict):
         model_config = get_model_config(model_type)
         training_config = get_training_config(model_type)
         #wandb.log({'model_config': model_config, 'training_config': training_config})
-        
-        training_config['prediction_samples'] = config.get('prediction_samples', 3)
+        model_config.update({k: v for k, v in config.items() if k in model_config})
+        training_config.update({k: v for k, v in config.items() if k in training_config})
+      
+        training_config['prediction_samples'] = config.get('prediction_samples', 20)
         if run_config["debug_log_predictions"]:
             training_config['log_predictions'] = True
             training_config['prediction_log_freq'] = config.get('prediction_log_freq', 50)
