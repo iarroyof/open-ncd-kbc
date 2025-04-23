@@ -250,7 +250,7 @@ def filter_sweep_config(sweep_config: Dict, model_type: str) -> Dict:
         parameters = filtered['parameters']
         keys_to_remove = []
         other_models_prefixes = ['attention_gru_', 'transformer_', 'lstm_', 'conv_s2s_', 'autoencoder_']
-        other_models_prefixes.pop(f"{model_type}_")
+        other_models_prefixes.pop(other_models_prefixes.index(f"{model_type}_"))
         # Mark parameters that don't match the model type
         for key in parameters:
             # Keep generic parameters
