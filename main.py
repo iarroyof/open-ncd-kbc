@@ -317,6 +317,7 @@ def train_with_wandb(run_config: Dict):
         model_type = config['model_type']
         #filtered_config = filter_wandb_config(dict(config), model_type)
         #wandb.config.update(filtered_config, allow_val_change=True)
+        config = filter_wandb_config(dict(config), model_type)
         try:
             total_memory_gb = 24 if run_config["workstation_name"] != 'lizmark' else 48
             memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
@@ -416,10 +417,13 @@ def main():
                 yaml_file = args.yaml
             with open(yaml_file, 'r') as f:
                 sweep_config = yaml.safe_load(f)
-            if args.sweep:
+            if args.sweep: 
                 sweep_id = args.sweep
+                if args.project:
+                    logging.info(f"Given project '{args.model_type}' ignored. Working on '{sweep_id.split('/')[1]}' project...")
             else:
-                sweep_config = filter_wandb_config(sweep_config, args.model_type)
+                #sweep_config = filter_wandb_config(sweep_config, args.model_type)
+                sweep_config = filter_sweep_config(sweep_config, args.model_type)
                 sweep_id = wandb.sweep(sweep_config, project=args.project)
             agent_fn = partial(train_with_wandb, run_config)
 
