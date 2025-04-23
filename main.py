@@ -14,6 +14,9 @@ from src.data.tsv_text2text_dataset import ColumnConfig
 from src.prediction_logging import PredictionLogger
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64"
+GENERIC_PARAMS = ['model_type', 'data_path', 'batch_size', 'learning_rate', 'optimizer',
+                    'target_seq_len', 'source_seq_len', 'num_epochs', 'dropout',
+                    'log_frequency', 'prediction_log_freq', 'prediction_samples', 'final_samples']
 import torch
 import socket
 import copy
@@ -246,19 +249,22 @@ def filter_sweep_config(sweep_config: Dict, model_type: str) -> Dict:
     if 'parameters' in filtered:
         parameters = filtered['parameters']
         keys_to_remove = []
-        
+        other_models_prefixes = ['attention_gru_', 'transformer_', 'lstm_', 'conv_s2s_', 'autoencoder_']
+        other_models_prefixes.pop(f"{model_type}_")
         # Mark parameters that don't match the model type
         for key in parameters:
             # Keep generic parameters
-            if key in ['model_type', 'data_path', 'batch_size', 'num_epochs', 'dropout']:
+            if key in GENERIC_PARAMS:
                 continue
-                
+            else:
+                print(f"WARNING: Missing generic parameter {key} in YAML. Using Default.")
+            
             # Keep parameters with matching prefix
             if key.startswith(f"{model_type}_"):
                 continue
                 
             # Mark other model-specific parameters for removal
-            if any(key.startswith(prefix) for prefix in ['attention_gru_', 'transformer_', 'lstm_', 'conv_s2s_']):
+            if any(key.startswith(prefix) for prefix in other_models_prefixes):
                 keys_to_remove.append(key)
         
         # Remove marked parameters
@@ -275,10 +281,7 @@ def filter_sweep_config(sweep_config: Dict, model_type: str) -> Dict:
     
 def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
     filtered = {}
-    generic_keys = ['model_type', 'data_path', 'batch_size', 'learning_rate', 'optimizer',
-                    'target_seq_len', 'source_seq_len', 'num_epochs', 'dropout',
-                    'log_frequency', 'prediction_log_freq', 'prediction_samples', 'final_samples']
-    for key in generic_keys:
+    for key in GENERIC_PARAMS:
         if key in full_config:
             filtered[key] = full_config[key]
     prefix = f"{model_type}_"
@@ -290,6 +293,10 @@ def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
             del filtered['learning_rate']
         except KeyError as e:
             logging.warning(f"[WARN: {e}] No learning rate given to sweep, but using default; optimizer is {full_config['optimizer']}")
+    if 'model_type' in full_config:
+        filtered['model_type'] = full_config['model_type']
+    else:
+        filtered['model_type'] = full_config['model_type']
             
     return filtered
 
