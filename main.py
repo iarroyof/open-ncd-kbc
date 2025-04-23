@@ -145,7 +145,6 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
             'hidden_size': 512,
             'num_layers': 2,
             'bidirectional_encoder': True,
-            'dropout': 0.1,
             'use_attention': False
         }
     elif model_type == 'transformer':
@@ -168,7 +167,6 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
             'hidden_dim': 512,
             'num_layers': 4,
             'kernel_size': 3,
-            'dropout': 0.2,
             'use_attention': False
         }
     else:
@@ -234,11 +232,12 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
         for key in ['batch_size', 'learning_rate', 'num_epochs']:
             if key in wandb_config:
                 config[key] = wandb_config[key]
+
     return config
 
 def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
     filtered = {}
-    generic_keys = ['model_type', 'data_path', 'batch_size', 'learning_rate',
+    generic_keys = ['model_type', 'data_path', 'batch_size', 'learning_rate', 'optimizer',
                     'target_seq_len', 'source_seq_len', 'num_epochs', 'dropout',
                     'log_frequency', 'prediction_log_freq', 'prediction_samples', 'final_samples']
     for key in generic_keys:
@@ -248,6 +247,9 @@ def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
     for key, value in full_config.items():
         if key.startswith(prefix):
             filtered[key[len(prefix):]] = value
+    if full_config['optimizer'] == 'adafactor':
+        del filtered['learning_rate']
+
     return filtered
 
 def get_trainer_class(model_type: str):
@@ -313,8 +315,8 @@ def train_with_wandb(run_config: Dict):
     with wandb.init() as run:
         config = wandb.config
         model_type = config['model_type']
-        filtered_config = filter_wandb_config(dict(config), model_type)
-        wandb.config.update(filtered_config, allow_val_change=True)
+        #filtered_config = filter_wandb_config(dict(config), model_type)
+        #wandb.config.update(filtered_config, allow_val_change=True)
         try:
             total_memory_gb = 24 if run_config["workstation_name"] != 'lizmark' else 48
             memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
@@ -417,6 +419,7 @@ def main():
             if args.sweep:
                 sweep_id = args.sweep
             else:
+                sweep_config = filter_wandb_config(sweep_config, args.model_type)
                 sweep_id = wandb.sweep(sweep_config, project=args.project)
             agent_fn = partial(train_with_wandb, run_config)
 
