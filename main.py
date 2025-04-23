@@ -112,7 +112,7 @@ def get_memory_estimate_kwargs(config, total_vram=24, safety_buff=0.05):
 
     return base_kwargs
     
-def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
+def get_model_config(model_type: str) -> Dict:
     base_config = {
         'vocab_size': 32000,
         'target_seq_len': 64,
@@ -172,19 +172,19 @@ def get_model_config(model_type: str, wandb_config: Dict = None) -> Dict:
         }
     else:
         raise ValueError(f"Unknown model type: {model_type}")
-    if wandb_config:
-        prefix = f"{model_type}_"
-        for key in config:
-            wandb_key = prefix + key
-            if wandb_key in wandb_config:
-                config[key] = wandb_config[wandb_key]
-        if 'target_seq_len' in wandb_config:
-            config['target_seq_len'] = wandb_config['target_seq_len']
-        if 'source_seq_len' in wandb_config:
-            config['source_seq_len'] = wandb_config['source_seq_len']
+    #if wandb_config:
+    #    prefix = f"{model_type}_"
+    #    for key in config:
+    #        wandb_key = prefix + key
+    #        if wandb_key in wandb_config:
+    #            config[key] = wandb_config[wandb_key]
+    #    if 'target_seq_len' in wandb_config:
+    #        config['target_seq_len'] = wandb_config['target_seq_len']
+    #    if 'source_seq_len' in wandb_config:
+    # config['source_seq_len'] = wandb_config['source_seq_len']
     return config
 
-def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
+def get_training_config(model_type: str) -> Dict:
     base_config = {
         'batch_size': 128,
         'num_epochs': 3,
@@ -229,10 +229,10 @@ def get_training_config(model_type: str, wandb_config: Dict = None) -> Dict:
             **base_config,
             'learning_rate': None if base_config['optimizer'] == 'adafactor' else 1e-3
         }
-    if wandb_config:
-        for key in ['batch_size', 'learning_rate', 'num_epochs']:
-            if key in wandb_config:
-                config[key] = wandb_config[key]
+    #if wandb_config:
+    #    for key in ['batch_size', 'learning_rate', 'num_epochs']:
+    #        if key in wandb_config:
+    #            config[key] = wandb_config[key]
 
     return config
 
@@ -382,8 +382,8 @@ def train_with_wandb(run_config: Dict):
         setup_logging(str(log_dir))
         logging.info(f"Starting sweep run {wandb.run.id} (sweep: {sweep_id}) with model type: {model_type}")
         
-        model_config = get_model_config(model_type, config)
-        training_config = get_training_config(model_type, config)
+        model_config = get_model_config(model_type)
+        training_config = get_training_config(model_type)
         #wandb.log({'model_config': model_config, 'training_config': training_config})
         
         training_config['prediction_samples'] = config.get('prediction_samples', 3)
