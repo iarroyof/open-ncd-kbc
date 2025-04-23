@@ -27,7 +27,7 @@ parameters:
   dropout:
     distribution: 'uniform'
     min: 0.0
-    max': 0.7
+    max: 0.7
 
   # Attention GRU
   attention_gru_embed_size:
