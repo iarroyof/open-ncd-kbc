@@ -40,5 +40,4 @@ parameters:
     values: [true]  # 2 values: binary toggle
   attention_gru_bidirectional_encoder:
     value: true  # Fixed: common for GRU
-early_terminate:
-  type: null  # Disable early termination to ensure sufficient exploration
+
