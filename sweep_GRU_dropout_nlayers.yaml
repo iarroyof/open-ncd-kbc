@@ -21,7 +21,7 @@ parameters:
   target_seq_len:
     values: [64]  # 4 values: min (autoencoder), mid-low, default, high
   num_epochs:
-    value: 5  # Fixed to save time; can be swept if needed
+    value: 5  # 5 a 6.5 for AttGRU in Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473 (3 in UTAH NLP for T5 https://aclanthology.org/2024.naacl-long.310.pdf)
   optimizer:
     value: 'adafactor'
   dropout:
