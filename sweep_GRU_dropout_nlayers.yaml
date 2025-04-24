@@ -13,11 +13,11 @@ parameters:
   
   # Key shared hyperparameters (3-5 values for critical ones)
   batch_size:
-    values: [64] #[16, 64, 128]  # 4 values: min, mid-low, mid-high, max
+    values: [64] # 80 in Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473 (we use 64 given computing resources contraints). 64 also resulted good in our own sensivity analysis with  fixed0.1 droput
   #learning_rate:
   #  values: [1e-4, 1e-3, 1e-2]  # 4 values: low, mid-low, mid-high, high
   source_seq_len:
-    values: [16] #[8, 16, 32]
+    values: [16] # 30 was used in (src and trg) Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473
   target_seq_len:
     values: [64]  # 4 values: min (autoencoder), mid-low, default, high
   num_epochs:
@@ -31,11 +31,12 @@ parameters:
 
   # Attention GRU
   attention_gru_embed_size:
-    values: [512]  # 3 values: updated low, mid, high 
+    values: [512]  # we obtained 512 in our own task-specific sens analysis with fixed 0.1 droput. luong et.al. used 1000 dimensions (and also 1000 cells)
+                  # Bahdanau and Bengio et.al. used hidden layer 1000, word embedding dimensionality 620
   attention_gru_hidden_size:
-    values: [1024]  # 3 values: low, mid, high
+    values: [1024]  # we obtained 1024 in our own task-specific sens analysis with fixed 0.1 droput. luong et.al. used 1000 dimensions (and also 1000 cells)
   attention_gru_num_layers:
-    values: [2, 4]  # 3 values: shallow, mid, deep
+    values: [2, 4]  #  # luong et.al. used 4 layers
   attention_gru_use_attention:
     values: [true]  # 2 values: binary toggle
   attention_gru_bidirectional_encoder:
