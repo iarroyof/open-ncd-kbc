@@ -240,43 +240,46 @@ def get_training_config(model_type: str) -> Dict:
     return config
 
 def filter_sweep_config(sweep_config: Dict, model_type: str) -> Dict:
-    """Filter wandb sweep configuration to include only relevant parameters for the selected model."""
-    filtered = copy.deepcopy(sweep_config)  # Make a deep copy to avoid modifying the original
-    
-    # Keep method, metric, early_terminate, etc.
-    
-    # Filter parameters section
+    """Filter the sweep configuration to include only relevant parameters for the selected model.
+
+    Args:
+        sweep_config (Dict): The original sweep configuration from the YAML file.
+        model_type (str): The selected model type (e.g., 'attention_gru').
+
+    Returns:
+        Dict: The filtered sweep configuration.
+    """
+    filtered = copy.deepcopy(sweep_config)
     if 'parameters' in filtered:
         parameters = filtered['parameters']
         keys_to_remove = []
+        # Define prefixes for all known model types, excluding the current one
         other_models_prefixes = ['attention_gru_', 'transformer_', 'lstm_', 'conv_s2s_', 'autoencoder_']
-        other_models_prefixes.pop(other_models_prefixes.index(f"{model_type}_"))
-        # Mark parameters that don't match the model type
+        if f"{model_type}_" in other_models_prefixes:
+            other_models_prefixes.remove(f"{model_type}_")
+
+        # Iterate through all parameters in the config
         for key in parameters:
-            # Keep generic parameters
             if key in GENERIC_PARAMS:
-                continue
-            else:
-                print(f"WARNING: Missing generic parameter {key} in YAML. Using Default.")
-            
-            # Keep parameters with matching prefix
+                continue  # Keep generic parameters
             if key.startswith(f"{model_type}_"):
-                continue
-                
-            # Mark other model-specific parameters for removal
+                continue  # Keep parameters specific to the current model
             if any(key.startswith(prefix) for prefix in other_models_prefixes):
+                # Remove parameters specific to other model types
+                logging.info(f"Removing parameter '{key}' as it is specific to another model type.")
                 keys_to_remove.append(key)
-        
-        # Remove marked parameters
+            else:
+                # Remove parameters that are neither generic nor model-specific
+                logging.info(f"Removing parameter '{key}' as it is not a generic parameter or specific to the current model type '{model_type}'.")
+                keys_to_remove.append(key)
+
+        # Remove the identified keys from the parameters
         for key in keys_to_remove:
             del parameters[key]
-            
-        # Ensure model_type is fixed to the selected type
-        if 'model_type' in parameters:
-            parameters['model_type'] = {'value': model_type}
-        else:
-            parameters['model_type'] = {'value': model_type}
-            
+
+        # Ensure the model_type is fixed to the selected type for the sweep
+        parameters['model_type'] = {'value': model_type}
+
     return filtered
     
 def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
