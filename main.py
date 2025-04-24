@@ -21,9 +21,14 @@ GENERIC_PARAMS = ['model_type', 'data_path', 'batch_size', 'learning_rate', 'opt
 import torch
 import socket
 import copy
-
-
 import math
+
+# Configure logging at the start
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 def estimate_memory_fraction(
     model_type: str,
@@ -350,24 +355,16 @@ def setup_data_configs(train_path: str, valid_path: str) -> tuple:
 
 def setup_logging(log_dir: str=None):
     if log_dir is None:
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
-    else:
-        log_path = Path(log_dir)
-        log_path.mkdir(parents=True, exist_ok=True)
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_path / "main.log"),
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
+        logging.info("No logging directory provided, so only stdout logging is available...")
+        return None
+    log_path = Path(log_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_path / "main.log")
+    file_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    logging.getLogger().addHandler(file_handler)
+  
 
 def train_with_wandb(run_config: Dict):
     """
@@ -483,7 +480,6 @@ def main():
     
     try:
         if not args.avoid_wandb:
-            setup_logging()
             if not args.yaml:
                 yaml_file = f'sweep_config_{run_config["workstation_name"]}.yaml'
             else:
