@@ -348,17 +348,26 @@ def setup_data_configs(train_path: str, valid_path: str) -> tuple:
     ]
     return train_configs, valid_configs
 
-def setup_logging(log_dir: str):
-    log_path = Path(log_dir)
-    log_path.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_path / "main.log"),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
+def setup_logging(log_dir: str=None):
+    if log_dir is None:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(sys.stdout)
+            ]
+        )
+    else:
+        log_path = Path(log_dir)
+        log_path.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_path / "main.log"),
+                logging.StreamHandler(sys.stdout)
+            ]
+        )
 
 def train_with_wandb(run_config: Dict):
     """
@@ -474,6 +483,7 @@ def main():
     
     try:
         if not args.avoid_wandb:
+            setup_logging()
             if not args.yaml:
                 yaml_file = f'sweep_config_{run_config["workstation_name"]}.yaml'
             else:
