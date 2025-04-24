@@ -7,6 +7,7 @@ import yaml
 import os
 import time
 import ast
+import sys
 from functools import partial
 
 from src.trainers.base_trainer import BaseTrainer
@@ -355,7 +356,7 @@ def setup_logging(log_dir: str):
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
             logging.FileHandler(log_path / "main.log"),
-            logging.StreamHandler()
+            logging.StreamHandler(sys.stdout)
         ]
     )
 
