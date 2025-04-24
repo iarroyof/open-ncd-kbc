@@ -240,7 +240,7 @@ def get_training_config(model_type: str) -> Dict:
     return config
 
 def filter_sweep_config(sweep_config: Dict, model_type: str) -> Dict:
-    """Filter the sweep configuration to include only relevant parameters for the selected model.
+    """Filter the sweep configuration to include only relevant parameters for the selected model to log to wandb.
 
     Args:
         sweep_config (Dict): The original sweep configuration from the YAML file.
@@ -283,6 +283,15 @@ def filter_sweep_config(sweep_config: Dict, model_type: str) -> Dict:
     return filtered
     
 def filter_wandb_config(full_config: Dict, model_type: str) -> Dict:
+    """Filter the sweep configuration to include only relevant parameters for the selected model hyperparameters for internal model configuration.
+
+    Args:
+        sweep_config (Dict): The original sweep configuration from the YAML file.
+        model_type (str): The selected model type (e.g., 'attention_gru').
+
+    Returns:
+        Dict: The filtered sweep configuration.
+    """
     filtered = {}
     for key in GENERIC_PARAMS:
         if key in full_config:
