@@ -440,9 +440,9 @@ def train_with_wandb(run_config: Dict):
         
 def main():
     parser = argparse.ArgumentParser(description='Train sequence-to-sequence models with W&B sweeps in Docker')
-    parser.add_argument('--model_type', type=str, default='autoencoder',
+    parser.add_argument('--model_type', type=str, default=None,  # Remove default
                         choices=['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s'],
-                        help='Type of model to train (ignored if using sweep)')
+                        help='Type of model to train (optional if using sweep; overrides YAML if provided)')
     parser.add_argument('--data_path', type=str,
                         help='Base path to data directory (ignored if using sweep)')
     parser.add_argument('--cache_dir', type=str, default='/app/cache',
@@ -452,7 +452,7 @@ def main():
     parser.add_argument('--tokenizer_path', type=str, default=None,
                         help='Path to pretrained tokenizer (optional)')
     parser.add_argument('--avoid_wandb', action='store_true',
-                        help='Use Weights & Biases logging and sweeps')
+                        help='Disable Weights & Biases logging and sweeps')
     parser.add_argument('--eval_only', action='store_true',
                         help='Run only evaluation on validation set')
     parser.add_argument('--checkpoint_path', type=str, default=None,
@@ -465,7 +465,7 @@ def main():
                         help='W&B sweep id')
     parser.add_argument('--debug_log_predictions', action='store_true',
                         help='Enable frequent prediction logging for debugging purposes')
-    
+
     args, unknown = parser.parse_known_args()
     workstation_name = os.environ.get("WORKSTATION_NAME", socket.gethostname())
     logging.info("Workstation Name: %s", workstation_name)
@@ -474,10 +474,10 @@ def main():
         "debug_log_predictions": args.debug_log_predictions,
         "workstation_name": workstation_name
     }
-    
+
     Path(args.cache_dir).mkdir(exist_ok=True)
     Path(args.log_dir).mkdir(exist_ok=True)
-    
+
     try:
         if not args.avoid_wandb:
             if not args.yaml:
@@ -486,16 +486,27 @@ def main():
                 yaml_file = args.yaml
             with open(yaml_file, 'r') as f:
                 sweep_config = yaml.safe_load(f)
-            if args.sweep: 
+
+            # Extract model_type from YAML if not provided via CLI
+            model_type = args.model_type
+            if model_type is None:
+                try:
+                    model_type = sweep_config['parameters']['model_type']['values'][0]
+                    logging.info(f"Using model_type '{model_type}' from YAML configuration.")
+                except (KeyError, IndexError):
+                    logging.error("No model_type specified in YAML or CLI. Please provide --model_type or define in YAML.")
+                    raise ValueError("Model type must be specified in YAML or CLI.")
+
+            if args.sweep:
                 sweep_id = args.sweep
                 if args.project:
-                    logging.info(f"Given project '{args.model_type}' ignored. Working on '{sweep_id.split('/')[1]}' project...")
+                    logging.info(f"Using existing sweep '{sweep_id}' with project '{args.project}'.")
             else:
-                #sweep_config = filter_wandb_config(sweep_config, args.model_type)
-                sweep_config = filter_sweep_config(sweep_config, args.model_type)
+                sweep_config = filter_sweep_config(sweep_config, model_type)
                 sweep_id = wandb.sweep(sweep_config, project=args.project)
-            agent_fn = partial(train_with_wandb, run_config)
+                logging.info(f"Created new sweep with ID: {sweep_id}")
 
+            agent_fn = partial(train_with_wandb, run_config)
             for attempt in range(3):
                 try:
                     wandb.agent(sweep_id, function=agent_fn)
@@ -504,10 +515,13 @@ def main():
                     logging.error(f"Sweep attempt {attempt + 1} failed on {run_config['workstation_name']}: {str(e)}. Retrying in 60 seconds...")
                     time.sleep(60)
         else:
+            if args.model_type is None:
+                logging.error("No model_type specified for non-W&B run. Please provide --model_type.")
+                raise ValueError("Model type must be specified for non-W&B runs.")
             setup_logging(args.log_dir)
             logging.info(f"Starting script with model type: {args.model_type}")
             logging.info(f"Arguments: {vars(args)}")
-            
+
             model_config = get_model_config(args.model_type)
             training_config = get_training_config(args.model_type)
             if args.debug_log_predictions:
@@ -517,10 +531,10 @@ def main():
                 training_config['log_predictions'] = False
                 training_config['prediction_log_freq'] = None
             training_config['prediction_samples'] = training_config.get('prediction_samples', 3)
-            
+
             train_path, val_path = ast.literal_eval(args.data_path)
             train_configs, valid_configs = setup_data_configs(train_path, val_path)
-            
+
             trainer = BaseTrainer(
                 model_type=args.model_type,
                 model_config=model_config,
@@ -530,7 +544,7 @@ def main():
                 log_dir=str(args.log_dir),
                 use_wandb=False
             )
-            
+
             if args.eval_only:
                 logging.info("Running evaluation...")
                 metrics = trainer.evaluate()
@@ -538,7 +552,7 @@ def main():
                     logging.info(f"{metric}: {value:.4f}")
             else:
                 trainer.train()
-                
+
     except Exception as e:
         logging.error(f"Process failed with error: {str(e)}")
         raise
