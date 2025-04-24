@@ -17,9 +17,9 @@ parameters:
   #learning_rate:
   #  values: [1e-4, 1e-3, 1e-2]  # 4 values: low, mid-low, mid-high, high
   source_seq_len:
-    values: [16, 32, 64] # luong-etal-2015 uses 30 for src AttGRU, we obtained 32 in our own task-specific sens analysis with fixed 0.1 droput
+    values: [16, 32, 64] # luong-etal-2015 uses 50 for src AttGRU, we obtained 32 in our own task-specific sens analysis with fixed 0.1 droput (Bahdanau and Bengio used 30 and 50)
   target_seq_len:
-    values: [16, 32, 64]  # luong-etal-2015 uses 30 for trg AttGRU, we obtained 64 in our own task-specific sens analysis with fixed 0.1 droput
+    values: [16, 32, 64]  # luong-etal-2015 uses 50 for trg AttGRU, we obtained 64 in our own task-specific sens analysis with fixed 0.1 droput
   num_epochs:
     value: 3  # 3 in UTAH NLP for T5 in massive experiments https://aclanthology.org/2024.naacl-long.310.pdf (5 a 6.5 in Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473) 
   optimizer:
