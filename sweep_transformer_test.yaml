@@ -1,5 +1,6 @@
 program: main.py
 method: grid  # Bayesian optimization for hyperparameter search
+name: transformer_test
 metric:
   name: val_loss
   goal: minimize
