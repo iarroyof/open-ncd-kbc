@@ -413,9 +413,9 @@ def train_with_wandb(run_config: Dict):
         
         model_config = get_model_config(model_type)
         training_config = get_training_config(model_type)
-        #wandb.log({'model_config': model_config, 'training_config': training_config})
         model_config.update({k: v for k, v in config.items() if k in model_config})
         training_config.update({k: v for k, v in config.items() if k in training_config})
+        wandb.log({'model_config': model_config, 'training_config': training_config})
       
         training_config['prediction_samples'] = config.get('prediction_samples', 20)
         if run_config["debug_log_predictions"]:
