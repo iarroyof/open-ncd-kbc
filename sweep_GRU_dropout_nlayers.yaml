@@ -1,6 +1,6 @@
 # sweep_GRU_dropout_nlayers.yaml
 program: main.py
-method: bayes  # Bayesian optimization for hyperparameter search
+method: grid #bayes  # Bayesian optimization for hyperparameter search
 name: dropout_nlayers
 metric:
   name: val_loss
@@ -25,9 +25,10 @@ parameters:
   optimizer:
     value: 'adafactor'
   dropout:
-    distribution: 'uniform'
-    min: 0.0
-    max: 0.95
+    values: [0.16798, 0.92735, 0.32786]
+    #distribution: 'uniform'
+    #min: 0.0
+    #max: 0.95
 
   # Attention GRU
   attention_gru_embed_size:
@@ -41,4 +42,4 @@ parameters:
     values: [true]  # 2 values: binary toggle
   attention_gru_bidirectional_encoder:
     value: true  # Fixed: common for GRU
-
+count: 6
