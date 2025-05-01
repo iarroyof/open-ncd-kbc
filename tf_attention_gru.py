@@ -264,6 +264,33 @@ class TrainTranslator(keras.Model):
         self.train_metric = keras.metrics.SparseCategoricalAccuracy()
         self.test_metric = keras.metrics.SparseCategoricalAccuracy()
 
+    def call(self, inputs, training=False):
+        input_text, target_text = inputs
+        # Preprocess inputs
+        input_tokens, input_mask, target_tokens, target_mask = self._preprocess(input_text, target_text)
+        
+        # Encode the input
+        enc_output, enc_state = self.encoder(input_tokens)
+        
+        # Initialize decoder state
+        dec_state = enc_state
+        max_target_length = tf.shape(target_tokens)[1]
+        outputs = []
+        
+        # Decode step-by-step
+        for t in tf.range(max_target_length-1):
+            new_tokens = target_tokens[:, t:t+2]
+            input_token, target_token = new_tokens[:, 0:1], new_tokens[:, 1:2]
+            decoder_input = DecoderInput(new_tokens=input_token,
+                                        enc_output=enc_output,
+                                        mask=input_mask)
+            dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
+            outputs.append(dec_result.logits)
+        
+        # Stack logits
+        logits = tf.concat(outputs, axis=1)
+        return logits
+
     def _preprocess(self, input_text, target_text):
         self.shape_checker(input_text, ('batch',))
         self.shape_checker(target_text, ('batch',))
