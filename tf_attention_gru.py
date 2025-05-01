@@ -460,7 +460,11 @@ def save_vectorizer(vectorizer, to_file):
         to_file += '.keras'
     
     # Save the model without save_format
-    vectorizer_model.save(to_file)
+    try:
+        vectorizer_model.save(to_file)
+        print(f"Vectorizer saved to path: {to_file}")
+    except:
+        print(f"Error when trying to save cetorizer to path {to_file}..")
 
 def parse_dataset_name(training_data):
     training_data = training_data.split(os.sep)[-1].lower()
