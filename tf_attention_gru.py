@@ -638,6 +638,13 @@ train_translator.compile(
 )
 
 logging.info("Training neural reasoning model...")
+for batch in dataset.take(1):
+    print("Dataset batch:", batch)
+    print("Input text shape:", batch[0].shape, "Target text shape:", batch[1].shape)
+tf.config.run_functions_eagerly(True)
+for in_phr, out_phr in dataset.take(1):
+    print("Vectorized input shape:", format_dataset(in_phr, out_phr)[0].shape)
+    print("Vectorized target shape:", format_dataset(in_phr, out_phr)[1].shape)
 history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
                      callbacks=[train_loss, train_accu, cp_callback])
 logging.info("NOW Trained :)")
