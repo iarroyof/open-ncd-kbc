@@ -252,11 +252,6 @@ class Decoder(keras.layers.Layer):
 
         return self.DecoderOutput(logits, attention_weights), state
 
-# Assign the call method back to the class - this was indented incorrectly
-Decoder.call = call
-Decoder.DecoderInput = Decoder.DecoderInput # Corrected reference
-Decoder.DecoderOutput = Decoder.DecoderOutput # Corrected reference
-
 
 class MaskedLoss(keras.losses.Loss):
     def __init__(self):
