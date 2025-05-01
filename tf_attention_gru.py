@@ -476,89 +476,67 @@ class TrainTranslator(keras.Model):
     #    tf.TensorSpec(dtype=tf.string, shape=[None])
     #]])
     def train_step(self, inputs):
-        # inputs will be a tuple of string tensors (input_text, target_text) due to input_signature
         input_text, target_text = inputs
-
-        # Preprocess strings to get tokenized integers and masks
-        # _preprocess uses the model's shape_checker if enabled
         (input_tokens, input_mask,
          target_tokens, target_mask) = self._preprocess(input_text, target_text)
-
-        # Ensure target_tokens are int64 for loss calculation (usually already is)
         target_tokens = tf.cast(target_tokens, tf.int64)
-
-        max_target_length = tf.shape(target_tokens)[1] # Dynamic target sequence length
-
+        max_target_length = tf.shape(target_tokens)[1]
+    
         with tf.GradientTape() as tape:
-            # Encoder forward pass
-            enc_output, enc_state = self.encoder(input_tokens) # Input tokens are int64
-
-            dec_state = enc_state # Initialize decoder state
-
+            enc_output, enc_state = self.encoder(input_tokens)
+            dec_state = enc_state
+    
             loss = tf.constant(0.0, dtype=tf.float32)
-            total_tokens = tf.constant(0.0, dtype=tf.float32) # Counter for non-padding tokens
-
-            # Decoder teacher forcing loop
-            # Iterate from the first token of the target (usually [start]) up to the second-to-last token
-            # because each step predicts the *next* token.
-            # target_tokens[:, t:t+1] is the input token at time t
-            # target_tokens[:, t+1:t+2] is the true next token at time t+1
-            for t in tf.range(max_target_length - 1):
-                # Use the current target token `target_tokens[:, t:t+1]` as the decoder input
-                # Shape (batch, 1), int64
+            total_tokens = tf.constant(0.0, dtype=tf.float32)
+    
+            # Initialize loop variables
+            t = tf.constant(0)
+            dec_state_loop = dec_state
+    
+            # Define the loop condition
+            def condition(t, loss, total_tokens, dec_state_loop):
+                return t < max_target_length - 1
+    
+            # Define the loop body
+            def body(t, loss, total_tokens, dec_state_loop):
                 new_tokens = target_tokens[:, t:t+1]
-
-                # The target for the loss is the *next* token `target_tokens[:, t+1:t+2]`
-                # Shape (batch, 1), int64
                 y_true = target_tokens[:, t+1:t+2]
-
-                # Prepare decoder input object for this single step
                 decoder_input = Decoder.DecoderInput(
-                    new_tokens=new_tokens, # Shape (batch, 1)
-                    enc_output=enc_output, # Shape (batch, s, enc_units)
-                    mask=input_mask        # Shape (batch, s)
+                    new_tokens=new_tokens,
+                    enc_output=enc_output,
+                    mask=input_mask
                 )
-
-                # Perform one decoding step
-                dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
-                # dec_result.logits shape: (batch, 1, output_vocab_size)
-
-                # Calculate loss for this time step
-                # self.loss is MaskedLoss, which takes (batch, t) and (batch, t, logits)
-                # Here t=1 for both, so it works correctly
-                step_loss = self.loss(y_true, dec_result.logits) # Should return (batch, 1) masked sum
-
-                # Accumulate loss and token count across time steps in the batch
-                # The MaskedLoss already returned the summed loss over batch and time=1, masked.
-                loss += step_loss # Add the sum from this timestep
-
-                # We need to count tokens across the time steps for the average loss and accuracy
-                # The mask from the current y_true gives us which tokens are real
-                step_mask = tf.cast(y_true != 0, tf.float32) # (batch, 1)
-                total_tokens += tf.reduce_sum(step_mask) # Sum non-padding tokens for this timestep over the batch
-
-
-                # Update training accuracy metric
-                # accuracy.update_state expects (y_true, y_pred_logits)
-                # y_true is (batch, 1), y_pred_logits is (batch, 1, vocab_size)
+                dec_result, dec_state_new = self.decoder(decoder_input, state=dec_state_loop)
+                step_loss = self.loss(y_true, dec_result.logits)
+                loss += step_loss
+                step_mask = tf.cast(y_true != 0, tf.float32)
+                total_tokens += tf.reduce_sum(step_mask)
                 self.train_accuracy_tracker.update_state(y_true, dec_result.logits)
-
-
-            # Compute the average loss over the entire batch and all unmasked time steps
-            # Avoid division by zero if a batch only contains padding (unlikely with start token, but safe)
+                return t + 1, loss, total_tokens, dec_state_new
+    
+            # Execute the while loop
+            _, loss, total_tokens, _ = tf.while_loop(
+                condition,
+                body,
+                loop_vars=[t, loss, total_tokens, dec_state_loop],
+                shape_invariants=[
+                    t.get_shape(),
+                    loss.get_shape(),
+                    total_tokens.get_shape(),
+                    dec_state_loop.get_shape()
+                ]
+            )
+    
+            # Compute average loss
             average_loss = tf.cond(total_tokens > 0,
-                                   lambda: loss / total_tokens, # Divide total summed loss by total non-padding tokens
+                                   lambda: loss / total_tokens,
                                    lambda: tf.constant(0.0, dtype=tf.float32))
-
-        # Get gradients and apply optimizer
+    
         variables = self.trainable_variables
         gradients = tape.gradient(average_loss, variables)
         self.optimizer.apply_gradients(zip(gradients, variables))
-
-        # Update loss metric with the calculated average batch loss
+    
         self.train_loss_tracker.update_state(average_loss)
-
-        # Return metric results for this step
         return {'loss': self.train_loss_tracker.result(),
                 'accuracy': self.train_accuracy_tracker.result()}
 
