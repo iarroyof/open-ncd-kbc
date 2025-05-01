@@ -12,6 +12,8 @@ import functools, re, string, os, time, random
 import argparse
 from pdb import set_trace as st
 import logging
+from tensorflow.keras import mixed_precision
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -259,6 +261,7 @@ class Decoder(keras.layers.Layer):
         logits: Any            # Shape: (batch, t, output_vocab_size)
         attention_weights: Any # Shape: (batch, t, s)
 
+    @tf.recompute_grad
     def call(self,
              inputs: 'Decoder.DecoderInput', # Use forward reference for type hint
              state=None) -> Tuple['Decoder.DecoderOutput', tf.Tensor]: # Use forward reference for type hint
@@ -990,10 +993,10 @@ if __name__ == "__main__":
     )
     dummy_in  = tf.constant(train_inputs[:batch_size])
     dummy_out = tf.constant(train_targets[:batch_size])
-    tf.config.run_functions_eagerly(True)
+    #tf.config.run_functions_eagerly(True)
     _ = train_translator((dummy_in, dummy_out))
-    tf.config.run_functions_eagerly(False)
-
+    #tf.config.run_functions_eagerly(False)
+    mixed_precision.set_global_policy('mixed_float16')
     train_translator.compile(
         optimizer=keras.optimizers.Adam(),
         loss=MaskedLoss()
