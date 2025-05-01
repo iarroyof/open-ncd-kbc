@@ -266,48 +266,22 @@ class TrainTranslator(keras.Model):
 
     @tf.function
     def call(self, inputs, training=False):
-        # Inputs is a tuple of (input_text, target_text) tensors
-        input_text, target_text = inputs  # This works because dataset yields tuples
+        input_text, target_text = inputs
         # Preprocess inputs
         input_tokens, input_mask, target_tokens, target_mask = self._preprocess(input_text, target_text)
         
-        # Encode the input
+        # Encode
         enc_output, enc_state = self.encoder(input_tokens)
         
-        # Initialize decoder state
+        # Single decoding step (for model building)
         dec_state = enc_state
-        max_target_length = tf.shape(target_tokens)[1]
+        input_token = target_tokens[:, 0:1]  # First token
+        decoder_input = DecoderInput(new_tokens=input_token,
+                                    enc_output=enc_output,
+                                    mask=input_mask)
+        dec_result, _ = self.decoder(decoder_input, state=dec_state)
         
-        def decode_step(t, outputs, dec_state):
-            new_tokens = target_tokens[:, t:t+2]
-            input_token, target_token = new_tokens[:, 0:1], new_tokens[:, 1:2]
-            decoder_input = DecoderInput(new_tokens=input_token,
-                                        enc_output=enc_output,
-                                        mask=input_mask)
-            dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
-            return t + 1, outputs + [dec_result.logits], dec_state
-        
-        # Use tf.while_loop instead of Python loop
-        initial_state = (0, [], dec_state)
-        def condition(t, outputs, dec_state):
-            return t < max_target_length - 1
-        def body(t, outputs, dec_state):
-            return decode_step(t, outputs, dec_state)
-        
-        _, outputs, _ = tf.while_loop(
-            condition,
-            body,
-            initial_state,
-            shape_invariants=(
-                tf.TensorShape([]),  # t
-                tf.nest.map_structure(lambda x: tf.TensorShape(None), []),  # outputs
-                dec_state.get_shape()  # dec_state
-            )
-        )
-        
-        # Stack logits
-        logits = tf.concat(outputs, axis=1)
-        return logits
+        return dec_result.logits
 
     def _preprocess(self, input_text, target_text):
         self.shape_checker(input_text, ('batch',))
