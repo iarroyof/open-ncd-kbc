@@ -308,6 +308,8 @@ class Decoder(keras.layers.Layer):
         # 4. Combine context vector and GRU output
         # Concatenate along the last dimension: (batch, 1, enc_units) + (batch, 1, dec_units)
         # Result shape: (batch, 1, enc_units + dec_units)
+        tf.print("context_vector shape:", tf.shape(context_vector))
+        tf.print("rnn_output shape:", tf.shape(rnn_output))
         context_and_rnn_output = tf.concat([context_vector, rnn_output], axis=-1)
 
         # 5. Pass through dense layer to get final attention-aware vector
@@ -1010,7 +1012,9 @@ if __name__ == "__main__":
     )
     dummy_in  = tf.constant(train_inputs[:batch_size])
     dummy_out = tf.constant(train_targets[:batch_size])
+    tf.config.run_functions_eagerly(True)
     _ = train_translator((dummy_in, dummy_out))
+    tf.config.run_functions_eagerly(False)
 
     train_translator.compile(
         optimizer=keras.optimizers.Adam(),
