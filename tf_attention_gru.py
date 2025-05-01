@@ -193,16 +193,20 @@ class Encoder(keras.layers.Layer):
 class BahdanauAttention(keras.layers.Layer):
     def __init__(self, units):
         super().__init__()
+        # Keras’s AdditiveAttention will project query/value for us:
         self.attention = keras.layers.AdditiveAttention(use_scale=False)
 
     def call(self, query, value, mask):
-        # mask: boolean Tensor of shape (batch, source_seq_len)
-        # pass only [query, value]; AdditiveAttention will project them itself
+        # query: (batch, 1, units)
+        # value: (batch, S, units)
+        # mask:  (batch, S) boolean
         context_vector, attention_weights = self.attention(
             [query, value],
-            mask=[None, mask],                  # no need to mask the query
+            mask=[None, mask],                # only mask the `value` axis
             return_attention_scores=True
         )
+        # context_vector: (batch, 1, units)
+        # attention_weights: (batch, 1, S)
         return context_vector, attention_weights
 
 class Decoder(keras.layers.Layer):
@@ -949,8 +953,18 @@ logging.info(f"Saved text vectorizers to {os.path.dirname(in_vect_save_path)}")
 
 
 # Create datasets using make_dataset AFTER vectorizers are defined and adapted
-dataset = make_dataset(train_pairs)
-test_dataset = make_dataset(val_pairs)
+#dataset = make_dataset(train_pairs)
+#test_dataset = make_dataset(val_pairs)
+raw_train = tf.data.Dataset.from_tensor_slices(
+    # each element is (string, string)
+    ([p[0] for p in train_pairs],
+     [p[1] for p in train_pairs])
+).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
+
+raw_val = tf.data.Dataset.from_tensor_slices(
+    ([p[0] for p in val_pairs],
+     [p[1] for p in val_pairs])
+).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
 # Update max_features based on the actual vocabulary size
 max_vocab = max([
@@ -975,10 +989,17 @@ cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                               verbose=1)
 
 # Instantiate the TrainTranslator model
-train_translator = TrainTranslator(
-    embedding_dim, units,
-    input_text_processor=input_vectorizer,
-    output_text_processor=output_vectorizer)
+#train_translator = TrainTranslator(
+#    embedding_dim, units,
+#    input_text_processor=input_vectorizer,
+#    output_text_processor=output_vectorizer)
+# then train with raw_train/raw_val:
+history = train_translator.fit(
+    raw_train,
+    validation_data=raw_val,
+    epochs=n_epochs,
+    callbacks=[cp_callback, train_loss_bl, train_accu_bl]
+)
 
 # Build the model by calling it on a dummy batch of the expected string input type
 # This is necessary before compiling or loading weights
@@ -1033,11 +1054,7 @@ logging.info("Checking dataset output shapes before training loop...")
 # The dataset pipeline already applies format_dataset and yields INT tensors.
 # Just iterate and print the shape of the yielded tensors.
 # tf.config.run_functions_eagerly(True) # Uncomment to debug dataset iteration in eager mode
-for in_phr, out_phr in dataset.take(1):
-    print("Dataset batch yielded - Input shape:", in_phr.shape, "Target shape:", out_phr.shape)
-    # Optional: Check dtypes - should be int64
-    print("Dataset batch yielded - Input dtype:", in_phr.dtype, "Target dtype:", out_phr.dtype)
-# tf.config.run_functions_eagerly(False) # Turn eager off if you enabled it above
+
 
 
 logging.info("Training neural reasoning model...")
