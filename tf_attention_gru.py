@@ -196,20 +196,41 @@ class Encoder(keras.layers.Layer):
 class BahdanauAttention(keras.layers.Layer):
     def __init__(self, units):
         super().__init__()
-        # Keras’s AdditiveAttention will project query/value for us:
-        self.attention = keras.layers.AdditiveAttention(use_scale=False)
+        # Dense layers for Bahdanau attention score computation
+        self.W1 = keras.layers.Dense(units, use_bias=False)
+        self.W2 = keras.layers.Dense(units, use_bias=False)
+        self.V = keras.layers.Dense(1)
 
     def call(self, query, value, mask):
-        # query: (batch, 1, units)
-        # value: (batch, S, units)
-        # mask:  (batch, S) boolean
-        context_vector, attention_weights = self.attention(
-            [query, value],
-            mask=[None, mask],                # only mask the `value` axis
-            return_attention_scores=True
-        )
-        # context_vector: (batch, 1, units)
-        # attention_weights: (batch, 1, S)
+        # query: (batch, T_q, dec_units) - T_q=1 during decoding
+        # value: (batch, T_v, enc_units) - T_v=s (e.g., 30)
+        # mask: (batch, T_v) - boolean
+
+        # Compute W1 * query: (batch, T_q, units)
+        w1_query = self.W1(query)  # e.g., (64, 1, 2048)
+
+        # Compute W2 * value: (batch, T_v, units)
+        w2_value = self.W2(value)  # e.g., (64, 30, 2048)
+
+        # Expand dimensions for broadcasting
+        w1_query = tf.expand_dims(w1_query, axis=2)  # (batch, T_q, 1, units), e.g., (64, 1, 1, 2048)
+        w2_value = tf.expand_dims(w2_value, axis=1)  # (batch, 1, T_v, units), e.g., (64, 1, 30, 2048)
+
+        # Compute attention scores: (batch, T_q, T_v, units) -> (batch, T_q, T_v, 1)
+        score = self.V(tf.nn.tanh(w1_query + w2_value))  # e.g., (64, 1, 30, 1)
+        score = tf.squeeze(score, axis=-1)  # (batch, T_q, T_v), e.g., (64, 1, 30)
+
+        # Apply mask to scores
+        if mask is not None:
+            mask = tf.expand_dims(mask, axis=1)  # (batch, 1, T_v), e.g., (64, 1, 30)
+            score = tf.where(mask, score, tf.constant(-1e9, dtype=score.dtype))
+
+        # Compute attention weights: softmax over T_v axis
+        attention_weights = tf.nn.softmax(score, axis=-1)  # (batch, T_q, T_v), e.g., (64, 1, 30)
+
+        # Compute context vector: (batch, T_q, T_v) @ (batch, T_v, enc_units) -> (batch, T_q, enc_units)
+        context_vector = tf.matmul(attention_weights, value)  # e.g., (64, 1, 2048)
+
         return context_vector, attention_weights
 
 class Decoder(keras.layers.Layer):
@@ -220,12 +241,12 @@ class Decoder(keras.layers.Layer):
         self.embedding_dim = embedding_dim
         self.embedding = keras.layers.Embedding(self.output_vocab_size, embedding_dim)
         self.gru = keras.layers.GRU(self.dec_units,
-                                    return_sequences=True, # Keep True for attention
+                                    return_sequences=True,
                                     return_state=True,
                                     recurrent_initializer='glorot_uniform')
-        self.attention = BahdanauAttention(self.dec_units)
-        self.Wc = keras.layers.Dense(dec_units, activation=tf.math.tanh, use_bias=False) # Typically Wc is used for the final context vector
-        self.fc = keras.layers.Dense(self.output_vocab_size) # Final dense layer for logits
+        self.attention = BahdanauAttention(self.dec_units)  # Updated attention layer
+        self.Wc = keras.layers.Dense(dec_units, activation=tf.math.tanh, use_bias=False)
+        self.fc = keras.layers.Dense(self.output_vocab_size)
 
     # Nested classes remain indented inside the class
     class DecoderInput(typing.NamedTuple):
