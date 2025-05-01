@@ -267,6 +267,7 @@ class TrainTranslator(keras.Model):
     @tf.function
     def call(self, inputs, training=False):
         # Handle inputs: expect a tuple (input_text, target_text), but adapt if single tensor
+        tf.print("Inputs received:", inputs)
         if isinstance(inputs, (list, tuple)) and len(inputs) == 2:
             input_text, target_text = inputs
         else:
@@ -553,8 +554,6 @@ with open(training_data) as f:
 with open(testing_data) as f:
     val_text = f.readlines()
 
-# ... (previous code: argument parsing, vectorizer setup, etc.)
-
 logging.info("Preparing train and test data")
 train_pairs = list(
     map(functools.partial(
@@ -565,10 +564,7 @@ val_pairs = list(
         prepare_data,
         include_labels=cs_labels, all_start_end=True), val_text))
 
-# Create datasets using make_dataset
-dataset = make_dataset(train_pairs)
-test_dataset = make_dataset(val_pairs)
-
+# Initialize and adapt vectorizers first
 input_vectorizer = keras.layers.TextVectorization(
     output_mode="int", max_tokens=max_features,
     output_sequence_length=sequence_length, standardize=custom_standardization)
@@ -598,6 +594,10 @@ logging.info("Saved text vectorizers to "
     + results_path + f"results{os.sep}"
     + f"attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}")
 
+# Create datasets using make_dataset AFTER vectorizers are defined
+dataset = make_dataset(train_pairs)
+test_dataset = make_dataset(val_pairs)
+
 max_vocab = max([
         len(input_vectorizer.get_vocabulary()),
         len(output_vectorizer.get_vocabulary())])
@@ -613,8 +613,8 @@ print("Working results directory: " + checkpoint_path)
 checkpoint_dir = os.path.dirname(checkpoint_path)
 out_dir = results_path + os.sep.join(checkpoint_path.split(os.sep)[:2]) + os.sep
 cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
-                                                 save_weights_only=True,
-                                                 verbose=1)
+                                             save_weights_only=True,
+                                             verbose=1)
 
 BUFFER_SIZE = len(train_pairs)
 steps_per_epoch = len(train_pairs) // batch_size
