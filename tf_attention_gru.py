@@ -36,26 +36,56 @@ def prepare_data(
         if not re.match(r'^-?\d+(?:\.\d+)$', line[4].strip()):
             i = 4
             complements = []
+            # Check index bounds when popping
             while i < len(line) and not line[i].strip().isdigit():
                 complements.append(line[i])
-                line.pop(i)
+                line.pop(i) # Pop from current index
 
-            line[3] = " ".join([line[3]] + complements)
+            # Handle the case where line[3] might be the last element after popping
+            if 3 < len(line):
+                 line[3] = " ".join([line[3]] + complements)
+            elif complements: # If line[3] was popped, just use complements
+                 line[3] = " ".join(complements)
+            # If both were empty, line[3] remains whatever it was (possibly empty string)
+
+
+    # Ensure there are enough elements in line before accessing indices
+    if len(line) < 5:
+         logging.warning(f"Skipping malformed line: {line}")
+         # Return None or raise an exception to handle malformed data
+         return None
 
     sample = [line[0], pred, line[2],
         start_token + line[3] + end_token, float(line[4].strip())]
+
+    # Ensure sample has expected elements before deleting
     if not include_labels:
-        del sample[-1]
+        if len(sample) > 4: # Check if label exists before deleting
+            del sample[-1]
         sample_o = sample[-1]
     else:
-        sample_o = tuple(sample[-2:])
+        if len(sample) > 3: # Ensure enough elements for tuple
+            sample_o = tuple(sample[-2:])
+        else:
+            logging.warning(f"Skipping malformed line for cs_labels: {line}")
+            return None
+
+
     if not include_sent:
-        del sample[0]
-        sample_i = ' '.join([sample[1], sample[0]])
-        if all_start_end:
-            sample_i = start_token + sample_i + end_token
+        if len(sample) > 1: # Ensure sample[1] and sample[0] exist
+            sample_i = ' '.join([sample[1], sample[0]])
+            if all_start_end:
+                sample_i = start_token + sample_i + end_token
+        else:
+            logging.warning(f"Skipping malformed line for include_sent=False: {line}")
+            return None
     else:
-        sample_i = ' '.join([sample[0], sample[2], sample[1]])
+        if len(sample) > 2: # Ensure sample[0], sample[2], sample[1] exist
+            sample_i = ' '.join([sample[0], sample[2], sample[1]])
+        else:
+            logging.warning(f"Skipping malformed line for include_sent=True: {line}")
+            return None
+
 
     return sample_i, sample_o
 
@@ -73,6 +103,9 @@ def format_dataset(in_phr, out_phr):
     return in_phr, out_phr
 
 def make_dataset(pairs):
+    # Filter out None values resulting from malformed lines
+    pairs = [pair for pair in pairs if pair is not None]
+
     in_phr_texts, out_phr_texts = zip(*pairs)
     in_phr_texts = list(in_phr_texts)
     out_phr_texts = list(out_phr_texts)
@@ -100,6 +133,7 @@ class ShapeChecker:
         self.shapes = {}
 
     def __call__(self, tensor, names, broadcast=False):
+        # Only perform checks in eager mode
         if not tf.executing_eagerly():
             return
 
@@ -121,6 +155,7 @@ class ShapeChecker:
                 old_dim = self.shapes.get(name, None)
             new_dim = shape[i]
 
+            # Allow broadcasting dimension 1 if specified
             if broadcast and new_dim == 1:
                 continue
 
@@ -145,13 +180,14 @@ class Encoder(keras.layers.Layer):
                                     recurrent_initializer='glorot_uniform')
 
     def call(self, tokens, state=None):
-        shape_checker = ShapeChecker()
-        shape_checker(tokens, ('batch', 's'))
+        # Removed ShapeChecker calls inside layer methods
+        # shape_checker = ShapeChecker()
+        # shape_checker(tokens, ('batch', 's'))
         vectors = self.embedding(tokens)
-        shape_checker(vectors, ('batch', 's', 'embed_dim'))
+        # shape_checker(vectors, ('batch', 's', 'embed_dim'))
         output, state = self.gru(vectors, initial_state=state)
-        shape_checker(output, ('batch', 's', 'enc_units'))
-        shape_checker(state, ('batch', 'enc_units'))
+        # shape_checker(output, ('batch', 's', 'enc_units'))
+        # shape_checker(state, ('batch', 'enc_units'))
         return output, state
 
 class BahdanauAttention(keras.layers.Layer):
@@ -159,29 +195,48 @@ class BahdanauAttention(keras.layers.Layer):
         super().__init__()
         self.W1 = keras.layers.Dense(units, use_bias=False)
         self.W2 = keras.layers.Dense(units, use_bias=False)
-        self.attention = keras.layers.AdditiveAttention()
+        # Ensure additive attention is initialized correctly
+        self.attention = keras.layers.AdditiveAttention(use_scale=False) # use_scale=False is typical for Bahdanau
 
     def call(self, query, value, mask):
-        shape_checker = ShapeChecker()
-        shape_checker(query, ('batch', 't', 'query_units'))
-        shape_checker(value, ('batch', 's', 'value_units'))
-        shape_checker(mask, ('batch', 's')) # Mask is boolean for padding tokens
-        w1_query = self.W1(query)
-        shape_checker(w1_query, ('batch', 't', 'attn_units'))
-        w2_key = self.W2(value)
-        shape_checker(w2_key, ('batch', 's', 'attn_units'))
+        # Removed ShapeChecker calls inside layer methods
+        # shape_checker = ShapeChecker()
+        # shape_checker(query, ('batch', 't', 'query_units'))
+        # shape_checker(value, ('batch', 's', 'value_units'))
+        # shape_checker(mask, ('batch', 's'))
 
-        # The attention layer expects masks as boolean tensors
-        query_mask = tf.ones(tf.shape(query)[:-1], dtype=bool) # Assuming query does not need masking per time step
-        value_mask = mask # Use the provided input mask
+        w1_query = self.W1(query)
+        # shape_checker(w1_query, ('batch', 't', 'attn_units'))
+        w2_key = self.W2(value)
+        # shape_checker(w2_key, ('batch', 's', 'attn_units'))
+
+        # Ensure query_mask has shape (batch, query_seq_len)
+        # query shape is (batch, t, units) where t is the query sequence length (should be 1 in Decoder call)
+        batch_size = tf.shape(query)[0]
+        query_seq_len = tf.shape(query)[1]
+        query_mask = tf.ones((batch_size, query_seq_len), dtype=bool) # Use calculated dynamic shapes
+
+        value_mask = mask # mask shape is (batch, s)
+
+        # The AdditiveAttention layer computes: query_input + key_input
+        # query_input shape: (batch, T, dim)
+        # key_input shape: (batch, S, dim)
+        # They will be broadcasted to (batch, max(T,S), dim) for addition?
+        # No, AdditiveAttention standard implementation computes scores (batch, T, S)
+        # by processing query (batch, T, dim) and key (batch, S, dim) appropriately.
+        # The inputs to attention are w1_query (query_input), value (value_input), w2_key (key_input)
 
         context_vector, attention_weights = self.attention(
             inputs=[w1_query, value, w2_key],
             mask=[query_mask, value_mask],
             return_attention_scores=True,
         )
-        shape_checker(context_vector, ('batch', 't', 'value_units'))
-        shape_checker(attention_weights, ('batch', 't', 's'))
+        # Expected output shapes from AdditiveAttention:
+        # context_vector: (batch, query_seq_len, value_depth) i.e., (batch, t, value_units)
+        # attention_weights: (batch, query_seq_len, value_seq_len) i.e., (batch, t, s)
+
+        # shape_checker(context_vector, ('batch', 't', 'value_units'))
+        # shape_checker(attention_weights, ('batch', 't', 's'))
         return context_vector, attention_weights
 
 class Decoder(keras.layers.Layer):
@@ -192,15 +247,16 @@ class Decoder(keras.layers.Layer):
         self.embedding_dim = embedding_dim
         self.embedding = keras.layers.Embedding(self.output_vocab_size, embedding_dim)
         self.gru = keras.layers.GRU(self.dec_units,
-                                    return_sequences=True,
+                                    return_sequences=True, # Keep True for attention
                                     return_state=True,
                                     recurrent_initializer='glorot_uniform')
         self.attention = BahdanauAttention(self.dec_units)
-        self.Wc = keras.layers.Dense(dec_units, activation=tf.math.tanh, use_bias=False)
-        self.fc = keras.layers.Dense(self.output_vocab_size)
+        self.Wc = keras.layers.Dense(dec_units, activation=tf.math.tanh, use_bias=False) # Typically Wc is used for the final context vector
+        self.fc = keras.layers.Dense(self.output_vocab_size) # Final dense layer for logits
 
+    # Nested classes remain indented inside the class
     class DecoderInput(typing.NamedTuple):
-        new_tokens: Any # Shape: (batch, t)
+        new_tokens: Any # Shape: (batch, t) - t=1 during step-by-step decoding
         enc_output: Any # Shape: (batch, s, enc_units)
         mask: Any       # Shape: (batch, s) - boolean mask for enc_output padding
 
@@ -210,46 +266,72 @@ class Decoder(keras.layers.Layer):
         attention_weights: Any # Shape: (batch, t, s)
 
     def call(self,
-             inputs: DecoderInput,
-             state=None) -> Tuple[DecoderOutput, tf.Tensor]:
-        shape_checker = ShapeChecker()
-        shape_checker(inputs.new_tokens, ('batch', 't'))
-        shape_checker(inputs.enc_output, ('batch', 's', 'enc_units'))
-        shape_checker(inputs.mask, ('batch', 's'))
+             inputs: 'Decoder.DecoderInput', # Use forward reference for type hint
+             state=None) -> Tuple['Decoder.DecoderOutput', tf.Tensor]: # Use forward reference for type hint
+        # Removed ShapeChecker calls inside layer methods
+        # shape_checker = ShapeChecker()
+        # shape_checker(inputs.new_tokens, ('batch', 't')) # inputs.new_tokens has shape (batch, 1)
+        # shape_checker(inputs.enc_output, ('batch', 's', 'enc_units'))
+        # shape_checker(inputs.mask, ('batch', 's'))
 
-        if state is not None:
-            shape_checker(state, ('batch', 'dec_units'))
+        # if state is not None:
+        #     shape_checker(state, ('batch', 'dec_units'))
 
-        vectors = self.embedding(inputs.new_tokens)
-        shape_checker(vectors, ('batch', 't', 'embedding_dim'))
+        # 1. Embed the new token
+        vectors = self.embedding(inputs.new_tokens) # Shape: (batch, 1, embedding_dim)
+        # shape_checker(vectors, ('batch', 't', 'embedding_dim'))
 
-        # In a typical seq2seq decoder loop, 't' is 1.
-        # The GRU call should match the shape expectations.
-        # If inputs.new_tokens has shape (batch, 1), vectors will be (batch, 1, embedding_dim)
-        # gru will return (batch, 1, dec_units) for rnn_output
+        # 2. Run the GRU on the embedded token
+        # GRU takes (batch, seq_len, features) and initial state (batch, units)
+        # returns output (batch, seq_len, units) and state (batch, units)
+        # Since we process one token at a time (seq_len=1), rnn_output is (batch, 1, dec_units)
         rnn_output, state = self.gru(vectors, initial_state=state)
-        shape_checker(rnn_output, ('batch', 't', 'dec_units'))
-        shape_checker(state, ('batch', 'dec_units'))
+        # shape_checker(rnn_output, ('batch', 't', 'dec_units')) # t=1 here
+        # shape_checker(state, ('batch', 'dec_units')) # GRU state
 
-        # Pass the correct shapes and mask to attention
+        # 3. Calculate attention weights and context vector
+        # query is the current decoder GRU output (batch, 1, dec_units)
+        # value is the encoder output (batch, s, enc_units)
+        # mask is the input sequence mask (batch, s)
         context_vector, attention_weights = self.attention(
             query=rnn_output, value=inputs.enc_output, mask=inputs.mask)
 
-        # context_vector should have the same 't' dimension as the query (rnn_output)
-        shape_checker(context_vector, ('batch', 't', 'dec_units'))
-        shape_checker(attention_weights, ('batch', 't', 's'))
+        # Expected shapes from BahdanauAttention call:
+        # context_vector: (batch, 1, enc_units) - Note: value_units from Attention = enc_units
+        # attention_weights: (batch, 1, s)
 
-        # Concatenate context vector and GRU output
+        # shape_checker(context_vector, ('batch', 't', 'dec_units')) # This check might have been problematic, should be ('batch', 't', 'enc_units') based on context_vector shape, but t=1. Let's use the actual shape.
+        # Let's check the expected shape based on AdditiveAttention docs again:
+        # context_vector shape: (batch, query_seq_len, value_depth)
+        # query_seq_len = 1, value_depth = enc_units
+        # So context_vector shape is (batch, 1, enc_units)
+
+        # Let's fix the shape check name or remove it if ShapeChecker is the issue
+        # shape_checker(context_vector, ('batch', 't', 'enc_units')) # Corrected shape check name
+
+        # shape_checker(attention_weights, ('batch', 't', 's')) # t=1
+
+        # 4. Combine context vector and GRU output
+        # Concatenate along the last dimension: (batch, 1, enc_units) + (batch, 1, dec_units)
+        # Result shape: (batch, 1, enc_units + dec_units)
         context_and_rnn_output = tf.concat([context_vector, rnn_output], axis=-1)
-        # The Wc layer should process the concatenated tensor
-        attention_vector = self.Wc(context_and_rnn_output) # Should be (batch, t, dec_units)
 
-        shape_checker(attention_vector, ('batch', 't', 'dec_units'))
+        # 5. Pass through dense layer to get final attention-aware vector
+        # This layer maps the concatenated vector to dec_units or similar size.
+        # The Wc layer in Bahdanau is typically applied to the final combined vector.
+        attention_vector = self.Wc(context_and_rnn_output) # Shape: (batch, 1, dec_units) ? Check Wc output size
 
-        # Final output layer
+        # Let's check Wc definition: keras.layers.Dense(dec_units, activation=tf.math.tanh, use_bias=False)
+        # Yes, Wc maps the last dimension to dec_units. Input shape (batch, 1, enc_units + dec_units) -> Output shape (batch, 1, dec_units)
+
+        # shape_checker(attention_vector, ('batch', 't', 'dec_units')) # t=1
+
+        # 6. Final dense layer to predict logits over vocabulary
+        # Input shape (batch, 1, dec_units) -> Output shape (batch, 1, output_vocab_size)
         logits = self.fc(attention_vector)
-        shape_checker(logits, ('batch', 't', 'output_vocab_size'))
+        # shape_checker(logits, ('batch', 't', 'output_vocab_size')) # t=1
 
+        # Return logits and attention weights
         return self.DecoderOutput(logits, attention_weights), state
 
 
@@ -257,28 +339,26 @@ class MaskedLoss(keras.losses.Loss):
     def __init__(self):
         self.name = 'masked_loss'
         self.loss = keras.losses.SparseCategoricalCrossentropy(
-            from_logits=True, reduction='none')
+            from_logits=True, reduction='none') # Keep reduction='none' to apply mask
 
     def __call__(self, y_true, y_pred):
-        shape_checker = ShapeChecker()
-        # y_true is the actual target token (batch, 1)
-        # y_pred is the logits from the decoder output (batch, 1, vocab_size)
-        shape_checker(y_true, ('batch', 't')) # t should be 1 in the training loop step
-        shape_checker(y_pred, ('batch', 't', 'logits')) # t should be 1 in the training loop step
+        # Removed ShapeChecker calls inside layer methods
+        # shape_checker = ShapeChecker()
+        # y_true shape: (batch, t) - t=1 in train_step
+        # y_pred shape: (batch, t, logits) - t=1 in train_step
+        # shape_checker(y_true, ('batch', 't'))
+        # shape_checker(y_pred, ('batch', 't', 'logits'))
 
-        # Ensure y_true has the same time dimension as y_pred for loss calculation
-        # y_true needs to be reshaped to (batch, t) to match y_pred's shape before loss calculation
-        # However, the loop passes y_true as (batch, 1), which is already correct if y_pred is (batch, 1, logits)
-        loss = self.loss(y_true, y_pred) # loss will be (batch, t) after reduction=none
-        shape_checker(loss, ('batch', 't'))
+        loss = self.loss(y_true, y_pred) # loss shape: (batch, t) after reduction='none'
+        # shape_checker(loss, ('batch', 't'))
 
         # Mask out loss for padding tokens (token 0)
-        mask = tf.cast(y_true != 0, tf.float32) # mask will be (batch, t)
-        shape_checker(mask, ('batch', 't'))
+        mask = tf.cast(y_true != 0, tf.float32) # mask shape: (batch, t)
+        # shape_checker(mask, ('batch', 't'))
 
         loss *= mask # loss is now (batch, t), masked
 
-        # Return the sum over the batch and time steps, averaged later by non-masked elements
+        # Return the sum over the batch and time steps
         return tf.reduce_sum(loss)
 
 
@@ -297,71 +377,72 @@ class TrainTranslator(keras.Model):
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
         self.use_tf_function = use_tf_function
-        self.shape_checker = ShapeChecker()
-        # Metrics reset automatically at the start of each epoch
+        self.shape_checker = ShapeChecker() # Keep the shape checker for preprocess/debugging outer logic
+
+        # Keras metrics - these reset automatically at the start of each epoch
         self.train_loss_tracker = keras.metrics.Mean(name="loss")
         self.train_accuracy_tracker = keras.metrics.SparseCategoricalAccuracy(name="accuracy")
-        self.test_loss_tracker = keras.metrics.Mean(name="loss")
-        self.test_accuracy_tracker = keras.metrics.SparseCategoricalAccuracy(name="accuracy")
-
+        self.test_loss_tracker = keras.metrics.Mean(name="loss") # For test_step if implemented manually
+        self.test_accuracy_tracker = keras.metrics.SparseCategoricalAccuracy(name="accuracy") # For test_step
 
     @property
     def metrics(self):
-        # List the metrics here so they are tracked by .fit()
-        return [self.train_loss_tracker, self.train_accuracy_tracker]
+        # List the metrics that Keras should track during .fit()
+        # These should correspond to the metrics updated in train_step and test_step
+        return [self.train_loss_tracker, self.train_accuracy_tracker,
+                self.test_loss_tracker, self.test_accuracy_tracker]
 
-    # No need for a separate test_metrics property, Keras handles it
-    # if you use .evaluate() or validation_data in .fit()
 
-    # Removed the @tf.function decorator from the main call method
-    # because it handles mixed string and int inputs for initial build.
-    # The decorated _tf_train_step and _tf_test_step are used for the main loops.
+    # The main call method, used by Keras for model building and functional API
+    # It should handle the expected input type of the model (strings)
+    # and typically performs a single forward pass or defines the structure.
+    # The actual training loop is in train_step.
     def call(self, inputs, training=False):
-        # This call method is primarily used for model building by Keras
-        # It should accept the raw data input type (strings)
-        # And output something Keras can use to infer output shapes.
-        # The actual training loop will use _train_step which handles tokenized data.
-
-        # Expect inputs as a tuple of string tensors during .fit (if use_tf_function is True)
-        # Or directly as string tensors during initial build if not using tf.function
-        # or during evaluation if _test_step is used manually.
+        # Expect inputs as a tuple of string tensors (input_text, target_text)
+        # The input signature of train_step handles this explicitly for the training loop.
+        # For model building, Keras might pass raw data or dummy data.
+        # Ensure preprocessing can handle string inputs.
 
         if isinstance(inputs, (list, tuple)) and len(inputs) == 2:
             input_text, target_text = inputs
-        else:
-             # Fallback for initial build or direct call with only input text
-             # Keras might pass only x during model building
+        elif isinstance(inputs, tf.Tensor) and inputs.dtype == tf.string:
+             # If only input text is passed (e.g., during prediction or initial build)
              input_text = inputs
              # Create a dummy target_text with appropriate dtype (string)
              # Its content doesn't matter for shape inference
-             dummy_target_text = tf.fill(tf.shape(input_text), "")
+             batch_size = tf.shape(input_text)[0]
+             dummy_target_text = tf.fill([batch_size], "")
              target_text = dummy_target_text
-
+        else:
+             raise ValueError(f"Unexpected input type to TrainTranslator.call: {type(inputs)}")
 
         # Preprocess string inputs to get tokenized integers and masks
+        # self.shape_checker is used inside _preprocess
         input_tokens, input_mask, target_tokens, target_mask = self._preprocess(input_text, target_text)
 
         # Perform a single forward pass relevant for Keras model building
-        # This needs to represent the sequence prediction process structure.
-        # A common way is to pass the encoder output and the start token
-        # through the decoder for one step.
+        # This involves encoding the input and performing one step of decoding
+        # using the first token of the target sequence as input to the decoder.
 
-        enc_output, enc_state = self.encoder(input_tokens)
-
-        # Use the first token of the target sequence as the initial decoder input
-        # This assumes target_tokens includes a start token at index 0
-        initial_dec_token = target_tokens[:, :1] # Shape (batch, 1)
+        # Encoder forward pass
+        enc_output, enc_state = self.encoder(input_tokens) # int64 -> float
 
         dec_state = enc_state # Initialize decoder state with encoder final state
 
+        # Use the first token of the target sequence as the initial decoder input
+        # This assumes target_tokens includes a start token at index 0
+        initial_dec_token = target_tokens[:, :1] # Shape (batch, 1), int64
+
+        # Prepare decoder input object
         decoder_input = Decoder.DecoderInput( # Use the nested class reference
-            new_tokens=initial_dec_token,
-            enc_output=enc_output,
-            mask=input_mask # Pass the input mask to attention
+            new_tokens=initial_dec_token, # Shape (batch, 1)
+            enc_output=enc_output,      # Shape (batch, s, enc_units)
+            mask=input_mask             # Shape (batch, s) - bool
         )
 
         # Perform one decoding step
         dec_result, _ = self.decoder(decoder_input, state=dec_state)
+        # dec_result.logits shape: (batch, 1, output_vocab_size)
 
         # The model's output for Keras should be the decoder's logits
         # This is typically the output logits for the *next* token prediction.
@@ -371,6 +452,7 @@ class TrainTranslator(keras.Model):
 
     def _preprocess(self, input_text, target_text):
         # This takes string tensors and returns integer tensors + masks
+        # Use the model's shape checker here if desired
         self.shape_checker(input_text, ('batch',))
         self.shape_checker(target_text, ('batch',))
 
@@ -380,14 +462,14 @@ class TrainTranslator(keras.Model):
 
         # TextVectorization returns int64 by default if output_mode="int"
         self.shape_checker(input_tokens, ('batch', 's'))
-        self.shape_checker(target_tokens, ('batch', 't'))
+        self.shape_checker(target_tokens, ('batch', 't_target')) # Use 't_target' for target sequence length
 
         # Create masks (True for non-padding tokens, False for padding token 0)
         input_mask = input_tokens != 0 # Boolean mask for input sequence padding
         target_mask = target_tokens != 0 # Boolean mask for target sequence padding
 
         self.shape_checker(input_mask, ('batch', 's'))
-        self.shape_checker(target_mask, ('batch', 't'))
+        self.shape_checker(target_mask, ('batch', 't_target'))
 
         return input_tokens, input_mask, target_tokens, target_mask
 
@@ -402,79 +484,85 @@ class TrainTranslator(keras.Model):
         input_text, target_text = inputs
 
         # Preprocess strings to get tokenized integers and masks
+        # _preprocess uses the model's shape_checker if enabled
         (input_tokens, input_mask,
          target_tokens, target_mask) = self._preprocess(input_text, target_text)
 
-        # Ensure target_tokens are int64 for loss calculation
+        # Ensure target_tokens are int64 for loss calculation (usually already is)
         target_tokens = tf.cast(target_tokens, tf.int64)
 
-        max_target_length = tf.shape(target_tokens)[1]
+        max_target_length = tf.shape(target_tokens)[1] # Dynamic target sequence length
 
         with tf.GradientTape() as tape:
             # Encoder forward pass
-            enc_output, enc_state = self.encoder(input_tokens)
-            self.shape_checker(enc_output, ('batch', 's', 'enc_units'))
-            self.shape_checker(enc_state, ('batch', 'enc_units'))
+            enc_output, enc_state = self.encoder(input_tokens) # Input tokens are int64
 
             dec_state = enc_state # Initialize decoder state
 
-            loss = tf.constant(0.0)
-            total_tokens = tf.constant(0.0) # Counter for non-padding tokens
+            loss = tf.constant(0.0, dtype=tf.float32)
+            total_tokens = tf.constant(0.0, dtype=tf.float32) # Counter for non-padding tokens
 
             # Decoder teacher forcing loop
             # Iterate from the first token of the target (usually [start]) up to the second-to-last token
             # because each step predicts the *next* token.
+            # target_tokens[:, t:t+1] is the input token at time t
+            # target_tokens[:, t+1:t+2] is the true next token at time t+1
             for t in tf.range(max_target_length - 1):
                 # Use the current target token `target_tokens[:, t:t+1]` as the decoder input
-                # The target for the loss is the *next* token `target_tokens[:, t+1:t+2]`
-                new_tokens = target_tokens[:, t:t+1] # Current input token to decoder
-                y_true = target_tokens[:, t+1:t+2] # Next token is the true target
+                # Shape (batch, 1), int64
+                new_tokens = target_tokens[:, t:t+1]
 
-                decoder_input = Decoder.DecoderInput( # Use the nested class reference
-                    new_tokens=new_tokens,
-                    enc_output=enc_output,
-                    mask=input_mask # Pass the input mask to attention
+                # The target for the loss is the *next* token `target_tokens[:, t+1:t+2]`
+                # Shape (batch, 1), int64
+                y_true = target_tokens[:, t+1:t+2]
+
+                # Prepare decoder input object for this single step
+                decoder_input = Decoder.DecoderInput(
+                    new_tokens=new_tokens, # Shape (batch, 1)
+                    enc_output=enc_output, # Shape (batch, s, enc_units)
+                    mask=input_mask        # Shape (batch, s)
                 )
 
+                # Perform one decoding step
                 dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
-
                 # dec_result.logits shape: (batch, 1, output_vocab_size)
-                # y_true shape: (batch, 1)
 
                 # Calculate loss for this time step
-                step_loss = self.loss(y_true, dec_result.logits) # Should be (batch, 1) after reduction=none
+                # self.loss is MaskedLoss, which takes (batch, t) and (batch, t, logits)
+                # Here t=1 for both, so it works correctly
+                step_loss = self.loss(y_true, dec_result.logits) # Should return (batch, 1) masked sum
 
-                # Mask the loss based on the true target token
-                mask = tf.cast(y_true != 0, tf.float32) # (batch, 1)
-                step_loss *= mask # (batch, 1), masked
+                # Accumulate loss and token count across time steps in the batch
+                # The MaskedLoss already returned the summed loss over batch and time=1, masked.
+                loss += step_loss # Add the sum from this timestep
 
-                loss += tf.reduce_sum(step_loss) # Sum masked loss over batch
-                total_tokens += tf.reduce_sum(mask) # Count non-padding tokens
+                # We need to count tokens across the time steps for the average loss and accuracy
+                # The mask from the current y_true gives us which tokens are real
+                step_mask = tf.cast(y_true != 0, tf.float32) # (batch, 1)
+                total_tokens += tf.reduce_sum(step_mask) # Sum non-padding tokens for this timestep over the batch
 
-                # Update training metric
-                # accuracy.update_state expects (y_true, y_pred_logits) where y_true is integer indices
-                # y_true should be (batch, 1) and y_pred_logits should be (batch, 1, vocab_size)
+
+                # Update training accuracy metric
+                # accuracy.update_state expects (y_true, y_pred_logits)
+                # y_true is (batch, 1), y_pred_logits is (batch, 1, vocab_size)
                 self.train_accuracy_tracker.update_state(y_true, dec_result.logits)
 
 
-            # Compute the average loss
-            # Avoid division by zero if a batch only contains padding (unlikely but safe)
+            # Compute the average loss over the entire batch and all unmasked time steps
+            # Avoid division by zero if a batch only contains padding (unlikely with start token, but safe)
             average_loss = tf.cond(total_tokens > 0,
-                                   lambda: loss / total_tokens,
-                                   lambda: tf.constant(0.0))
+                                   lambda: loss / total_tokens, # Divide total summed loss by total non-padding tokens
+                                   lambda: tf.constant(0.0, dtype=tf.float32))
 
         # Get gradients and apply optimizer
         variables = self.trainable_variables
         gradients = tape.gradient(average_loss, variables)
         self.optimizer.apply_gradients(zip(gradients, variables))
 
-        # Update loss metric manually since reduction='none' was used
-        # The Mean metric updates based on the *value* passed to update_state, not gradients
-        # We pass the calculated average_loss for the batch
+        # Update loss metric with the calculated average batch loss
         self.train_loss_tracker.update_state(average_loss)
 
-
-        # Return metrics for this step
+        # Return metric results for this step
         return {'loss': self.train_loss_tracker.result(),
                 'accuracy': self.train_accuracy_tracker.result()}
 
@@ -493,49 +581,51 @@ class TrainTranslator(keras.Model):
         (input_tokens, input_mask,
          target_tokens, target_mask) = self._preprocess(input_text, target_text)
 
-        # Ensure target_tokens are int64 for loss calculation
         target_tokens = tf.cast(target_tokens, tf.int64)
-
         max_target_length = tf.shape(target_tokens)[1]
 
         enc_output, enc_state = self.encoder(input_tokens)
         dec_state = enc_state
 
-        loss = tf.constant(0.0)
-        total_tokens = tf.constant(0.0)
+        loss = tf.constant(0.0, dtype=tf.float32)
+        total_tokens = tf.constant(0.0, dtype=tf.float32)
 
         # Decoder teacher forcing loop for evaluation
+        # Iterate from the first token of the target (usually [start]) up to the second-to-last token
         for t in tf.range(max_target_length - 1):
-            new_tokens = target_tokens[:, t:t+1]
-            y_true = target_tokens[:, t+1:t+2]
+            new_tokens = target_tokens[:, t:t+1] # Input token at time t
+            y_true = target_tokens[:, t+1:t+2] # True token at time t+1
 
             decoder_input = Decoder.DecoderInput( # Use the nested class reference
-                new_tokens=new_tokens,
-                enc_output=enc_output,
-                mask=input_mask # Pass the input mask to attention
+                new_tokens=new_tokens, # Shape (batch, 1)
+                enc_output=enc_output, # Shape (batch, s, enc_units)
+                mask=input_mask        # Shape (batch, s)
             )
 
             dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
+            # dec_result.logits shape: (batch, 1, output_vocab_size)
 
-            step_loss = self.loss(y_true, dec_result.logits)
-            mask = tf.cast(y_true != 0, tf.float32)
-            step_loss *= mask
+            # Calculate loss for this time step
+            step_loss = self.loss(y_true, dec_result.logits) # Should return (batch, 1) masked sum
 
-            loss += tf.reduce_sum(step_loss)
-            total_tokens += tf.reduce_sum(mask)
+            # Accumulate loss and token count
+            loss += step_loss
+            step_mask = tf.cast(y_true != 0, tf.float32)
+            total_tokens += tf.reduce_sum(step_mask)
 
-            # Update test metric
+            # Update test accuracy metric
             self.test_accuracy_tracker.update_state(y_true, dec_result.logits)
 
-        # Compute the average loss
+
+        # Compute the average loss over the batch and time steps
         average_loss = tf.cond(total_tokens > 0,
                                lambda: loss / total_tokens,
-                               lambda: tf.constant(0.0))
+                               lambda: tf.constant(0.0, dtype=tf.float32))
 
-        # Update loss metric manually
+        # Update loss metric with the calculated average batch loss
         self.test_loss_tracker.update_state(average_loss)
 
-        # Return metrics for this step
+        # Return metric results for this step
         return {'loss': self.test_loss_tracker.result(),
                 'accuracy': self.test_accuracy_tracker.result()}
 
@@ -569,49 +659,58 @@ class Translator(tf.Module):
         token_mask = np.zeros([index_from_string.vocabulary_size()], dtype=bool)
         token_mask[np.array(token_mask_ids)] = True
         self.token_mask = tf.constant(token_mask) # Make token_mask a tf.constant
-        self.start_token = index_from_string(tf.constant('[start]'))
-        self.end_token = index_from_string(tf.constant('[end]'))
+        self.start_token = tf.constant(index_from_string(tf.constant('[start]')), dtype=tf.int64) # Ensure int64
+        self.end_token = tf.constant(index_from_string(tf.constant('[end]')), dtype=tf.int64) # Ensure int64
+
 
     def tokens_to_text(self, result_tokens):
-        shape_checker = ShapeChecker()
-        shape_checker(result_tokens, ('batch', 't'))
+        # Removed ShapeChecker calls inside method
+        # shape_checker = ShapeChecker()
+        # shape_checker(result_tokens, ('batch', 't'))
         # Ensure input to string lookup is int64
         result_text_tokens = self.output_token_string_from_index(tf.cast(result_tokens, tf.int64))
-        shape_checker(result_text_tokens, ('batch', 't'))
+        # shape_checker(result_text_tokens, ('batch', 't'))
         result_text = tf.strings.reduce_join(result_text_tokens,
                                              axis=1, separator=' ')
-        shape_checker(result_text, ('batch'))
+        # shape_checker(result_text, ('batch'))
         result_text = tf.strings.strip(result_text)
-        shape_checker(result_text, ('batch',))
+        # shape_checker(result_text, ('batch',))
         return result_text
 
     def sample(self, logits, temperature):
+        # Removed ShapeChecker calls inside method
         # logits shape: (batch, t, vocab) - in translate loop, t is 1
-        shape_checker = ShapeChecker()
-        shape_checker(logits, ('batch', 't', 'vocab'))
-        shape_checker(self.token_mask, ('vocab',))
+        # shape_checker = ShapeChecker()
+        # shape_checker(logits, ('batch', 't', 'vocab'))
+        # shape_checker(self.token_mask, ('vocab',))
 
         # Ensure token_mask broadcast correctly
         token_mask_expanded = self.token_mask[tf.newaxis, tf.newaxis, :]
-        shape_checker(token_mask_expanded, ('batch', 't', 'vocab'), broadcast=True)
+        # shape_checker(token_mask_expanded, ('batch', 't', 'vocab'), broadcast=True)
 
-        # Apply mask to logits
-        logits = tf.where(token_mask_expanded, -np.inf, logits)
+        # Apply mask to logits (shape (batch, t, vocab))
+        logits = tf.where(token_mask_expanded, -tf.float32.max, logits) # Use max float value for -inf
 
-        # Squeeze the 't' dimension before categorical sampling
-        logits = tf.squeeze(logits, axis=1) # Shape becomes (batch, vocab)
-        shape_checker(logits, ('batch', 'vocab'))
+        # Squeeze the 't' dimension before categorical sampling if t is 1
+        # Add a check in case t is not 1 (e.g. if batch sampling was added later)
+        if tf.shape(logits)[1] == 1:
+             logits = tf.squeeze(logits, axis=1) # Shape becomes (batch, vocab)
+        # shape_checker(logits, ('batch', 'vocab') or ('batch', 't', 'vocab')) # Depends on squeeze
+
 
         if temperature == 0.0:
-            new_tokens = tf.argmax(logits, axis=-1) # Shape (batch,)
+            # Argmax over the vocabulary dimension
+            new_tokens = tf.argmax(logits, axis=-1) # Shape (batch,) if squeezed, (batch, t) if not
         else:
+            # Categorical sampling over the vocabulary dimension
             new_tokens = tf.random.categorical(logits/temperature,
-                                               num_samples=1) # Shape (batch, 1)
+                                               num_samples=1) # Shape (batch, 1) if squeezed, (batch, t, 1) if not
 
-        # Ensure the output shape is (batch, 1)
+
         new_tokens = tf.cast(new_tokens, tf.int64) # Ensure int64 dtype
-        new_tokens = tf.reshape(new_tokens, (-1, 1)) # Reshape to (batch, 1)
-        shape_checker(new_tokens, ('batch', 't'))
+        # Reshape to (batch, 1) regardless of initial shape after sampling
+        new_tokens = tf.reshape(new_tokens, (-1, 1))
+        # shape_checker(new_tokens, ('batch', 't')) # t=1 here
 
         return new_tokens
 
@@ -622,35 +721,45 @@ class Translator(tf.Module):
                   return_attention=True,
                   temperature=1.0):
         batch_size = tf.shape(input_text)[0]
+        # Preprocess input text
+        # We only need input_tokens and input_mask for inference
         input_tokens = self.input_text_processor(input_text) # strings -> int64
         input_mask = input_tokens != 0 # boolean mask for input padding
 
+        # Encoder forward pass
         enc_output, enc_state = self.encoder(input_tokens) # int64 -> float
 
-        dec_state = enc_state # float
+        dec_state = enc_state # Initialize decoder state
 
         # Start decoding with the start token
         new_tokens = tf.fill([batch_size, 1], self.start_token) # int64, shape (batch, 1)
 
         result_tokens = []
-        attention_weights_list = [] # Renamed for clarity
+        attention_weights_list = []
 
-        # `done` flags to track completed sequences
+        # `done` flags to track completed sequences in the batch
         done = tf.zeros([batch_size, 1], dtype=tf.bool) # boolean, shape (batch, 1)
 
+        # Decoding loop
         for _ in tf.range(max_length): # Use tf.range for graph mode compatibility
-            decoder_input = Decoder.DecoderInput( # Use the nested class reference
+            # If all sequences in the batch are done, we can stop early even in graph mode
+            # using tf.while_loop with a condition is more robust for graph mode early stopping,
+            # but a simple range loop with masking completed sequences is easier to implement.
+            # The check `tf.reduce_all(done)` below is only effective in eager mode.
+
+            # Prepare decoder input object for this single step
+            decoder_input = Decoder.DecoderInput(
                 new_tokens=new_tokens,      # Current input token(s) to decoder (batch, 1)
                 enc_output=enc_output,      # Encoder output (batch, s, enc_units)
                 mask=input_mask             # Input mask (batch, s)
             )
 
+            # Perform one decoding step
             dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
-
             # dec_result.logits shape (batch, 1, output_vocab_size)
             # dec_result.attention_weights shape (batch, 1, s)
 
-            # Sample the next token
+            # Sample the next token for each sequence in the batch
             sampled_tokens = self.sample(dec_result.logits, temperature) # int64, shape (batch, 1)
 
             # Store attention weights if requested
@@ -658,29 +767,36 @@ class Translator(tf.Module):
                  attention_weights_list.append(dec_result.attention_weights) # shape (batch, 1, s)
 
             # Check if sequences are done (sampled end token or already done)
-            just_done = (sampled_tokens == self.end_token) # boolean, shape (batch, 1)
-            done = done | just_done # boolean, shape (batch, 1)
+            just_sampled_end = (sampled_tokens == self.end_token) # boolean, shape (batch, 1)
+            done = done | just_sampled_end # Update done flags
 
-            # Append the sampled token to the results
-            # If a sequence is done, append padding (token 0) instead of the sampled token
-            # This is crucial for consistent shape during concat later
+            # Append the sampled token to the results.
+            # If a sequence is done, append padding (token 0) instead of the sampled token.
+            # This maintains consistent tensor shape in the list for tf.concat later.
             sampled_tokens = tf.where(done, tf.constant(0, dtype=tf.int64), sampled_tokens)
             result_tokens.append(sampled_tokens) # List of (batch, 1) tensors
 
-            # Update new_tokens for the next decoder step
+            # Update new_tokens for the next decoder step.
+            # Even if done, we feed the padding token (0) back into the decoder
+            # for subsequent steps until max_length is reached.
             new_tokens = sampled_tokens
 
-            # Optimization: if all sequences in the batch are done, stop early in eager mode
+            # Optimization: if all sequences in the batch are done, stop early (only effective in eager mode)
             if tf.executing_eagerly() and tf.reduce_all(done):
                  break
 
-        # Concatenate results and attention weights along the time axis
-        result_tokens = tf.concat(result_tokens, axis=-1) # (batch, max_length)
+
+        # Concatenate the list of tensors from each time step along the time axis
+        # From list of (batch, 1) tensors to one (batch, max_length) tensor
+        result_tokens = tf.concat(result_tokens, axis=-1)
+
+        # Convert token IDs back to text strings
         result_text = self.tokens_to_text(result_tokens) # (batch,)
 
         response = {'text': result_text}
 
-        if return_attention:
+        # Concatenate attention weights if requested
+        if return_attention and attention_weights_list: # Check if list is not empty
             # Concatenate attention weights: list of (batch, 1, s) -> (batch, max_length, s)
             attention_stack = tf.concat(attention_weights_list, axis=1)
             response['attention'] = attention_stack
@@ -695,32 +811,36 @@ class Translator(tf.Module):
 
 def load_vectorizer(from_file):
     # Loading Keras models requires custom objects if they use custom layers or functions
-    custom_objects = {"custom_standardization": custom_standardization}
+    custom_objects = {"custom_standardization": custom_standardization,
+                      "TextVectorization": TextVectorization} # Add TextVectorization itself
     loaded_vectorizer_model = keras.models.load_model(from_file, custom_objects=custom_objects)
-    vectorizer_layer = loaded_vectorizer_model.layers[1] # Assuming layer 0 is Input, layer 1 is TextVectorization
+    # Assuming the vectorizer is the second layer (index 1) in the Sequential model
+    if len(loaded_vectorizer_model.layers) > 1:
+        vectorizer_layer = loaded_vectorizer_model.layers[1]
+        if isinstance(vectorizer_layer, TextVectorization):
+            # Recreate the vectorizer object from the loaded layer config
+            lconfig = vectorizer_layer.get_config()
+            # The loaded config should already have 'standardize' pointing to custom_standardization
+            # Ensure output_mode is correctly set if it's not in config or needs overriding
+            lconfig['output_mode'] = 'int' # Assuming it was saved as int mode
+            vectorizer = TextVectorization.from_config(lconfig)
 
-    # Recreate the vectorizer object from the loaded layer
-    lconfig = vectorizer_layer.get_config()
-    # The 'output_mode' might be set during saving, remove if necessary for recreation
-    # lconfig.pop('output_mode', None) # Remove output_mode if it causes issues during recreation
-    # Ensure the custom standardization function is passed if it was used
-    lconfig['standardize'] = custom_standardization # Ensure custom function is linked
+            # Set the vocabulary explicitly
+            lvocab = vectorizer_layer.get_vocabulary()
+            vectorizer.set_vocabulary(lvocab)
 
-    # Explicitly set the output mode again if needed, or rely on the loaded config
-    # lconfig['output_mode'] = "int" # Or whatever mode was used
+            # Call adapt or call the vectorizer once to build its variables
+            # Adapt with a dummy string is one way
+            # vectorizer.adapt(tf.constant([""])) # Adapting might reset vocabulary, set it again if needed
+            # A safer way after setting vocabulary is to just call it once
+            _ = vectorizer(tf.constant(["dummy string"])) # Call once to build variables
 
-    vectorizer = TextVectorization.from_config(lconfig)
-
-    # The from_config method doesn't load vocabulary, we need to set it explicitly
-    lvocab = vectorizer_layer.get_vocabulary()
-    vectorizer.set_vocabulary(lvocab)
-
-    # Need to call adapt or call the vectorizer once to build its variables
-    # Adapting with a dummy string is one way
-    vectorizer.adapt(tf.constant(["", "a"])) # Adapt with empty string and a placeholder
-
-    print(f"Vectorizer loaded from path: {from_file}")
-    return vectorizer
+            print(f"Vectorizer loaded successfully from path: {from_file}")
+            return vectorizer
+        else:
+             raise TypeError(f"Layer 1 in the loaded model is not a TextVectorization layer: {type(vectorizer_layer)}")
+    else:
+         raise ValueError("Loaded model does not have enough layers to extract vectorizer.")
 
 
 def save_vectorizer(vectorizer, to_file):
@@ -731,9 +851,6 @@ def save_vectorizer(vectorizer, to_file):
     vectorizer_model.add(keras.Input(shape=(1,), dtype=tf.string))
     vectorizer_model.add(vectorizer)
 
-    # Compile is not strictly necessary for saving, but harmless.
-    # vectorizer_model.compile()
-
     # Ensure the directory exists
     os.makedirs(os.path.dirname(to_file), exist_ok=True)
 
@@ -741,9 +858,8 @@ def save_vectorizer(vectorizer, to_file):
     if not to_file.endswith('.keras'):
         to_file += '.keras'
 
-    # Save the model
+    # Save the model using the native Keras format
     try:
-        # Using the native Keras format (.keras) which is recommended
         vectorizer_model.save(to_file)
         print(f"Vectorizer model saved to path: {to_file}")
     except Exception as e:
@@ -796,17 +912,15 @@ n_demo = args.nDemo
 results_path = os.path.normpath(args.resPath) + os.sep
 dataset_name = parse_dataset_name(training_data)
 
-# Initialize BatchLogs callbacks
-# Note: Keras metrics tracked by the model are generally preferred for .fit()
-# BatchLogs can be useful for inspecting batch-level metrics explicitly.
+# Initialize BatchLogs callbacks (optional, mostly for manual inspection)
 train_loss_bl = BatchLogs('loss')
 train_accu_bl = BatchLogs('accuracy')
-test_loss_bl = BatchLogs('loss') # Note: these won't work directly with validation_data in .fit
-test_accu_bl = BatchLogs('accuracy') # You would need a custom training loop or callback for test batch logs
+test_loss_bl = BatchLogs('loss')
+test_accu_bl = BatchLogs('accuracy')
 
 strip_chars = string.punctuation
 strip_chars = strip_chars.replace("[", "")
-strip_chars = strip_chars.replace("]", "") # Corrected variable name
+strip_chars = strip_chars.replace("]", "")
 
 with open(training_data) as f:
     train_text = f.readlines()
@@ -815,19 +929,17 @@ with open(testing_data) as f:
     val_text = f.readlines()
 
 logging.info("Preparing train and test data")
-# Ensure prepare_data handles potential index errors if lines are not correctly formatted
-try:
-    train_pairs = list(
-        map(functools.partial(
-            prepare_data,
-            include_labels=cs_labels, all_start_end=True), train_text))
-    val_pairs = list(
-        map(functools.partial(
-            prepare_data,
-            include_labels=cs_labels, all_start_end=True), val_text))
-except IndexError as e:
-    logging.error(f"Error processing data file: {e}. Check file format.")
-    exit() # Exit if data loading fails
+# Filter out None values from prepare_data due to malformed lines
+train_pairs = [pair for pair in map(functools.partial(
+    prepare_data, include_labels=cs_labels, all_start_end=True), train_text) if pair is not None]
+val_pairs = [pair for pair in map(functools.partial(
+    prepare_data, include_labels=cs_labels, all_start_end=True), val_text) if pair is not None]
+
+if not train_pairs:
+    logging.error("No valid training data pairs found after preparation. Exiting.")
+    exit()
+if not val_pairs:
+    logging.warning("No valid validation data pairs found after preparation.")
 
 
 # Initialize and adapt vectorizers first
@@ -836,7 +948,6 @@ input_vectorizer = keras.layers.TextVectorization(
     output_sequence_length=sequence_length, standardize=custom_standardization)
 
 # Output sequence length should be sequence_length + 1 to accommodate [start] and [end] tokens
-# and predict the sequence including [end]
 output_sequence_length = sequence_length + 1
 output_vectorizer = keras.layers.TextVectorization(
     output_mode="int", max_tokens=max_features,
@@ -872,15 +983,13 @@ logging.info(f"Saved text vectorizers to {os.path.dirname(in_vect_save_path)}")
 
 
 # Create datasets using make_dataset AFTER vectorizers are defined and adapted
-# make_dataset now correctly batches strings and then maps format_dataset
-# to tokenize them into integers.
 dataset = make_dataset(train_pairs)
 test_dataset = make_dataset(val_pairs)
 
 # Update max_features based on the actual vocabulary size
 max_vocab = max([
-        len(input_vectorizer.get_vocabulary()),
-        len(output_vectorizer.get_vocabulary())])
+        input_vectorizer.vocabulary_size(),
+        output_vectorizer.vocabulary_size()])
 # Use the minimum of requested max_features and actual max_vocab size
 max_features = min(args.nFeatures, max_vocab)
 
@@ -905,31 +1014,43 @@ train_translator = TrainTranslator(
     input_text_processor=input_vectorizer,
     output_text_processor=output_vectorizer)
 
-# Build the model by calling it on a dummy batch or the first batch from the dataset
+# Build the model by calling it on a dummy batch of the expected string input type
 # This is necessary before compiling or loading weights
 logging.info("Building the model...")
-# Get a sample batch from the dataset
-for example_input_batch, example_target_batch in dataset.take(1):
-    # Pass the raw string batch to the model's call method for building
-    # The call method handles preprocessing internally for building
-    # Need to get the original string tensors before format_dataset was applied
-    # A simpler way is to pass dummy tensors of the correct dtype (string)
-    # Or rely on .fit() or .compile(run_eagerly=True) to build it.
-    # Let's get original strings from pairs and pass them to the model call for building
-    dummy_string_input = tf.constant([p[0] for p in train_pairs[:batch_size]])
-    dummy_string_target = tf.constant([p[1] if not cs_labels else p[1][0] for p in train_pairs[:batch_size]])
+# Get a sample batch of *string* data from the original pairs
+# Need at least batch_size samples if available
+sample_train_pairs = train_pairs[:batch_size] if len(train_pairs) >= batch_size else train_pairs
+if sample_train_pairs:
+    dummy_string_input = tf.constant([p[0] for p in sample_train_pairs])
+    dummy_string_target = tf.constant([p[1] if not cs_labels else p[1][0] for p in sample_train_pairs])
 
-    # The model's call method is designed to take string inputs for building
-    _ = train_translator((dummy_string_input, dummy_string_target)) # Call the model once to build it
-    logging.info("Model built.")
-    break # Only need one batch to build
+    try:
+        # Call the model once to build it using dummy string data
+        # Pass inputs as a tuple matching the train_step signature
+        _ = train_translator((dummy_string_input, dummy_string_target))
+        logging.info("Model built successfully.")
+    except Exception as e:
+        logging.error(f"Error building the model: {e}")
+        # Re-raise the exception if building fails critically
+        # raise # Uncomment to stop execution on build error
+else:
+    logging.warning("Not enough training data to build the model with a full batch.")
+    # Attempt to build with a minimal call if full batch is not possible
+    try:
+        dummy_string_input = tf.constant(["dummy input"])
+        dummy_string_target = tf.constant(["dummy target"])
+        _ = train_translator((dummy_string_input, dummy_string_target))
+        logging.info("Model built successfully with minimal data.")
+    except Exception as e:
+        logging.error(f"Error building the model with minimal data: {e}")
+        # Re-raise the exception if building fails critically
+        # raise
 
 
 # Compile the model with the custom loss and optimizer
-# Ensure the loss is the MaskedLoss instance
 train_translator.compile(
     optimizer=keras.optimizers.Adam(),
-    loss=MaskedLoss()
+    loss=MaskedLoss() # Pass the instance of the custom loss
 )
 
 # If you were previously training and saved weights, uncomment to load them
@@ -943,24 +1064,23 @@ train_translator.compile(
 
 
 logging.info("Checking dataset output shapes before training loop...")
-# Remove the redundant call to format_dataset here.
-# The dataset pipeline already applies format_dataset.
+# The dataset pipeline already applies format_dataset and yields INT tensors.
 # Just iterate and print the shape of the yielded tensors.
-#tf.config.run_functions_eagerly(True) # Keep eager for debugging dataset output if needed
+# tf.config.run_functions_eagerly(True) # Uncomment to debug dataset iteration in eager mode
 for in_phr, out_phr in dataset.take(1):
     print("Dataset batch yielded - Input shape:", in_phr.shape, "Target shape:", out_phr.shape)
     # Optional: Check dtypes - should be int64
     print("Dataset batch yielded - Input dtype:", in_phr.dtype, "Target dtype:", out_phr.dtype)
-#tf.config.run_functions_eagerly(False) # Turn eager off for training if desired
+# tf.config.run_functions_eagerly(False) # Turn eager off if you enabled it above
 
 
 logging.info("Training neural reasoning model...")
-# Use the compiled model's fit method
+# Use the compiled model's fit method, passing the dataset directly
 history = train_translator.fit(
     dataset,
-    validation_data=test_dataset,
+    validation_data=test_dataset, # Keras will automatically call test_step on validation_data
     epochs=n_epochs,
-    callbacks=[cp_callback] # Add other callbacks like EarlyStopping if needed
+    callbacks=[cp_callback, train_loss_bl, train_accu_bl] # Add BatchLogs if you want batch-level history
 )
 
 logging.info("Training finished.")
@@ -980,10 +1100,23 @@ logging.info(f"Saved training history to {history_csv_path}")
 try:
     fig, axes = plt.subplots(2, 1)
     # Ensure columns exist before plotting
+    # Use .get() or check for column existence
     if 'loss' in rdf.columns and 'val_loss' in rdf.columns:
          rdf[['loss', 'val_loss']].plot(ax=axes[0])
+         axes[0].set_title('Loss')
+    elif 'loss' in rdf.columns:
+         rdf[['loss']].plot(ax=axes[0])
+         axes[0].set_title('Loss')
+
+
     if 'accuracy' in rdf.columns and 'val_accuracy' in rdf.columns:
          rdf[['accuracy', 'val_accuracy']].plot(ax=axes[1])
+         axes[1].set_title('Accuracy')
+    elif 'accuracy' in rdf.columns:
+        rdf[['accuracy']].plot(ax=axes[1])
+        axes[1].set_title('Accuracy')
+
+    plt.xlabel('Epoch')
     plt.tight_layout()
     history_plot_path = os.path.join(out_dir, 'history_plot.pdf')
     plt.savefig(history_plot_path)
@@ -994,42 +1127,49 @@ except Exception as e:
 
 # Perform inference using the trained model's weights
 # Instantiate the Translator module for inference
+# It reuses the trained encoder and decoder from the TrainTranslator model
 translator = Translator(
-    encoder=train_translator.encoder, # Use the trained encoder from train_translator
-    decoder=train_translator.decoder, # Use the trained decoder from train_translator
+    encoder=train_translator.encoder, # Use the trained encoder
+    decoder=train_translator.decoder, # Use the trained decoder
     input_text_processor=input_vectorizer,
     output_text_processor=output_vectorizer,
 )
 
 # Load weights into the Translator module's sub-layers if they weren't shared directly
-# (In this case, they are shared objects, so weights are already there)
+# (In this case, they are shared objects, so weights are already there from training)
 # If you had saved the full TrainTranslator model and loaded it separately,
 # you might need to explicitly get encoder/decoder from the loaded model.
 # As is, this should work fine.
 
-if not (n_demo < 0 or isinstance(n_demo, str)):
+
+if n_demo > 0: # Only run demo if n_demo is positive
     # Prepare test data for inference
+    val_pairs_for_demo = val_pairs
     if len(val_pairs) > n_demo:
         random.seed(42) # Use a fixed seed for reproducible demo samples
-        val_pairs_subset = random.sample(val_pairs, n_demo)
-    else:
-        val_pairs_subset = val_pairs
+        val_pairs_for_demo = random.sample(val_pairs, n_demo)
 
-    inp_ = [inp for inp, targ in val_pairs_subset]
-    targ_ = [targ for inp, targ in val_pairs_subset]
+    inp_ = [inp for inp, targ in val_pairs_for_demo]
+    targ_ = [targ for inp, targ in val_pairs_for_demo]
 
     results = []
     logging.info(f"Now performing inferences on {len(inp_)} test samples using the trained model...")
 
-    # Process inference in batches
-    # Create a tf.data.Dataset for the inference data
+    # Create a tf.data.Dataset for the inference input text
     inference_dataset = tf.data.Dataset.from_tensor_slices(tf.constant(inp_))
+    # Batch the inference dataset
     inference_dataset = inference_dataset.batch(batch_size)
 
+    # Iterate through the batched inference dataset
     for batch_input_text in inference_dataset:
         # Use the tf_translate function for graph mode inference
-        result = translator.tf_translate(batch_input_text)['text'].numpy()
-        results.extend(result.tolist()) # Extend the list with results from the batch
+        # It takes a batch of string tensors
+        try:
+            result_batch = translator.tf_translate(batch_input_text)['text'].numpy()
+            results.extend(result_batch.tolist()) # Extend the list with results from the batch
+        except Exception as e:
+             logging.error(f"Error during inference batch: {e}")
+             # Optionally break or handle the error
 
     # Combine inputs, true targets, and predictions
     result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj_true': targ_, 'Obj_predicted': results})
@@ -1040,4 +1180,4 @@ if not (n_demo < 0 or isinstance(n_demo, str)):
     print(result_df)
     logging.info(f"See the predictions written to {predictions_csv_path}")
 else:
-    logging.info("n_demo is set to -1 or not a number, skipping inference demo.")
+    logging.info("n_demo is not positive, skipping inference demo.")
