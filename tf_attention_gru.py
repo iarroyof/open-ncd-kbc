@@ -455,6 +455,7 @@ def save_vectorizer(vectorizer, to_file):
     vectorizer_model.compile()
     
     # Ensure the file path ends with .keras
+    os.makedirs(os.path.dirname(to_file), exist_ok=True)
     if not to_file.endswith('.keras'):
         to_file += '.keras'
     
