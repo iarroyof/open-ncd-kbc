@@ -588,7 +588,7 @@ if max_features > max_vocab:
 
 checkpoint_path = ("results" + os.sep + f"attentionGRU_{dataset_name}_epochs"
     f"-{n_epochs}_seqlen-{sequence_length}_maxfeat-{max_features}_batch"
-    f"-{batch_size}_embdim-{embedding_dim}_steps-{units}"+os.sep+"cp.ckpt")
+    f"-{batch_size}_embdim-{embedding_dim}_steps-{units}"+os.sep+"cp.weights.h5")
 
 print("Working results directory: " + checkpoint_path)
 
