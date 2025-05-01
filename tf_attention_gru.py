@@ -868,9 +868,9 @@ parser.add_argument("-t", "--testData", type=str,
 parser.add_argument("-rp", "--resPath", type=str,
                    default=os.getcwd(),
                    help="Path where results, vectorizer and neural network models are stored.")
-# ─── Main script, after argparse and imports ───────────────────────────────────
+# ─── Main script, after your `parser = argparse.ArgumentParser()` and imports ───
 
-# Parse args
+# Parse command-line arguments
 args = parser.parse_args()
 
 sequence_length = args.seqLen
@@ -885,91 +885,117 @@ n_demo         = args.nDemo
 results_path   = os.path.normpath(args.resPath) + os.sep
 dataset_name   = parse_dataset_name(training_data)
 
-# Callbacks for batch‐level logging (optional)
+# Optional batch-level callbacks
 train_loss_bl = BatchLogs('loss')
 train_accu_bl = BatchLogs('accuracy')
 
+# Strip punctuation for your standardization
 strip_chars = string.punctuation.replace('[','').replace(']','')
 
-# ─── Load and prepare raw text lines ──────────────────────────────────────────
+# ─── Load raw lines and prepare (string, string) pairs ─────────────────────────
 with open(training_data) as f:
-    train_text = f.readlines()
+    train_lines = f.readlines()
 with open(testing_data) as f:
-    val_text = f.readlines()
+    val_lines = f.readlines()
 
-logging.info("Preparing train and test data")
+logging.info("Preparing train and validation pairs")
 train_pairs = [
     pair for pair in map(
-        functools.partial(prepare_data, include_labels=cs_labels, all_start_end=True),
-        train_text
+        functools.partial(prepare_data,
+                          include_labels=cs_labels,
+                          all_start_end=True),
+        train_lines
     ) if pair is not None
 ]
 val_pairs = [
     pair for pair in map(
-        functools.partial(prepare_data, include_labels=cs_labels, all_start_end=True),
-        val_text
+        functools.partial(prepare_data,
+                          include_labels=cs_labels,
+                          all_start_end=True),
+        val_lines
     ) if pair is not None
 ]
 
 if not train_pairs:
-    logging.error("No valid training data pairs found. Exiting.")
+    logging.error("No valid training data found. Exiting.")
     exit()
 if not val_pairs:
-    logging.warning("No valid validation data pairs found.")
+    logging.warning("No valid validation data found; continuing with empty val set.")
 
-# ─── Build and adapt TextVectorization layers ─────────────────────────────────
+# Split into input/output text lists
+train_inputs  = [p[0] for p in train_pairs]
+train_targets = [p[1] for p in train_pairs]
+val_inputs    = [p[0] for p in val_pairs]
+val_targets   = [p[1] for p in val_pairs]
+
+# ─── Build and adapt your TextVectorization layers ─────────────────────────────
 input_vectorizer = TextVectorization(
-    output_mode="int", max_tokens=max_features,
+    output_mode="int",
+    max_tokens=max_features,
     output_sequence_length=sequence_length,
     standardize=custom_standardization
 )
 output_vectorizer = TextVectorization(
-    output_mode="int", max_tokens=max_features,
+    output_mode="int",
+    max_tokens=max_features,
     output_sequence_length=sequence_length+1,
     standardize=custom_standardization
 )
 
-train_in_texts = [p[0] for p in train_pairs]
-train_out_texts = [p[1] for p in train_pairs]
+logging.info("Adapting input vectorizer on %d examples", len(train_inputs))
+input_vectorizer.adapt(train_inputs)
+logging.info("Adapting output vectorizer on %d examples", len(train_targets))
+output_vectorizer.adapt(train_targets)
 
-logging.info("Adapting input vectorizer")
-input_vectorizer.adapt(train_in_texts)
-logging.info("Adapting output vectorizer")
-output_vectorizer.adapt(train_out_texts)
+# ─── Create tf.data pipelines of raw strings ──────────────────────────────────
+raw_train = (
+    tf.data.Dataset
+      .from_tensor_slices((train_inputs, train_targets))
+      .batch(batch_size)
+      .cache()
+      .prefetch(tf.data.AUTOTUNE)
+)
 
-# ─── Create raw‐string tf.data pipelines ───────────────────────────────────────
-raw_train = tf.data.Dataset.from_tensor_slices(
-    (train_in_texts, train_out_texts)
-).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
+raw_val = (
+    tf.data.Dataset
+      .from_tensor_slices((val_inputs, val_targets))
+      .batch(batch_size)
+      .cache()
+      .prefetch(tf.data.AUTOTUNE)
+)
 
-raw_val = tf.data.Dataset.from_tensor_slices(
-    ([p[0] for p in val_pairs], [p[1] for p in val_pairs])
-).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
-
-# ─── Prepare checkpoint directory ──────────────────────────────────────────────
-checkpoint_path = os.path.join(
+# ─── Prepare checkpoint directory and callback ────────────────────────────────
+checkpoint_dir = os.path.join(
     results_path, "results",
-    f"attentionGRU_{dataset_name}_epochs-{n_epochs}"
-    f"_seqlen-{sequence_length}_maxfeat-{max_features}"
-    f"_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}",
-    "cp.weights.h5"
+    f"attentionGRU_{dataset_name}"
+    f"_epochs-{n_epochs}"
+    f"_seqlen-{sequence_length}"
+    f"_maxfeat-{max_features}"
+    f"_batch-{batch_size}"
+    f"_embdim-{embedding_dim}"
+    f"_steps-{units}"
 )
-os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+os.makedirs(checkpoint_dir, exist_ok=True)
+checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
+
 cp_callback = keras.callbacks.ModelCheckpoint(
-    filepath=checkpoint_path, save_weights_only=True, verbose=1
+    filepath=checkpoint_path,
+    save_weights_only=True,
+    verbose=1
 )
 
-# ─── Instantiate, build and compile model ─────────────────────────────────────
+# ─── Instantiate, build, and compile your model ───────────────────────────────
 train_translator = TrainTranslator(
-    embedding_dim, units,
+    embedding_dim=embedding_dim,
+    units=units,
     input_text_processor=input_vectorizer,
     output_text_processor=output_vectorizer
 )
 
-# Build on a small batch of dummy data (strings)
-dummy_in  = tf.constant(train_in_texts[:batch_size])
-dummy_out = tf.constant(train_out_texts[:batch_size])
-_ = train_translator((dummy_in, dummy_out))
+# Build model by calling on a small batch of string data
+dummy_in  = tf.constant(train_inputs[:batch_size])
+dummy_out = tf.constant(train_targets[:batch_size])
+_ = train_translator((dummy_in, dummy_out))  
 
 train_translator.compile(
     optimizer=keras.optimizers.Adam(),
@@ -977,39 +1003,38 @@ train_translator.compile(
 )
 
 # ─── Train ────────────────────────────────────────────────────────────────────
-logging.info("Starting training…")
+logging.info("Starting training for %d epochs…", n_epochs)
 history = train_translator.fit(
     raw_train,
     validation_data=raw_val,
     epochs=n_epochs,
     callbacks=[cp_callback, train_loss_bl, train_accu_bl]
 )
-logging.info("Training finished")
+logging.info("Training complete.")
 
-# ─── Save history and plots ───────────────────────────────────────────────────
-out_dir = os.path.dirname(checkpoint_path) + os.sep
-os.makedirs(out_dir, exist_ok=True)
+# ─── Save history CSV and plot ────────────────────────────────────────────────
+out_dir = checkpoint_dir + os.sep
 
-# History CSV
-pd.DataFrame(history.history).to_csv(os.path.join(out_dir, "history.csv"), index=False)
+pd.DataFrame(history.history).to_csv(
+    os.path.join(out_dir, "history.csv"), index=False
+)
 
-# Loss/Accuracy plot
-fig, axes = plt.subplots(2, 1, figsize=(6,8))
-axes[0].plot(history.history['loss'], label='train')
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 8))
+ax1.plot(history.history['loss'], label='train')
 if 'val_loss' in history.history:
-    axes[0].plot(history.history['val_loss'], label='val')
-axes[0].set_title('Loss'); axes[0].legend()
+    ax1.plot(history.history['val_loss'], label='val')
+ax1.set_title('Loss'); ax1.legend()
 
-axes[1].plot(history.history['accuracy'], label='train')
+ax2.plot(history.history['accuracy'], label='train')
 if 'val_accuracy' in history.history:
-    axes[1].plot(history.history['val_accuracy'], label='val')
-axes[1].set_title('Accuracy'); axes[1].legend()
+    ax2.plot(history.history['val_accuracy'], label='val')
+ax2.set_title('Accuracy'); ax2.legend()
 
 plt.tight_layout()
 plt.savefig(os.path.join(out_dir, "history_plot.pdf"))
 plt.close(fig)
 
-# ─── Inference (n_demo samples) ───────────────────────────────────────────────
+# ─── Inference with your Translator module ───────────────────────────────────
 translator = Translator(
     encoder=train_translator.encoder,
     decoder=train_translator.decoder,
@@ -1019,24 +1044,25 @@ translator = Translator(
 
 if n_demo > 0:
     sample_pairs = random.sample(val_pairs, min(n_demo, len(val_pairs)))
-    inputs  = [p[0] for p in sample_pairs]
-    targets = [p[1] for p in sample_pairs]
+    demo_inputs  = [p[0] for p in sample_pairs]
+    demo_targets = [p[1] for p in sample_pairs]
 
-    inference_ds = tf.data.Dataset.from_tensor_slices(tf.constant(inputs))
-    inference_ds = inference_ds.batch(batch_size)
+    demo_ds = (
+        tf.data.Dataset.from_tensor_slices(tf.constant(demo_inputs))
+        .batch(batch_size)
+    )
 
     preds = []
-    for batch in inference_ds:
-        out = translator.tf_translate(batch)['text'].numpy()
+    for batch_strings in demo_ds:
+        out = translator.tf_translate(batch_strings)['text'].numpy()
         preds.extend(out.tolist())
 
     df = pd.DataFrame({
-        'Subj_Pred': inputs,
-        'Obj_true': targets,
+        'Subj_Pred':     demo_inputs,
+        'Obj_true':      demo_targets,
         'Obj_predicted': preds
     })
     df.to_csv(os.path.join(out_dir, "predictions.csv"), index=False)
     print(df)
-
 else:
-    logging.info("n_demo <= 0, skipping inference demo")
+    logging.info("n_demo ≤ 0; skipping inference demo.")
