@@ -264,8 +264,10 @@ class TrainTranslator(keras.Model):
         self.train_metric = keras.metrics.SparseCategoricalAccuracy()
         self.test_metric = keras.metrics.SparseCategoricalAccuracy()
 
+    @tf.function
     def call(self, inputs, training=False):
-        input_text, target_text = inputs
+        # Inputs is a tuple of (input_text, target_text) tensors
+        input_text, target_text = inputs  # This works because dataset yields tuples
         # Preprocess inputs
         input_tokens, input_mask, target_tokens, target_mask = self._preprocess(input_text, target_text)
         
@@ -275,17 +277,33 @@ class TrainTranslator(keras.Model):
         # Initialize decoder state
         dec_state = enc_state
         max_target_length = tf.shape(target_tokens)[1]
-        outputs = []
         
-        # Decode step-by-step
-        for t in tf.range(max_target_length-1):
+        def decode_step(t, outputs, dec_state):
             new_tokens = target_tokens[:, t:t+2]
             input_token, target_token = new_tokens[:, 0:1], new_tokens[:, 1:2]
             decoder_input = DecoderInput(new_tokens=input_token,
                                         enc_output=enc_output,
                                         mask=input_mask)
             dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
-            outputs.append(dec_result.logits)
+            return t + 1, outputs + [dec_result.logits], dec_state
+        
+        # Use tf.while_loop instead of Python loop
+        initial_state = (0, [], dec_state)
+        def condition(t, outputs, dec_state):
+            return t < max_target_length - 1
+        def body(t, outputs, dec_state):
+            return decode_step(t, outputs, dec_state)
+        
+        _, outputs, _ = tf.while_loop(
+            condition,
+            body,
+            initial_state,
+            shape_invariants=(
+                tf.TensorShape([]),  # t
+                tf.nest.map_structure(lambda x: tf.TensorShape(None), []),  # outputs
+                dec_state.get_shape()  # dec_state
+            )
+        )
         
         # Stack logits
         logits = tf.concat(outputs, axis=1)
