@@ -868,299 +868,175 @@ parser.add_argument("-t", "--testData", type=str,
 parser.add_argument("-rp", "--resPath", type=str,
                    default=os.getcwd(),
                    help="Path where results, vectorizer and neural network models are stored.")
+# ─── Main script, after argparse and imports ───────────────────────────────────
+
+# Parse args
 args = parser.parse_args()
 
 sequence_length = args.seqLen
-max_features = args.nFeatures
-batch_size = args.batchSize
-n_epochs = args.nEpochs
-embedding_dim = args.embeddingDim
-units = args.nSteps
-training_data = args.trainData
-testing_data = args.testData
-n_demo = args.nDemo
-results_path = os.path.normpath(args.resPath) + os.sep
-dataset_name = parse_dataset_name(training_data)
+max_features   = args.nFeatures
+batch_size     = args.batchSize
+n_epochs       = args.nEpochs
+embedding_dim  = args.embeddingDim
+units          = args.nSteps
+training_data  = args.trainData
+testing_data   = args.testData
+n_demo         = args.nDemo
+results_path   = os.path.normpath(args.resPath) + os.sep
+dataset_name   = parse_dataset_name(training_data)
 
-# Initialize BatchLogs callbacks (optional, mostly for manual inspection)
+# Callbacks for batch‐level logging (optional)
 train_loss_bl = BatchLogs('loss')
 train_accu_bl = BatchLogs('accuracy')
-test_loss_bl = BatchLogs('loss')
-test_accu_bl = BatchLogs('accuracy')
 
-strip_chars = string.punctuation
-strip_chars = strip_chars.replace("[", "")
-strip_chars = strip_chars.replace("]", "")
+strip_chars = string.punctuation.replace('[','').replace(']','')
 
+# ─── Load and prepare raw text lines ──────────────────────────────────────────
 with open(training_data) as f:
     train_text = f.readlines()
-
 with open(testing_data) as f:
     val_text = f.readlines()
 
 logging.info("Preparing train and test data")
-# Filter out None values from prepare_data due to malformed lines
-train_pairs = [pair for pair in map(functools.partial(
-    prepare_data, include_labels=cs_labels, all_start_end=True), train_text) if pair is not None]
-val_pairs = [pair for pair in map(functools.partial(
-    prepare_data, include_labels=cs_labels, all_start_end=True), val_text) if pair is not None]
+train_pairs = [
+    pair for pair in map(
+        functools.partial(prepare_data, include_labels=cs_labels, all_start_end=True),
+        train_text
+    ) if pair is not None
+]
+val_pairs = [
+    pair for pair in map(
+        functools.partial(prepare_data, include_labels=cs_labels, all_start_end=True),
+        val_text
+    ) if pair is not None
+]
 
 if not train_pairs:
-    logging.error("No valid training data pairs found after preparation. Exiting.")
+    logging.error("No valid training data pairs found. Exiting.")
     exit()
 if not val_pairs:
-    logging.warning("No valid validation data pairs found after preparation.")
+    logging.warning("No valid validation data pairs found.")
 
-
-# Initialize and adapt vectorizers first
-input_vectorizer = keras.layers.TextVectorization(
+# ─── Build and adapt TextVectorization layers ─────────────────────────────────
+input_vectorizer = TextVectorization(
     output_mode="int", max_tokens=max_features,
-    output_sequence_length=sequence_length, standardize=custom_standardization)
-
-# Output sequence length should be sequence_length + 1 to accommodate [start] and [end] tokens
-output_sequence_length = sequence_length + 1
-output_vectorizer = keras.layers.TextVectorization(
+    output_sequence_length=sequence_length,
+    standardize=custom_standardization
+)
+output_vectorizer = TextVectorization(
     output_mode="int", max_tokens=max_features,
-    output_sequence_length=output_sequence_length,
-    standardize=custom_standardization)
+    output_sequence_length=sequence_length+1,
+    standardize=custom_standardization
+)
 
-train_in_texts = [pair[0] for pair in train_pairs]
-# Ensure correct extraction of output text based on cs_labels
-if cs_labels:
-    # Assuming pair[1] is a tuple (text, label)
-    train_out_texts = [pair[1][0] for pair in train_pairs]
-else:
-    # Assuming pair[1] is just the text
-    train_out_texts = [pair[1] for pair in train_pairs]
+train_in_texts = [p[0] for p in train_pairs]
+train_out_texts = [p[1] for p in train_pairs]
 
-logging.info("Training input text vectorizer")
-# Adapt vectorizers on the list of strings
+logging.info("Adapting input vectorizer")
 input_vectorizer.adapt(train_in_texts)
-# Define save paths clearly
-in_vect_save_path = os.path.join(results_path, "results",
-                                 f"attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer",
-                                 "in_vect_model")
-save_vectorizer(vectorizer=input_vectorizer, to_file=in_vect_save_path)
-
-logging.info("Training output text vectorizer")
+logging.info("Adapting output vectorizer")
 output_vectorizer.adapt(train_out_texts)
-out_vect_save_path = os.path.join(results_path, "results",
-                                  f"attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer",
-                                  "out_vect_model")
-save_vectorizer(vectorizer=output_vectorizer, to_file=out_vect_save_path)
 
-logging.info(f"Saved text vectorizers to {os.path.dirname(in_vect_save_path)}")
-
-
-# Create datasets using make_dataset AFTER vectorizers are defined and adapted
-#dataset = make_dataset(train_pairs)
-#test_dataset = make_dataset(val_pairs)
+# ─── Create raw‐string tf.data pipelines ───────────────────────────────────────
 raw_train = tf.data.Dataset.from_tensor_slices(
-    # each element is (string, string)
-    ([p[0] for p in train_pairs],
-     [p[1] for p in train_pairs])
+    (train_in_texts, train_out_texts)
 ).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
 raw_val = tf.data.Dataset.from_tensor_slices(
-    ([p[0] for p in val_pairs],
-     [p[1] for p in val_pairs])
+    ([p[0] for p in val_pairs], [p[1] for p in val_pairs])
 ).batch(batch_size).cache().prefetch(tf.data.AUTOTUNE)
 
-# Update max_features based on the actual vocabulary size
-max_vocab = max([
-        input_vectorizer.vocabulary_size(),
-        output_vectorizer.vocabulary_size()])
-# Use the minimum of requested max_features and actual max_vocab size
-max_features = min(args.nFeatures, max_vocab)
-
-
-# Define checkpoint path and ensure directory exists
-checkpoint_path = os.path.join(results_path, "results",
-                               f"attentionGRU_{dataset_name}_epochs-{n_epochs}_seqlen-{sequence_length}_maxfeat-{max_features}_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}",
-                               "cp.weights.h5")
-
-print("Working results directory: " + os.path.dirname(checkpoint_path))
+# ─── Prepare checkpoint directory ──────────────────────────────────────────────
+checkpoint_path = os.path.join(
+    results_path, "results",
+    f"attentionGRU_{dataset_name}_epochs-{n_epochs}"
+    f"_seqlen-{sequence_length}_maxfeat-{max_features}"
+    f"_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}",
+    "cp.weights.h5"
+)
 os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+cp_callback = keras.callbacks.ModelCheckpoint(
+    filepath=checkpoint_path, save_weights_only=True, verbose=1
+)
 
+# ─── Instantiate, build and compile model ─────────────────────────────────────
+train_translator = TrainTranslator(
+    embedding_dim, units,
+    input_text_processor=input_vectorizer,
+    output_text_processor=output_vectorizer
+)
 
-# Keras ModelCheckpoint callback
-cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
-                                              save_weights_only=True,
-                                              verbose=1)
+# Build on a small batch of dummy data (strings)
+dummy_in  = tf.constant(train_in_texts[:batch_size])
+dummy_out = tf.constant(train_out_texts[:batch_size])
+_ = train_translator((dummy_in, dummy_out))
 
-# Instantiate the TrainTranslator model
-#train_translator = TrainTranslator(
-#    embedding_dim, units,
-#    input_text_processor=input_vectorizer,
-#    output_text_processor=output_vectorizer)
-# then train with raw_train/raw_val:
+train_translator.compile(
+    optimizer=keras.optimizers.Adam(),
+    loss=MaskedLoss()
+)
+
+# ─── Train ────────────────────────────────────────────────────────────────────
+logging.info("Starting training…")
 history = train_translator.fit(
     raw_train,
     validation_data=raw_val,
     epochs=n_epochs,
     callbacks=[cp_callback, train_loss_bl, train_accu_bl]
 )
+logging.info("Training finished")
 
-# Build the model by calling it on a dummy batch of the expected string input type
-# This is necessary before compiling or loading weights
-logging.info("Building the model...")
-# Get a sample batch of *string* data from the original pairs
-# Need at least batch_size samples if available
-sample_train_pairs = train_pairs[:batch_size] if len(train_pairs) >= batch_size else train_pairs
-if sample_train_pairs:
-    dummy_string_input = tf.constant([p[0] for p in sample_train_pairs])
-    dummy_string_target = tf.constant([p[1] if not cs_labels else p[1][0] for p in sample_train_pairs])
-
-    try:
-        # Call the model once to build it using dummy string data
-        # Pass inputs as a tuple matching the train_step signature
-        _ = train_translator((dummy_string_input, dummy_string_target))
-        logging.info("Model built successfully.")
-    except Exception as e:
-        logging.error(f"Error building the model: {e}")
-        # Re-raise the exception if building fails critically
-        # raise # Uncomment to stop execution on build error
-else:
-    logging.warning("Not enough training data to build the model with a full batch.")
-    # Attempt to build with a minimal call if full batch is not possible
-    try:
-        dummy_string_input = tf.constant(["dummy input"])
-        dummy_string_target = tf.constant(["dummy target"])
-        _ = train_translator((dummy_string_input, dummy_string_target))
-        logging.info("Model built successfully with minimal data.")
-    except Exception as e:
-        logging.error(f"Error building the model with minimal data: {e}")
-        # Re-raise the exception if building fails critically
-        # raise
-
-
-# Compile the model with the custom loss and optimizer
-train_translator.compile(
-    optimizer=keras.optimizers.Adam(),
-    loss=MaskedLoss() # Pass the instance of the custom loss
-)
-
-# If you were previously training and saved weights, uncomment to load them
-# try:
-#     train_translator.load_weights(checkpoint_path)
-#     logging.info(f"Loaded weights from {checkpoint_path}")
-# except tf.errors.NotFoundError:
-#     logging.info("No existing weights found. Training from scratch.")
-# except Exception as e:
-#     logging.error(f"Error loading weights: {e}")
-
-
-logging.info("Checking dataset output shapes before training loop...")
-# The dataset pipeline already applies format_dataset and yields INT tensors.
-# Just iterate and print the shape of the yielded tensors.
-# tf.config.run_functions_eagerly(True) # Uncomment to debug dataset iteration in eager mode
-
-
-
-logging.info("Training neural reasoning model...")
-# Use the compiled model's fit method, passing the dataset directly
-history = train_translator.fit(
-    dataset,
-    validation_data=test_dataset, # Keras will automatically call test_step on validation_data
-    epochs=n_epochs,
-    callbacks=[cp_callback, train_loss_bl, train_accu_bl] # Add BatchLogs if you want batch-level history
-)
-
-logging.info("Training finished.")
-logging.info("Saving evaluation results...")
-
-# Ensure the output directory for results exists
+# ─── Save history and plots ───────────────────────────────────────────────────
 out_dir = os.path.dirname(checkpoint_path) + os.sep
 os.makedirs(out_dir, exist_ok=True)
 
-# Save training history
-rdf = pd.DataFrame(history.history)
-history_csv_path = os.path.join(out_dir, "history.csv")
-rdf.to_csv(history_csv_path)
-logging.info(f"Saved training history to {history_csv_path}")
+# History CSV
+pd.DataFrame(history.history).to_csv(os.path.join(out_dir, "history.csv"), index=False)
 
-# Save history plot
-try:
-    fig, axes = plt.subplots(2, 1)
-    # Ensure columns exist before plotting
-    # Use .get() or check for column existence
-    if 'loss' in rdf.columns and 'val_loss' in rdf.columns:
-         rdf[['loss', 'val_loss']].plot(ax=axes[0])
-         axes[0].set_title('Loss')
-    elif 'loss' in rdf.columns:
-         rdf[['loss']].plot(ax=axes[0])
-         axes[0].set_title('Loss')
+# Loss/Accuracy plot
+fig, axes = plt.subplots(2, 1, figsize=(6,8))
+axes[0].plot(history.history['loss'], label='train')
+if 'val_loss' in history.history:
+    axes[0].plot(history.history['val_loss'], label='val')
+axes[0].set_title('Loss'); axes[0].legend()
 
+axes[1].plot(history.history['accuracy'], label='train')
+if 'val_accuracy' in history.history:
+    axes[1].plot(history.history['val_accuracy'], label='val')
+axes[1].set_title('Accuracy'); axes[1].legend()
 
-    if 'accuracy' in rdf.columns and 'val_accuracy' in rdf.columns:
-         rdf[['accuracy', 'val_accuracy']].plot(ax=axes[1])
-         axes[1].set_title('Accuracy')
-    elif 'accuracy' in rdf.columns:
-        rdf[['accuracy']].plot(ax=axes[1])
-        axes[1].set_title('Accuracy')
+plt.tight_layout()
+plt.savefig(os.path.join(out_dir, "history_plot.pdf"))
+plt.close(fig)
 
-    plt.xlabel('Epoch')
-    plt.tight_layout()
-    history_plot_path = os.path.join(out_dir, 'history_plot.pdf')
-    plt.savefig(history_plot_path)
-    logging.info(f"Saved history plot to {history_plot_path}")
-except Exception as e:
-    logging.error(f"Error saving history plot: {e}")
-
-
-# Perform inference using the trained model's weights
-# Instantiate the Translator module for inference
-# It reuses the trained encoder and decoder from the TrainTranslator model
+# ─── Inference (n_demo samples) ───────────────────────────────────────────────
 translator = Translator(
-    encoder=train_translator.encoder, # Use the trained encoder
-    decoder=train_translator.decoder, # Use the trained decoder
+    encoder=train_translator.encoder,
+    decoder=train_translator.decoder,
     input_text_processor=input_vectorizer,
-    output_text_processor=output_vectorizer,
+    output_text_processor=output_vectorizer
 )
 
-# Load weights into the Translator module's sub-layers if they weren't shared directly
-# (In this case, they are shared objects, so weights are already there from training)
-# If you had saved the full TrainTranslator model and loaded it separately,
-# you might need to explicitly get encoder/decoder from the loaded model.
-# As is, this should work fine.
+if n_demo > 0:
+    sample_pairs = random.sample(val_pairs, min(n_demo, len(val_pairs)))
+    inputs  = [p[0] for p in sample_pairs]
+    targets = [p[1] for p in sample_pairs]
 
+    inference_ds = tf.data.Dataset.from_tensor_slices(tf.constant(inputs))
+    inference_ds = inference_ds.batch(batch_size)
 
-if n_demo > 0: # Only run demo if n_demo is positive
-    # Prepare test data for inference
-    val_pairs_for_demo = val_pairs
-    if len(val_pairs) > n_demo:
-        random.seed(42) # Use a fixed seed for reproducible demo samples
-        val_pairs_for_demo = random.sample(val_pairs, n_demo)
+    preds = []
+    for batch in inference_ds:
+        out = translator.tf_translate(batch)['text'].numpy()
+        preds.extend(out.tolist())
 
-    inp_ = [inp for inp, targ in val_pairs_for_demo]
-    targ_ = [targ for inp, targ in val_pairs_for_demo]
+    df = pd.DataFrame({
+        'Subj_Pred': inputs,
+        'Obj_true': targets,
+        'Obj_predicted': preds
+    })
+    df.to_csv(os.path.join(out_dir, "predictions.csv"), index=False)
+    print(df)
 
-    results = []
-    logging.info(f"Now performing inferences on {len(inp_)} test samples using the trained model...")
-
-    # Create a tf.data.Dataset for the inference input text
-    inference_dataset = tf.data.Dataset.from_tensor_slices(tf.constant(inp_))
-    # Batch the inference dataset
-    inference_dataset = inference_dataset.batch(batch_size)
-
-    # Iterate through the batched inference dataset
-    for batch_input_text in inference_dataset:
-        # Use the tf_translate function for graph mode inference
-        # It takes a batch of string tensors
-        try:
-            result_batch = translator.tf_translate(batch_input_text)['text'].numpy()
-            results.extend(result_batch.tolist()) # Extend the list with results from the batch
-        except Exception as e:
-             logging.error(f"Error during inference batch: {e}")
-             # Optionally break or handle the error
-
-    # Combine inputs, true targets, and predictions
-    result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj_true': targ_, 'Obj_predicted': results})
-
-    # Save predictions
-    predictions_csv_path = os.path.join(out_dir, 'predictions.csv')
-    result_df.to_csv(predictions_csv_path, index=False) # Save without index
-    print(result_df)
-    logging.info(f"See the predictions written to {predictions_csv_path}")
 else:
-    logging.info("n_demo is not positive, skipping inference demo.")
+    logging.info("n_demo <= 0, skipping inference demo")
