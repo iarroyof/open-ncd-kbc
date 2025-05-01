@@ -193,50 +193,16 @@ class Encoder(keras.layers.Layer):
 class BahdanauAttention(keras.layers.Layer):
     def __init__(self, units):
         super().__init__()
-        self.W1 = keras.layers.Dense(units, use_bias=False)
-        self.W2 = keras.layers.Dense(units, use_bias=False)
-        # Ensure additive attention is initialized correctly
-        self.attention = keras.layers.AdditiveAttention(use_scale=False) # use_scale=False is typical for Bahdanau
+        self.attention = keras.layers.AdditiveAttention(use_scale=False)
 
     def call(self, query, value, mask):
-        # Removed ShapeChecker calls inside layer methods
-        # shape_checker = ShapeChecker()
-        # shape_checker(query, ('batch', 't', 'query_units'))
-        # shape_checker(value, ('batch', 's', 'value_units'))
-        # shape_checker(mask, ('batch', 's'))
-
-        w1_query = self.W1(query)
-        # shape_checker(w1_query, ('batch', 't', 'attn_units'))
-        w2_key = self.W2(value)
-        # shape_checker(w2_key, ('batch', 's', 'attn_units'))
-
-        # Ensure query_mask has shape (batch, query_seq_len)
-        # query shape is (batch, t, units) where t is the query sequence length (should be 1 in Decoder call)
-        batch_size = tf.shape(query)[0]
-        query_seq_len = tf.shape(query)[1]
-        query_mask = tf.ones((batch_size, query_seq_len), dtype=bool) # Use calculated dynamic shapes
-
-        value_mask = mask # mask shape is (batch, s)
-
-        # The AdditiveAttention layer computes: query_input + key_input
-        # query_input shape: (batch, T, dim)
-        # key_input shape: (batch, S, dim)
-        # They will be broadcasted to (batch, max(T,S), dim) for addition?
-        # No, AdditiveAttention standard implementation computes scores (batch, T, S)
-        # by processing query (batch, T, dim) and key (batch, S, dim) appropriately.
-        # The inputs to attention are w1_query (query_input), value (value_input), w2_key (key_input)
-
+        # mask: boolean Tensor of shape (batch, source_seq_len)
+        # pass only [query, value]; AdditiveAttention will project them itself
         context_vector, attention_weights = self.attention(
-            inputs=[w1_query, value, w2_key],
-            mask=[query_mask, value_mask],
-            return_attention_scores=True,
+            [query, value],
+            mask=[None, mask],                  # no need to mask the query
+            return_attention_scores=True
         )
-        # Expected output shapes from AdditiveAttention:
-        # context_vector: (batch, query_seq_len, value_depth) i.e., (batch, t, value_units)
-        # attention_weights: (batch, query_seq_len, value_seq_len) i.e., (batch, t, s)
-
-        # shape_checker(context_vector, ('batch', 't', 'value_units'))
-        # shape_checker(attention_weights, ('batch', 't', 's'))
         return context_vector, attention_weights
 
 class Decoder(keras.layers.Layer):
@@ -475,10 +441,10 @@ class TrainTranslator(keras.Model):
 
     # Use @tf.function here for efficient training loop
     # Specify input_signature to compile the function graph
-    @tf.function(input_signature=[[
-        tf.TensorSpec(dtype=tf.string, shape=[None]),
-        tf.TensorSpec(dtype=tf.string, shape=[None])
-    ]])
+    #@tf.function(input_signature=[[
+    #    tf.TensorSpec(dtype=tf.string, shape=[None]),
+    #    tf.TensorSpec(dtype=tf.string, shape=[None])
+    #]])
     def train_step(self, inputs):
         # inputs will be a tuple of string tensors (input_text, target_text) due to input_signature
         input_text, target_text = inputs
