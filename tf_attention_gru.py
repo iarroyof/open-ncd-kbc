@@ -266,7 +266,14 @@ class TrainTranslator(keras.Model):
 
     @tf.function
     def call(self, inputs, training=False):
-        input_text, target_text = inputs
+        # Handle inputs: expect a tuple (input_text, target_text), but adapt if single tensor
+        if isinstance(inputs, (list, tuple)) and len(inputs) == 2:
+            input_text, target_text = inputs
+        else:
+            # If inputs is a single tensor, assume it's input_text and create a dummy target_text
+            input_text = inputs
+            target_text = tf.zeros_like(input_text)  # Dummy target for model building
+    
         # Preprocess inputs
         input_tokens, input_mask, target_tokens, target_mask = self._preprocess(input_text, target_text)
         
@@ -546,6 +553,8 @@ with open(training_data) as f:
 with open(testing_data) as f:
     val_text = f.readlines()
 
+# ... (previous code: argument parsing, vectorizer setup, etc.)
+
 logging.info("Preparing train and test data")
 train_pairs = list(
     map(functools.partial(
@@ -556,19 +565,9 @@ val_pairs = list(
         prepare_data,
         include_labels=cs_labels, all_start_end=True), val_text))
 
-inp = [inp for inp, targ in train_pairs]
-targ = [targ for inp, targ in train_pairs]
-
-BUFFER_SIZE = len(inp)
-dataset = tf.data.Dataset.from_tensor_slices((inp, targ)).shuffle(BUFFER_SIZE)
-dataset = dataset.batch(batch_size)
-
-inp = [inp for inp, targ in val_pairs]
-targ = [targ for inp, targ in val_pairs]
-
-BUFFER_SIZE = len(inp)
-test_dataset = tf.data.Dataset.from_tensor_slices((inp, targ)).shuffle(BUFFER_SIZE)
-test_dataset = test_dataset.batch(batch_size)
+# Create datasets using make_dataset
+dataset = make_dataset(train_pairs)
+test_dataset = make_dataset(val_pairs)
 
 input_vectorizer = keras.layers.TextVectorization(
     output_mode="int", max_tokens=max_features,
