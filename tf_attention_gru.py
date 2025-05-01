@@ -453,7 +453,13 @@ def save_vectorizer(vectorizer, to_file):
     vectorizer_model.add(keras.Input(shape=(1,), dtype=tf.string))
     vectorizer_model.add(vectorizer)
     vectorizer_model.compile()
-    vectorizer_model.save(to_file, save_format='tf')
+    
+    # Ensure the file path ends with .keras
+    if not to_file.endswith('.keras'):
+        to_file += '.keras'
+    
+    # Save the model without save_format
+    vectorizer_model.save(to_file)
 
 def parse_dataset_name(training_data):
     training_data = training_data.split(os.sep)[-1].lower()
