@@ -991,11 +991,11 @@ if __name__ == "__main__":
         input_text_processor=input_vectorizer,
         output_text_processor=output_vectorizer
     )
-    dummy_in  = tf.constant(train_inputs[:batch_size])
-    dummy_out = tf.constant(train_targets[:batch_size])
-    #tf.config.run_functions_eagerly(True)
-    _ = train_translator((dummy_in, dummy_out))
-    #tf.config.run_functions_eagerly(False)
+    #dummy_in  = tf.constant(train_inputs[:batch_size])
+    #dummy_out = tf.constant(train_targets[:batch_size])
+    tf.config.run_functions_eagerly(True)
+    _ = train_translator((train_inputs, train_targets))
+    tf.config.run_functions_eagerly(False)
     mixed_precision.set_global_policy('mixed_float16')
     train_translator.compile(
         optimizer=keras.optimizers.Adam(),
