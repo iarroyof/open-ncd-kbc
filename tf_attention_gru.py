@@ -844,216 +844,213 @@ def parse_dataset_name(training_data):
         "CN": 'conceptnet' in training_data}
     return '-'.join([k for k, v in names_dic.items() if v])
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-s", "--seqLen", type=int,
-                    default=50, help="Per-sample sequence length")
-parser.add_argument("-u", "--nSteps", type=int,
-                   default=1024, help="Number of hidden recurrent steps (units)")
-parser.add_argument("-f", "--nFeatures", type=int,
-                   default=15000, help="Maximum vocabulary size")
-parser.add_argument("-b", "--batchSize", type=int,
-                   default=64, help="Batch size")
-parser.add_argument("-e", "--nEpochs", type=int,
-                   default=40, help="Number of training epochs")
-parser.add_argument("-d", "--embeddingDim", type=int,
-                   default=1024, help="Word embedding dimensionality")
-parser.add_argument("-D", "--nDemo", type=int,
-                   default=-1, help="Number of predicted test samples to save as output")
-parser.add_argument("-T", "--trainData", type=str,
-                   default="data/ncd_conceptnet/ncd_conceptnet_train.tsv",
-                   help="Training data (CSV file)")
-parser.add_argument("-t", "--testData", type=str,
-                   default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv",
-                   help="Test data (CSV file)")
-parser.add_argument("-rp", "--resPath", type=str,
-                   default=os.getcwd(),
-                   help="Path where results, vectorizer and neural network models are stored.")
-# ─── MAIN SCRIPT (everything after your `parser = argparse.ArgumentParser()` and imports) ───
 
-# 1) Parse command-line arguments
-args = parser.parse_args()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-s", "--seqLen", type=int,
+                        default=50, help="Per-sample sequence length")
+    parser.add_argument("-u", "--nSteps", type=int,
+                       default=1024, help="Number of hidden recurrent steps (units)")
+    parser.add_argument("-f", "--nFeatures", type=int,
+                       default=15000, help="Maximum vocabulary size")
+    parser.add_argument("-b", "--batchSize", type=int,
+                       default=64, help="Batch size")
+    parser.add_argument("-e", "--nEpochs", type=int,
+                       default=40, help="Number of training epochs")
+    parser.add_argument("-d", "--embeddingDim", type=int,
+                       default=1024, help="Word embedding dimensionality")
+    parser.add_argument("-D", "--nDemo", type=int,
+                       default=-1, help="Number of predicted test samples to save as output")
+    parser.add_argument("-T", "--trainData", type=str,
+                       default="data/ncd_conceptnet/ncd_conceptnet_train.tsv",
+                       help="Training data (CSV file)")
+    parser.add_argument("-t", "--testData", type=str,
+                       default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv",
+                       help="Test data (CSV file)")
+    parser.add_argument("-rp", "--resPath", type=str,
+                       default=os.getcwd(),
+                       help="Path where results, vectorizer and neural network models are stored.")
+    # 1) Parse arguments
+    args = parser.parse_args()
+    sequence_length = args.seqLen
+    max_features   = args.nFeatures
+    batch_size     = args.batchSize
+    n_epochs       = args.nEpochs
+    embedding_dim  = args.embeddingDim
+    units          = args.nSteps
+    n_demo         = args.nDemo
+    training_data  = args.trainData
+    testing_data   = args.testData
+    results_path   = os.path.normpath(args.resPath) + os.sep
+    dataset_name   = parse_dataset_name(training_data)
 
-sequence_length = args.seqLen
-max_features   = args.nFeatures
-batch_size     = args.batchSize
-n_epochs       = args.nEpochs
-embedding_dim  = args.embeddingDim
-units          = args.nSteps
-n_demo         = args.nDemo
-training_data  = args.trainData
-testing_data   = args.testData
-results_path   = os.path.normpath(args.resPath) + os.sep
-dataset_name   = parse_dataset_name(training_data)
+    # Optional batch‐level logging callbacks
+    train_loss_bl = BatchLogs('loss')
+    train_accu_bl = BatchLogs('accuracy')
 
-# Optional per-batch logging callbacks
-train_loss_bl = BatchLogs('loss')
-train_accu_bl = BatchLogs('accuracy')
+    # 2) Read & prepare raw (string→string) pairs
+    with open(training_data) as f:
+        train_lines = f.readlines()
+    with open(testing_data) as f:
+        val_lines = f.readlines()
 
-# Punctuation to strip in custom_standardization
-strip_chars = string.punctuation.replace('[','').replace(']','')
+    logging.info("Preparing train/validation pairs")
+    train_pairs = [
+        p for p in map(
+            functools.partial(prepare_data,
+                              include_labels=cs_labels,
+                              all_start_end=True),
+            train_lines
+        ) if p is not None
+    ]
+    val_pairs = [
+        p for p in map(
+            functools.partial(prepare_data,
+                              include_labels=cs_labels,
+                              all_start_end=True),
+            val_lines
+        ) if p is not None
+    ]
 
-# 2) Read and prepare raw (string, string) pairs
-with open(training_data) as f:
-    train_lines = f.readlines()
-with open(testing_data) as f:
-    val_lines = f.readlines()
+    if not train_pairs:
+        logging.error("No valid training data found. Exiting.")
+        exit()
+    if not val_pairs:
+        logging.warning("No valid validation data found; continuing without val.")
 
-logging.info("Preparing train/validation pairs")
-train_pairs = [
-    p for p in map(
-        functools.partial(prepare_data, include_labels=cs_labels, all_start_end=True),
-        train_lines
-    ) if p is not None
-]
-val_pairs = [
-    p for p in map(
-        functools.partial(prepare_data, include_labels=cs_labels, all_start_end=True),
-        val_lines
-    ) if p is not None
-]
+    train_inputs  = [p[0] for p in train_pairs]
+    train_targets = [p[1] for p in train_pairs]
+    val_inputs    = [p[0] for p in val_pairs]
+    val_targets   = [p[1] for p in val_pairs]
 
-if not train_pairs:
-    logging.error("No valid training data — exiting.")
-    exit()
-if not val_pairs:
-    logging.warning("No valid validation data (continuing without val).")
-
-train_inputs  = [p[0] for p in train_pairs]
-train_targets = [p[1] for p in train_pairs]
-val_inputs    = [p[0] for p in val_pairs]
-val_targets   = [p[1] for p in val_pairs]
-
-# 3) Build & adapt TextVectorization layers
-input_vectorizer = TextVectorization(
-    output_mode="int",
-    max_tokens=max_features,
-    output_sequence_length=sequence_length,
-    standardize=custom_standardization
-)
-output_vectorizer = TextVectorization(
-    output_mode="int",
-    max_tokens=max_features,
-    output_sequence_length=sequence_length+1,
-    standardize=custom_standardization
-)
-
-logging.info("Adapting input vectorizer on %d examples", len(train_inputs))
-input_vectorizer.adapt(train_inputs)
-logging.info("Adapting output vectorizer on %d examples", len(train_targets))
-output_vectorizer.adapt(train_targets)
-
-# 4) Create raw‐string tf.data pipelines
-raw_train = (
-    tf.data.Dataset
-      .from_tensor_slices((train_inputs, train_targets))
-      .batch(batch_size)
-      .cache()
-      .prefetch(tf.data.AUTOTUNE)
-)
-
-raw_val = (
-    tf.data.Dataset
-      .from_tensor_slices((val_inputs, val_targets))
-      .batch(batch_size)
-      .cache()
-      .prefetch(tf.data.AUTOTUNE)
-)
-
-# 5) Checkpoint directory & callback
-checkpoint_dir = os.path.join(
-    results_path, "results",
-    f"attentionGRU_{dataset_name}"
-    f"_epochs-{n_epochs}"
-    f"_seqlen-{sequence_length}"
-    f"_maxfeat-{max_features}"
-    f"_batch-{batch_size}"
-    f"_embdim-{embedding_dim}"
-    f"_steps-{units}"
-)
-os.makedirs(checkpoint_dir, exist_ok=True)
-checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
-
-cp_callback = keras.callbacks.ModelCheckpoint(
-    filepath=checkpoint_path, save_weights_only=True, verbose=1
-)
-
-# 6) Instantiate, build & compile the model
-train_translator = TrainTranslator(
-    embedding_dim=embedding_dim,
-    units=units,
-    input_text_processor=input_vectorizer,
-    output_text_processor=output_vectorizer
-)
-
-# Build once on a small batch of raw STRING input
-dummy_in  = tf.constant(train_inputs[:batch_size])
-dummy_out = tf.constant(train_targets[:batch_size])
-_ = train_translator((dummy_in, dummy_out))
-
-train_translator.compile(
-    optimizer=keras.optimizers.Adam(),
-    loss=MaskedLoss()
-)
-
-# 7) Train!
-logging.info("Training for %d epochs…", n_epochs)
-history = train_translator.fit(
-    raw_train,
-    validation_data=raw_val,
-    epochs=n_epochs,
-    callbacks=[cp_callback, train_loss_bl, train_accu_bl]
-)
-logging.info("Training complete.")
-
-# 8) Save history & plot
-out_dir = checkpoint_dir + os.sep
-pd.DataFrame(history.history).to_csv(
-    os.path.join(out_dir, "history.csv"), index=False
-)
-
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 8))
-ax1.plot(history.history['loss'], label='train')
-if 'val_loss' in history.history:
-    ax1.plot(history.history['val_loss'], label='val')
-ax1.set_title('Loss'); ax1.legend()
-
-ax2.plot(history.history['accuracy'], label='train')
-if 'val_accuracy' in history.history:
-    ax2.plot(history.history['val_accuracy'], label='val')
-ax2.set_title('Accuracy'); ax2.legend()
-
-plt.tight_layout()
-plt.savefig(os.path.join(out_dir, "history_plot.pdf"))
-plt.close(fig)
-
-# 9) OPTIONAL: run n_demo inferences
-translator = Translator(
-    encoder=train_translator.encoder,
-    decoder=train_translator.decoder,
-    input_text_processor=input_vectorizer,
-    output_text_processor=output_vectorizer
-)
-
-if n_demo > 0:
-    demo_pairs = random.sample(val_pairs, min(n_demo, len(val_pairs)))
-    demo_in = [p[0] for p in demo_pairs]
-    demo_tg = [p[1] for p in demo_pairs]
-
-    demo_ds = (
-        tf.data.Dataset.from_tensor_slices(tf.constant(demo_in))
-        .batch(batch_size)
+    # 3) Build & adapt TextVectorization layers
+    input_vectorizer = TextVectorization(
+        output_mode="int",
+        max_tokens=max_features,
+        output_sequence_length=sequence_length,
+        standardize=custom_standardization
     )
-    preds = []
-    for batch_str in demo_ds:
-        out = translator.tf_translate(batch_str)['text'].numpy()
-        preds.extend(out.tolist())
+    output_vectorizer = TextVectorization(
+        output_mode="int",
+        max_tokens=max_features,
+        output_sequence_length=sequence_length+1,
+        standardize=custom_standardization
+    )
 
-    df = pd.DataFrame({
-        'Subj_Pred':     demo_in,
-        'Obj_true':      demo_tg,
-        'Obj_predicted': preds
-    })
-    df.to_csv(os.path.join(out_dir, "predictions.csv"), index=False)
-    print(df)
-else:
-    logging.info("n_demo ≤ 0 → skipping inference.")
+    logging.info("Adapting input vectorizer on %d samples", len(train_inputs))
+    input_vectorizer.adapt(train_inputs)
+    logging.info("Adapting output vectorizer on %d samples", len(train_targets))
+    output_vectorizer.adapt(train_targets)
+
+    # 4) Create raw‐string tf.data pipelines
+    raw_train = (
+        tf.data.Dataset
+          .from_tensor_slices((train_inputs, train_targets))
+          .batch(batch_size)
+          .cache()
+          .prefetch(tf.data.AUTOTUNE)
+    )
+    raw_val = (
+        tf.data.Dataset
+          .from_tensor_slices((val_inputs, val_targets))
+          .batch(batch_size)
+          .cache()
+          .prefetch(tf.data.AUTOTUNE)
+    )
+
+    # 5) Checkpoint callback
+    checkpoint_dir = os.path.join(
+        results_path, "results",
+        f"attentionGRU_{dataset_name}"
+        f"_epochs-{n_epochs}"
+        f"_seqlen-{sequence_length}"
+        f"_maxfeat-{max_features}"
+        f"_batch-{batch_size}"
+        f"_embdim-{embedding_dim}"
+        f"_steps-{units}"
+    )
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
+    cp_callback = keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_path,
+        save_weights_only=True,
+        verbose=1
+    )
+
+    # 6) Instantiate & “build” the model on a small batch of **strings**
+    train_translator = TrainTranslator(
+        embedding_dim=embedding_dim,
+        units=units,
+        input_text_processor=input_vectorizer,
+        output_text_processor=output_vectorizer
+    )
+    dummy_in  = tf.constant(train_inputs[:batch_size])
+    dummy_out = tf.constant(train_targets[:batch_size])
+    _ = train_translator((dummy_in, dummy_out))
+
+    train_translator.compile(
+        optimizer=keras.optimizers.Adam(),
+        loss=MaskedLoss()
+    )
+
+    # 7) Fit
+    logging.info("Starting training for %d epochs…", n_epochs)
+    history = train_translator.fit(
+        raw_train,
+        validation_data=raw_val,
+        epochs=n_epochs,
+        callbacks=[cp_callback, train_loss_bl, train_accu_bl]
+    )
+    logging.info("Training complete.")
+
+    # 8) Save history & plot
+    out_dir = checkpoint_dir + os.sep
+    pd.DataFrame(history.history).to_csv(
+        os.path.join(out_dir, "history.csv"), index=False
+    )
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 8))
+    ax1.plot(history.history['loss'], label='train')
+    if 'val_loss' in history.history:
+        ax1.plot(history.history['val_loss'], label='val')
+    ax1.set_title('Loss'); ax1.legend()
+
+    ax2.plot(history.history['accuracy'], label='train')
+    if 'val_accuracy' in history.history:
+        ax2.plot(history.history['val_accuracy'], label='val')
+    ax2.set_title('Accuracy'); ax2.legend()
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "history_plot.pdf"))
+    plt.close(fig)
+
+    # 9) n_demo inferences
+    translator = Translator(
+        encoder=train_translator.encoder,
+        decoder=train_translator.decoder,
+        input_text_processor=input_vectorizer,
+        output_text_processor=output_vectorizer
+    )
+    if n_demo > 0:
+        demo_pairs = random.sample(val_pairs, min(n_demo, len(val_pairs)))
+        demo_in  = [p[0] for p in demo_pairs]
+        demo_tg  = [p[1] for p in demo_pairs]
+
+        demo_ds = (
+            tf.data.Dataset.from_tensor_slices(tf.constant(demo_in))
+            .batch(batch_size)
+        )
+        preds = []
+        for batch_str in demo_ds:
+            out = translator.tf_translate(batch_str)['text'].numpy()
+            preds.extend(out.tolist())
+
+        df = pd.DataFrame({
+            'Subj_Pred':     demo_in,
+            'Obj_true':      demo_tg,
+            'Obj_predicted': preds
+        })
+        df.to_csv(os.path.join(out_dir, "predictions.csv"), index=False)
+        print(df)
+    else:
+        logging.info("n_demo ≤ 0 → skipping inference.")
