@@ -360,19 +360,19 @@ class TrainTranslator(tf.keras.Model):
         return {'loss': average_loss, 'accuracy': self.test_metric.result()}
 
     @tf.function(
-    input_signature=(
-        tf.TensorSpec(shape=(None,), dtype=tf.string),  # input batch
-        tf.TensorSpec(shape=(None,), dtype=tf.string)   # target batch
+        input_signature=(
+            tf.TensorSpec(shape=(None,), dtype=tf.string),  # input batch
+            tf.TensorSpec(shape=(None,), dtype=tf.string)   # target batch
         )
     )
     def _tf_train_step(self, input_batch, target_batch):
         return self._train_step((input_batch, target_batch))
 
 
-   @tf.function(
-    input_signature=(
-        tf.TensorSpec(shape=(None,), dtype=tf.string),
-        tf.TensorSpec(shape=(None,), dtype=tf.string)
+    @tf.function(
+        input_signature=(
+            tf.TensorSpec(shape=(None,), dtype=tf.string),
+            tf.TensorSpec(shape=(None,), dtype=tf.string)
         )
     )
     def _tf_test_step(self, input_batch, target_batch):
