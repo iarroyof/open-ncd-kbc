@@ -252,14 +252,18 @@ class Decoder(tf.keras.layers.Layer):
         vectors = self.embedding(new_tokens)
         outputs_and_states = self.gru(vectors, initial_state=state)
         rnn_output, *dec_state = outputs_and_states                 # list out
-        context_vector, attention_weights = self.attention(rnn_output, enc_output, mask)
-        # --- align the shapes ---
-        context_vector = tf.squeeze(context_vector, axis=1)   # (B, U)
-        rnn_output     = tf.squeeze(rnn_output,     axis=1)   # (B, U)
-        concat = tf.concat([context_vector, rnn_output], axis=-1)  # (B, 2U)
-        attention_vector = self.Wc(concat)            # (B, U)
-        attention_vector = tf.expand_dims(attention_vector, 1)  # (B, 1, U) – restore time‑dim
-        logits = self.fc(attention_vector)            # (B, 1, vocab)        
+
+        # --- use the *last* decoder step instead of squeezing ---
+        rnn_step     = rnn_output[:,  -1, :]           # (B, U)
+        context_step = context_vector[:, -1, :]        # (B, U)
+
+        # Fuse context and decoder state
+        concat = tf.concat([context_step, rnn_step], axis=-1)   # (B, 2U)
+        attention_vector = self.Wc(concat)                      # (B, U)
+
+        # Restore a time dimension of 1 for the Dense projection
+        attention_vector = tf.expand_dims(attention_vector, 1)  # (B, 1, U)
+        logits = self.fc(attention_vector)
         # Use standard Python class for better compatibility in TF 2.10+
         class DecoderOutput:
             def __init__(self, logits, attention_weights):
