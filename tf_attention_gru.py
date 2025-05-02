@@ -504,16 +504,21 @@ def main():
     train_in, train_out = zip(*train_pairs)
     test_in, test_out = zip(*val_pairs)
     
-    dataset = tf.data.Dataset.from_tensor_slices((list(train_in), list(train_out))) \
-        .shuffle(len(train_in)) \
-        .batch(batch_size) \
-        .map(lambda x, y: [x, y])  # Convert tuple to list
-    
-    test_dataset = tf.data.Dataset.from_tensor_slices((list(test_in), list(test_out))) \
-        .shuffle(len(test_in)) \
-        .batch(batch_size) \
-        .map(lambda x, y: [x, y])  # Convert tuple to list
+    dataset = (
+        tf.data.Dataset.from_tensor_slices((train_in, train_out))
+          .shuffle(len(train_in))
+          .batch(batch_size)
+          # return a **list**, not a tuple
+          .map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
+    )
 
+    test_dataset = (
+        tf.data.Dataset.from_tensor_slices((test_in, test_out))
+          .shuffle(len(test_in))
+          .batch(batch_size)
+          # return a **list**, not a tuple
+          .map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
+    )
     # Initialize and train vectorizers
     # Updated TextVectorization usage for TF 2.10+
     input_vectorizer = TextVectorization(
