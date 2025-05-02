@@ -368,20 +368,20 @@ class TrainTranslator(tf.keras.Model):
         self.use_tf_function = use_tf_function
         self.shape_checker = ShapeChecker()
 
-  def train_step(self, inputs):
-    self.shape_checker = ShapeChecker()
-    if self.use_tf_function:
-      return self._tf_train_step(inputs)
-    else:
-      return self._train_step(inputs)
-
-
-  def test_step(self, inputs):
-    self.shape_checker = ShapeChecker()
-    if self.use_tf_function:
-      return self._tf_test_step(inputs)
-    else:
-      return self._test_step(inputs)
+    def train_step(self, inputs):
+      self.shape_checker = ShapeChecker()
+      if self.use_tf_function:
+        return self._tf_train_step(inputs)
+      else:
+        return self._train_step(inputs)
+  
+  
+    def test_step(self, inputs):
+      self.shape_checker = ShapeChecker()
+      if self.use_tf_function:
+        return self._tf_test_step(inputs)
+      else:
+        return self._test_step(inputs)
 
 
 def _preprocess(self, input_text, target_text):
