@@ -18,6 +18,7 @@ Dataset names for results_final:
 import numpy as np
 import pandas as pd
 import typing
+import math
 from typing import Any, Tuple
 import tensorflow as tf
 from tensorflow.keras.layers.experimental import preprocessing
@@ -918,13 +919,18 @@ targ_ = [
 
 results = []
 logging.info("Now performing inferences using the trained model...")
-for chunk in np.array_split(inp_, len(inp_)/batch_size):
-    result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-    results.append(result.tolist())
-
-result = sum(results, [])
-
-result = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
-result.to_csv(out_dir + 'predictions.csv')
-print(result)
-logging.info(f"See the results written to {out_dir + 'predictions.csv'}")
+# Calculate the number of batches (sections), ensuring it's at least 1 if inp_ is not empty
+num_sections = math.ceil(len(inp_) / batch_size) if len(inp_) > 0 else 0
+if num_sections > 0:
+    for chunk in np.array_split(inp_, num_sections):
+        result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+        results.append(result.tolist())
+    
+    result = sum(results, [])
+    
+    result = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
+    result.to_csv(out_dir + 'predictions.csv')
+    print(result)
+    logging.info(f"See the results written to {out_dir + 'predictions.csv'}")
+else:
+    logging.warning("No inference samples to process.")
