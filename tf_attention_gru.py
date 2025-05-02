@@ -242,12 +242,16 @@ class Decoder(tf.keras.layers.Layer):
         self.fc = layers.Dense(output_vocab_size)
 
     def call(self, inputs, state=None):
+        """
+        inputs = (new_tokens, enc_output, mask)  — three tensors
+        """
+        new_tokens, enc_output, mask = inputs
         if state is not None and not isinstance(state, (list, tuple)):
             state = [state] * self.num_layers
-        vectors = self.embedding(inputs.new_tokens)
+        vectors = self.embedding(new_tokens)
         outputs_and_states = self.gru(vectors, initial_state=state)
         rnn_output, dec_state = outputs_and_states[0], outputs_and_states[-1]
-        context_vector, attention_weights = self.attention(rnn_output, inputs.enc_output, inputs.mask)
+        context_vector, attention_weights = self.attention(rnn_output, enc_output, mask)
         concat = tf.concat([context_vector, rnn_output], axis=-1)
         attention_vector = self.Wc(concat)
         logits = self.fc(attention_vector)
@@ -313,15 +317,7 @@ class TrainTranslator(tf.keras.Model):
 
     def _loop_step(self, new_tokens, input_mask, enc_output, dec_state):
         input_token, target_token = new_tokens[:, 0:1], new_tokens[:, 1:2]
-        
-        # Use class instead of namedtuple for better compatibility
-        class DecoderInput:
-            def __init__(self, new_tokens, enc_output, mask):
-                self.new_tokens = new_tokens
-                self.enc_output = enc_output
-                self.mask = mask
-        
-        decoder_input = DecoderInput(input_token, enc_output, input_mask)
+        decoder_input = (input_token, enc_output, input_mask)
         dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
         return target_token, dec_result.logits, dec_state
 
