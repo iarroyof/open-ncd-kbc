@@ -335,23 +335,38 @@ class MaskedLoss(tf.keras.losses.Loss):
 
 
 class TrainTranslator(tf.keras.Model):
-  def __init__(self, embedding_dim, units,
-               input_text_processor,
-               output_text_processor,
-               use_tf_function=True):
-    super().__init__()
-    # Build the encoder and decoder
-    encoder = Encoder(input_text_processor.vocabulary_size(),
-                      embedding_dim, units)
-    decoder = Decoder(output_text_processor.vocabulary_size(),
-                      embedding_dim, units)
-
-    self.encoder = encoder
-    self.decoder = decoder
-    self.input_text_processor = input_text_processor
-    self.output_text_processor = output_text_processor
-    self.use_tf_function = use_tf_function
-    self.shape_checker = ShapeChecker()
+    def __init__(self,
+                 embedding_dim: int,
+                 units: int,
+                 input_text_processor,
+                 output_text_processor,
+                 num_layers: int = 1,
+                 dropout: float = 0.0,
+                 use_tf_function: bool = True):
+        super().__init__()
+        # Build the encoder and decoder
+        # Build the encoder and decoder with your new params
+        encoder = Encoder(
+                input_vocab_size=input_text_processor.vocabulary_size(),
+                embedding_dim=embedding_dim,
+                enc_units=units,
+                num_layers=num_layers,
+                dropout=dropout
+            )
+        decoder = Decoder(
+                output_vocab_size=output_text_processor.vocabulary_size(),
+                embedding_dim=embedding_dim,
+                dec_units=units,
+                num_layers=num_layers,
+                dropout=dropout
+            )
+    
+        self.encoder = encoder
+        self.decoder = decoder
+        self.input_text_processor = input_text_processor
+        self.output_text_processor = output_text_processor
+        self.use_tf_function = use_tf_function
+        self.shape_checker = ShapeChecker()
 
   def train_step(self, inputs):
     self.shape_checker = ShapeChecker()
