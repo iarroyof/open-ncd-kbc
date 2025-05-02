@@ -503,7 +503,9 @@ def main():
     # Create datasets
     train_in, train_out = zip(*train_pairs)
     test_in, test_out = zip(*val_pairs)
-    
+    # force both lists to be plain strings
+    train_in  = [str(s) for s in train_in]
+    train_out = [str(s) for s in train_out]
     dataset = (
         tf.data.Dataset.from_tensor_slices((train_in, train_out))
           .shuffle(len(train_in))
@@ -511,6 +513,8 @@ def main():
           # return a **list**, not a tuple
           .map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
     )
+    test_in  = [str(s) for s in test_in]
+    test_out = [str(s) for s in test_out]
 
     test_dataset = (
         tf.data.Dataset.from_tensor_slices((test_in, test_out))
