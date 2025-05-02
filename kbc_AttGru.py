@@ -159,6 +159,15 @@ class ShapeChecker():
                          f"    found: {new_dim}\n"
                          f"    expected: {old_dim}\n")
 
+class DecoderInput(typing.NamedTuple):
+  new_tokens: Any
+  enc_output: Any
+  mask: Any
+
+class DecoderOutput(typing.NamedTuple):
+  logits: Any
+  attention_weights: Any
+  
 class BahdanauAttention(tf.keras.layers.Layer):
   def __init__(self, units):
     super().__init__()
