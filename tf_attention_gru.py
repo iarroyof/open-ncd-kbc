@@ -358,6 +358,16 @@ class TrainTranslator(tf.keras.Model):
 
                 y_pred = tf.cast(y_pred, tf.float32)            # <‑‑ keep loss in fp32
                 loss += self.loss(y_true, y_pred)               # (scalar)
+                pred_ids = tf.argmax(y_pred, axis=-1,
+                                     output_type=y_true.dtype)   # (B,1)
+                mask = tf.cast(y_true != 0, tf.bool)             # (B,1)
+    
+                def _update():
+                    self.train_metric.update_state(
+                        tf.boolean_mask(y_true,  mask),
+                        tf.boolean_mask(pred_ids, mask))
+                tf.cond(tf.reduce_any(mask), _update, lambda: None)
+
 
             average_loss = loss / tf.reduce_sum(
                 tf.cast(target_mask, tf.float32))
@@ -397,9 +407,15 @@ class TrainTranslator(tf.keras.Model):
 
             y_pred = tf.cast(y_pred, tf.float32)                # ensure dtype match
             loss += self.loss(y_true, y_pred)
-            pred_ids = tf.argmax(y_pred, axis=-1, output_type=y_true.dtype)
-            mask     = tf.cast(y_true != 0, tf.bool)
-            self.test_metric.update_state(y_true[mask], pred_ids[mask])
+            pred_ids = tf.argmax(y_pred, axis=-1,
+                                 output_type=y_true.dtype)
+            mask = tf.cast(y_true != 0, tf.bool)
+    
+            def _update():
+                self.test_metric.update_state(
+                    tf.boolean_mask(y_true,  mask),
+                    tf.boolean_mask(pred_ids, mask))
+            tf.cond(tf.reduce_any(mask), _update, lambda: None)
 
         average_loss = loss / tf.reduce_sum(
             tf.cast(target_mask, tf.float32))
