@@ -359,20 +359,34 @@ class TrainTranslator(tf.keras.Model):
         average_loss = loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
         return {'loss': average_loss, 'accuracy': self.test_metric.result()}
 
-    @tf.function(input_signature=[[tf.TensorSpec(dtype=tf.string, shape=[None]), 
-                             tf.TensorSpec(dtype=tf.string, shape=[None])]])
-    def _tf_train_step(self, inputs):
-        return self._train_step(inputs)
+    @tf.function(
+    input_signature=(
+        tf.TensorSpec(shape=(None,), dtype=tf.string),  # input batch
+        tf.TensorSpec(shape=(None,), dtype=tf.string)   # target batch
+        )
+    )
+    def _tf_train_step(self, input_batch, target_batch):
+        return self._train_step((input_batch, target_batch))
 
-    @tf.function(input_signature=[[tf.TensorSpec(dtype=tf.string, shape=[None]), tf.TensorSpec(dtype=tf.string, shape=[None])]])
-    def _tf_test_step(self, inputs):
-        return self._test_step(inputs)
 
-    def train_step(self, inputs):
-        return self._tf_train_step(inputs) if self.use_tf_function else self._train_step(inputs)
+   @tf.function(
+    input_signature=(
+        tf.TensorSpec(shape=(None,), dtype=tf.string),
+        tf.TensorSpec(shape=(None,), dtype=tf.string)
+        )
+    )
+    def _tf_test_step(self, input_batch, target_batch):
+        return self._test_step((input_batch, target_batch))
 
-    def test_step(self, inputs):
-        return self._tf_test_step(inputs) if self.use_tf_function else self._test_step(inputs)
+
+    def train_step(self, data):
+        input_batch, target_batch = data      # data is a tuple
+        return self._tf_train_step(input_batch, target_batch)
+    
+    def test_step(self, data):
+        input_batch, target_batch = data
+        return self._tf_test_step(input_batch, target_batch)
+
 
 
 class Translator(tf.Module):
@@ -511,7 +525,7 @@ def main():
           .shuffle(len(train_in))
           .batch(batch_size)
           # return a **list**, not a tuple
-          .map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
+          #.map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
     )
     test_in  = [str(s) for s in test_in]
     test_out = [str(s) for s in test_out]
@@ -521,7 +535,7 @@ def main():
           .shuffle(len(test_in))
           .batch(batch_size)
           # return a **list**, not a tuple
-          .map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
+          #.map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
     )
     # Initialize and train vectorizers
     # Updated TextVectorization usage for TF 2.10+
