@@ -774,8 +774,6 @@ train_accu = BatchLogs('accuracy')
 test_loss = BatchLogs('loss')
 test_accu = BatchLogs('accuracy')
 
-Decoder.call = call
-
 TrainTranslator._preprocess = _preprocess
 TrainTranslator._train_step = _train_step
 TrainTranslator._test_step = _test_step
