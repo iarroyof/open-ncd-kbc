@@ -293,14 +293,19 @@ class MaskedLoss(tf.keras.losses.Loss):
         self.loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')
 
     def __call__(self, y_true, y_pred):
-        shape_checker = ShapeChecker()
-        shape_checker(y_true, ('batch', 't'))
-        shape_checker(y_pred, ('batch', 't', 'logits'))
-        loss = self.loss(y_true, y_pred)
-        mask = tf.cast(y_true != 0, tf.float32)
+        # 1. Up‑cast logits to float32—recommended for stability when the
+        #    model runs in mixed‑precision (policy "mixed_float16").
+        y_pred = tf.cast(y_pred, tf.float32)
+
+        # 2. Compute per‑token cross‑entropy.
+        loss = self.loss(y_true, y_pred)                # (B, T) float32
+
+        # 3. Create mask **in the same dtype** as `loss` to avoid the
+        #    “type float32 vs float16” multiply error.
+        mask = tf.cast(y_true != 0, loss.dtype)         # float32
+
         return tf.reduce_sum(loss * mask)
-
-
+        
 # --- Training and Translation Classes ---
 
 class TrainTranslator(tf.keras.Model):
