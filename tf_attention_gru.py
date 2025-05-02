@@ -359,7 +359,8 @@ class TrainTranslator(tf.keras.Model):
         average_loss = loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
         return {'loss': average_loss, 'accuracy': self.test_metric.result()}
 
-    @tf.function(input_signature=[[tf.TensorSpec(dtype=tf.string, shape=[None]), tf.TensorSpec(dtype=tf.string, shape=[None])]])
+    @tf.function(input_signature=[[tf.TensorSpec(dtype=tf.string, shape=[None]), 
+                             tf.TensorSpec(dtype=tf.string, shape=[None])]])
     def _tf_train_step(self, inputs):
         return self._train_step(inputs)
 
