@@ -252,7 +252,9 @@ class Decoder(tf.keras.layers.Layer):
         vectors = self.embedding(new_tokens)
         outputs_and_states = self.gru(vectors, initial_state=state)
         rnn_output, *dec_state = outputs_and_states                 # list out
-
+        context_vector, attention_weights = self.attention(rnn_output,
+                                                           enc_output,
+                                                           mask)
         # --- use the *last* decoder step instead of squeezing ---
         rnn_step     = rnn_output[:,  -1, :]           # (B, U)
         context_step = context_vector[:, -1, :]        # (B, U)
