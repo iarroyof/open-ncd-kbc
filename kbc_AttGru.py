@@ -1,457 +1,514 @@
-#!/usr/bin/env python3
-"""
-Attention-GRU Translator
-
-Train a sequence-to-sequence model with stacked GRU layers and Bahdanau attention.
-Supports variable number of layers and dropout.
-"""
-
+# Standard library imports
+import os
+import time
+import random
 import argparse
 import logging
-import math
-import os
-import random
+import functools
 import re
 import string
-from typing import Any, List, NamedTuple, Tuple
+import math
 
+# Numerical and data processing libraries
 import numpy as np
 import pandas as pd
+
+# Typing utilities
+import typing
+from typing import Any, Tuple
+
+# TensorFlow and Keras imports
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.layers.experimental import preprocessing
 
-# ----------------------------------------------------------------------------
-# Configuration and Logging
-# ----------------------------------------------------------------------------
+# Visualization imports
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
-def configure_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(message)s',
+    datefmt='%m/%d/%Y %I:%M:%S %p'
+)
 
-# ----------------------------------------------------------------------------
-# Utilities
-# ----------------------------------------------------------------------------
-
+# Global constants
+CS_LABELS = False
 STRIP_CHARS = string.punctuation.replace("[", "").replace("]", "")
 
-@tf.keras.utils.register_keras_serializable()
-def custom_standardization(input_str: tf.Tensor) -> tf.Tensor:
-    """Lowercase and strip punctuation."""
-    lower = tf.strings.lower(input_str)
-    return tf.strings.regex_replace(lower, f"[{re.escape(STRIP_CHARS)}]", "")
 
-
-def parse_dataset_name(path: str) -> str:
-    """Extracts a short name (e.g. ncd-gp) from a file path."""
-    base = os.path.basename(path).lower()
-    flags = {"ncd": "ncd" in base,
-             "gp": "gp" in base,
-             "cn": "conceptnet" in base}
-    return "-".join([k for k, ok in flags.items() if ok])
-
-
-def prepare_data(
-    line: str,
-    start_token: str = "[start] ",
-    end_token: str = " [end]",
-    pmid: bool = True,
-    include_labels: bool = False,
-    include_sent: bool = False,
-    all_start_end: bool = False
-) -> Tuple[str, Any]:
-    """
-    Parse a TSV line into input and (optionally) label.
-    Returns (input_text, output_text_or_label).
-    """
-    cols = line.rstrip("\n").split("\t")
-    if pmid:
-        cols.pop(0)
-
-    # Normalize predicate
-    pred = " ".join(re.findall(r"[A-Z][a-z]*", cols[1])).lower() or cols[1]
-
-    # Handle non-numeric label cleanup
-    if not cols[4].strip().isdigit():
-        i = 4
-        extra = []
-        while not cols[i].isdigit():
-            extra.append(cols.pop(i))
-        cols[3] = " ".join([cols[3]] + extra)
-
-    raw = [cols[0], pred, cols[2], start_token + cols[3] + end_token]
-    label = float(cols[4]) if include_labels else None
-
-    if include_labels:
-        out = (raw[-1], label)
-    else:
-        out = raw[-1]
-
-    if include_sent:
-        inp = f"{cols[0]} {cols[2]} {pred}"
-    else:
-        inp = f"{pred} {cols[0]}"
-        if all_start_end:
-            inp = f"{start_token}{inp}{end_token}"
-
-    return inp, out
-
-# ----------------------------------------------------------------------------
-# Dataset Helpers
-# ----------------------------------------------------------------------------
-
-def format_pair(inp: tf.Tensor, out: tf.Tensor) -> Tuple[tf.Tensor, tf.Tensor]:
-    return input_vectorizer(inp), output_vectorizer(out)
-
-
-def make_dataset(pairs: List[Tuple[str, str]], batch_size: int) -> tf.data.Dataset:
-    inputs, outputs = zip(*pairs)
-    ds = tf.data.Dataset.from_tensor_slices((list(inputs), list(outputs)))
-    ds = ds.batch(batch_size).map(format_pair)
-    return ds.shuffle(2048).prefetch(tf.data.AUTOTUNE).cache()
-
-# ----------------------------------------------------------------------------
-# Shape Checker (for debugging)
-# ----------------------------------------------------------------------------
+# --- Utility Functions ---
 
 class ShapeChecker:
-    """Ensures tensor shapes match expected named dimensions."""
+    """Utility class to check tensor shapes during execution."""
     def __init__(self):
         self.shapes = {}
 
-    def __call__(
-        self,
-        tensor: tf.Tensor,
-        names: Tuple[Any, ...],
-        broadcast: bool = False
-    ) -> None:
+    def __call__(self, tensor, names, broadcast=False):
         if not tf.executing_eagerly():
             return
-        names = (names,) if isinstance(names, str) else names
+        if isinstance(names, str):
+            names = (names,)
         shape = tf.shape(tensor)
-        if tf.rank(tensor) != len(names):
-            raise ValueError(f"Rank mismatch: found {tf.rank(tensor)}, expected {len(names)}")
-        for idx, name in enumerate(names):
-            dim = shape[idx]
-            prev = self.shapes.get(name)
-            if prev is None:
-                self.shapes[name] = dim
-            elif dim != prev and not (broadcast and dim == 1):
-                raise ValueError(f"Dimension '{name}' mismatch: {dim} vs {prev}")
+        rank = tf.rank(tensor)
+        if rank != len(names):
+            raise ValueError(f'Rank mismatch: found {rank}: {shape.numpy()} expected {len(names)}: {names}')
+        for i, name in enumerate(names):
+            old_dim = name if isinstance(name, int) else self.shapes.get(name, None)
+            new_dim = shape[i]
+            if broadcast and new_dim == 1:
+                continue
+            if old_dim is None:
+                self.shapes[name] = new_dim
+                continue
+            if new_dim != old_dim:
+                raise ValueError(f"Shape mismatch for dimension: '{name}' found: {new_dim} expected: {old_dim}")
 
-# ----------------------------------------------------------------------------
-# NamedTuples for Decoder I/O
-# ----------------------------------------------------------------------------
 
-class DecoderInput(NamedTuple):
-    new_tokens: tf.Tensor
-    enc_output: tf.Tensor
-    mask: tf.Tensor
+@tf.keras.utils.register_keras_serializable()
+def custom_standardization(input_string):
+    """Standardize input strings by converting to lowercase and removing punctuation."""
+    lowercase = tf.strings.lower(input_string)
+    return tf.strings.regex_replace(lowercase, f"[{re.escape(STRIP_CHARS)}]", "")
 
-class DecoderOutput(NamedTuple):
-    logits: tf.Tensor
-    attention_weights: tf.Tensor
 
-# ----------------------------------------------------------------------------
-# Model Components
-# ----------------------------------------------------------------------------
+def prepare_data(line, start_token='[start] ', end_token=' [end]', pmid=True,
+                 include_labels=False, include_sent=False, all_start_end=False):
+    """
+    Process a TSV line into input and output phrases for training.
+    
+    Args:
+        line (str): Input TSV line.
+        start_token (str): Token to prepend to output phrases.
+        end_token (str): Token to append to output phrases.
+        pmid (bool): Whether to remove the first column (e.g., PMID).
+        include_labels (bool): Include the label in the output.
+        include_sent (bool): Include the sentence in the input.
+        all_start_end (bool): Add start/end tokens to input as well.
+    
+    Returns:
+        tuple: (input_phrase, output_phrase)
+    """
+    line = line.split('\t')
+    if pmid:
+        line.pop(0)  # Remove PMID column
+    # Extract predicate and clean it
+    pred = ' '.join(re.findall('[A-Z][a-z]*', line[1])).lower() or line[1]
+    # Handle cases where the fifth column isn't a digit
+    if not line[4].strip().isdigit() and not re.match(r'^-?\d+(?:\.\d+)$', line[4].strip()):
+        complements = []
+        i = 4
+        while not line[i].isdigit():
+            complements.append(line[i])
+            line.pop(i)
+        line[3] = " ".join([line[3]] + complements)
+    # Construct sample
+    sample = [line[0], pred, line[2], f"{start_token}{line[3]}{end_token}", float(line[4].strip())]
+    # Adjust output based on flags
+    if not include_labels:
+        del sample[-1]
+        sample_o = sample[-1]
+    else:
+        sample_o = tuple(sample[-2:])
+    # Adjust input based on flags
+    if not include_sent:
+        del sample[0]
+        sample_i = ' '.join([sample[1], sample[0]])
+        if all_start_end:
+            sample_i = f"{start_token}{sample_i}{end_token}"
+    else:
+        sample_i = ' '.join([sample[0], sample[2], sample[1]])
+    return sample_i, sample_o
 
-class BahdanauAttention(layers.Layer):
-    """Implements Bahdanau (additive) attention."""
-    def __init__(self, units: int):
+
+def sort_cols(columns):
+    """Sort columns based on their last two characters."""
+    ends = np.unique([c[-2:] for c in columns])
+    return [c for e in ends for c in columns if c.endswith(e)]
+
+
+def load_vectorizer(from_file):
+    """Load a saved TextVectorization layer from disk."""
+    model = tf.keras.models.load_model(from_file)
+    vocab = model.layers[0].get_vocabulary()
+    config = model.layers[0].get_config()
+    del config['output_mode']  # Avoid issues with output_mode in TF 2.6
+    vectorizer = preprocessing.TextVectorization(**config)
+    vectorizer.adapt(['Initializing vectorizer'])
+    vectorizer.set_vocabulary(vocab)
+    return vectorizer
+
+
+def save_vectorizer(vectorizer, to_file):
+    """Save a TextVectorization layer to disk."""
+    model = tf.keras.models.Sequential([
+        tf.keras.Input(shape=(1,), dtype=tf.string),
+        vectorizer
+    ])
+    model.compile()
+    model.save(to_file, save_format='tf')
+
+
+def parse_dataset_name(training_data):
+    """Parse dataset name from the training data file path."""
+    training_data = training_data.split(os.sep)[-1].lower()
+    names_dic = {"NCD": 'ncd' in training_data, "GP": 'gp' in training_data, "CN": 'conceptnet' in training_data}
+    return '-'.join(k for k, v in names_dic.items() if v)
+
+
+# --- Model Architecture ---
+
+class BahdanauAttention(tf.keras.layers.Layer):
+    """Bahdanau attention mechanism for sequence-to-sequence models."""
+    def __init__(self, units):
         super().__init__()
         self.W1 = layers.Dense(units, use_bias=False)
         self.W2 = layers.Dense(units, use_bias=False)
-        self.attn = layers.AdditiveAttention()
+        self.attention = layers.AdditiveAttention()
 
-    def call(
-        self,
-        query: tf.Tensor,
-        value: tf.Tensor,
-        mask: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
-        # Linear projections
-        q = self.W1(query)
-        k = self.W2(value)
-        # Compute context and attention scores
-        context, scores = self.attn(
-            inputs=[q, value, k],
-            mask=[tf.ones_like(q[..., 0], dtype=bool), mask],
+    def call(self, query, value, mask):
+        shape_checker = ShapeChecker()
+        shape_checker(query, ('batch', 't', 'query_units'))
+        shape_checker(value, ('batch', 's', 'value_units'))
+        shape_checker(mask, ('batch', 's'))
+        w1_query = self.W1(query)
+        w2_key = self.W2(value)
+        context_vector, attention_weights = self.attention(
+            inputs=[w1_query, value, w2_key],
+            mask=[tf.ones(tf.shape(query)[:-1], dtype=bool), mask],
             return_attention_scores=True
         )
-        return context, scores
+        shape_checker(context_vector, ('batch', 't', 'value_units'))
+        shape_checker(attention_weights, ('batch', 't', 's'))
+        return context_vector, attention_weights
 
-class Encoder(layers.Layer):
-    """Stacked GRU encoder."""
-    def __init__(
-        self,
-        vocab_size: int,
-        embed_dim: int,
-        enc_units: int,
-        num_layers: int = 1,
-        dropout: float = 0.0
-    ):
+
+class Encoder(tf.keras.layers.Layer):
+    """Encoder for sequence-to-sequence model using stacked GRUs."""
+    def __init__(self, input_vocab_size: int, embedding_dim: int, enc_units: int,
+                 num_layers: int = 1, dropout: float = 0.0):
         super().__init__()
-        self.embedding = layers.Embedding(vocab_size, embed_dim)
-        cells = [
-            layers.GRUCell(enc_units, dropout=dropout, recurrent_dropout=dropout)
-            for _ in range(num_layers)
-        ]
-        self.rnn = layers.RNN(cells, return_sequences=True, return_state=True)
-        self._num_layers = num_layers
+        self.enc_units = enc_units
+        self.embedding = layers.Embedding(input_vocab_size, embedding_dim)
+        cells = [layers.GRUCell(enc_units, dropout=dropout, recurrent_dropout=dropout,
+                                recurrent_initializer='glorot_uniform') for _ in range(num_layers)]
+        self.gru = layers.RNN(cells, return_sequences=True, return_state=True)
 
-    def call(
-        self,
-        tokens: tf.Tensor,
-        state: Any = None
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
-        x = self.embedding(tokens)
-        outputs = self.rnn(x, initial_state=state)
-        seq, states = outputs[0], outputs[1:]
-        return seq, states[-1]
+    def call(self, tokens, state=None):
+        vectors = self.embedding(tokens)
+        outputs_and_states = self.gru(vectors, initial_state=state)
+        return outputs_and_states[0], outputs_and_states[-1]  # Output, final state
 
-class Decoder(layers.Layer):
-    """Stacked GRU decoder with attention."""
-    def __init__(
-        self,
-        vocab_size: int,
-        embed_dim: int,
-        dec_units: int,
-        num_layers: int = 1,
-        dropout: float = 0.0
-    ):
+
+class Decoder(tf.keras.layers.Layer):
+    """Decoder with attention for sequence-to-sequence model."""
+    def __init__(self, output_vocab_size: int, embedding_dim: int, dec_units: int,
+                 num_layers: int = 1, dropout: float = 0.0):
         super().__init__()
-        self.embedding = layers.Embedding(vocab_size, embed_dim)
-        cells = [
-            layers.GRUCell(dec_units, dropout=dropout, recurrent_dropout=dropout)
-            for _ in range(num_layers)
-        ]
-        self.rnn = layers.RNN(cells, return_sequences=True, return_state=True)
+        self.dec_units = dec_units
+        self.num_layers = num_layers
+        self.embedding = layers.Embedding(output_vocab_size, embedding_dim)
+        cells = [layers.GRUCell(dec_units, dropout=dropout, recurrent_dropout=dropout,
+                                recurrent_initializer='glorot_uniform') for _ in range(num_layers)]
+        self.gru = layers.RNN(cells, return_sequences=True, return_state=True)
         self.attention = BahdanauAttention(dec_units)
-        self.fc = layers.Dense(vocab_size)
-        self._num_layers = num_layers
+        self.Wc = layers.Dense(dec_units, activation=tf.math.tanh, use_bias=False)
+        self.fc = layers.Dense(output_vocab_size)
 
-    def call(
-        self,
-        inp: DecoderInput,
-        state: Any = None
-    ) -> Tuple[DecoderOutput, tf.Tensor]:
-        # Ensure state list matches number of layers
+    def call(self, inputs: typing.NamedTuple, state=None):
         if state is not None and not isinstance(state, (list, tuple)):
-            state = [state] * self._num_layers
-        x = self.embedding(inp.new_tokens)
-        outputs = self.rnn(x, initial_state=state)
-        seq, states = outputs[0], outputs[1:]
-        context, attn_w = self.attention(seq, inp.enc_output, inp.mask)
-        concat = tf.concat([context, seq], axis=-1)
-        logits = self.fc(concat)
-        return DecoderOutput(logits, attn_w), states[-1]
+            state = [state] * self.num_layers
+        vectors = self.embedding(inputs.new_tokens)
+        outputs_and_states = self.gru(vectors, initial_state=state)
+        rnn_output, dec_state = outputs_and_states[0], outputs_and_states[-1]
+        context_vector, attention_weights = self.attention(rnn_output, inputs.enc_output, inputs.mask)
+        concat = tf.concat([context_vector, rnn_output], axis=-1)
+        attention_vector = self.Wc(concat)
+        logits = self.fc(attention_vector)
+        return typing.NamedTuple('DecoderOutput', [('logits', Any), ('attention_weights', Any)])(logits, attention_weights), dec_state
 
-# ----------------------------------------------------------------------------
-# Loss and Metrics
-# ----------------------------------------------------------------------------
 
-class MaskedLoss(keras.losses.Loss):
-    """Sparse categorical crossentropy ignoring padding tokens."""
+class MaskedLoss(tf.keras.losses.Loss):
+    """Custom loss function that masks padding tokens."""
     def __init__(self):
-        super().__init__(reduction='none')
-        self.scce = keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')
+        super().__init__(name='masked_loss')
+        self.loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')
 
-    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    def __call__(self, y_true, y_pred):
+        shape_checker = ShapeChecker()
+        shape_checker(y_true, ('batch', 't'))
+        shape_checker(y_pred, ('batch', 't', 'logits'))
+        loss = self.loss(y_true, y_pred)
         mask = tf.cast(y_true != 0, tf.float32)
-        loss = self.scce(y_true, y_pred) * mask
-        return tf.reduce_sum(loss)
+        return tf.reduce_sum(loss * mask)
 
-# ----------------------------------------------------------------------------
-# Training Model
-# ----------------------------------------------------------------------------
 
-class TrainTranslator(keras.Model):
-    """Wraps encoder, decoder, and custom training loops."""
-    def __init__(
-        self,
-        embed_dim: int,
-        units: int,
-        in_processor,
-        out_processor,
-        num_layers: int,
-        dropout: float,
-        use_tf: bool = True
-    ):
+# --- Training and Translation Classes ---
+
+class TrainTranslator(tf.keras.Model):
+    """Model for training a sequence-to-sequence translator with attention."""
+    def __init__(self, embedding_dim: int, units: int, input_text_processor,
+                 output_text_processor, num_layers: int = 1, dropout: float = 0.0,
+                 use_tf_function: bool = True):
         super().__init__()
-        self.encoder = Encoder(in_processor.vocabulary_size(), embed_dim, units, num_layers, dropout)
-        self.decoder = Decoder(out_processor.vocabulary_size(), embed_dim, units, num_layers, dropout)
-        self.in_proc = in_processor
-        self.out_proc = out_processor
-        self.use_tf = use_tf
-        self.loss_fn = MaskedLoss()
-        self.train_acc = keras.metrics.SparseCategoricalAccuracy()
-        self.val_acc = keras.metrics.SparseCategoricalAccuracy()
+        self.encoder = Encoder(input_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
+        self.decoder = Decoder(output_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
+        self.input_text_processor = input_text_processor
+        self.output_text_processor = output_text_processor
+        self.use_tf_function = use_tf_function
+        self.shape_checker = ShapeChecker()
+        self.train_metric = keras.metrics.SparseCategoricalAccuracy()
+        self.test_metric = keras.metrics.SparseCategoricalAccuracy()
 
-    def compile(self, optimizer: keras.optimizers.Optimizer, **kwargs):
-        super().compile(**kwargs)
-        self.optimizer = optimizer
+    def _preprocess(self, input_text, target_text):
+        self.shape_checker(input_text, ('batch',))
+        self.shape_checker(target_text, ('batch',))
+        input_tokens = self.input_text_processor(input_text)
+        target_tokens = self.output_text_processor(target_text)
+        input_mask = input_tokens != 0
+        target_mask = target_tokens != 0
+        return input_tokens, input_mask, target_tokens, target_mask
 
-    def _step(self, batch, training: bool):
-        inp, targ = batch
-        inp_toks = self.in_proc(inp)
-        targ_toks = self.out_proc(targ)
-        mask = targ_toks != 0
+    def _loop_step(self, new_tokens, input_mask, enc_output, dec_state):
+        input_token, target_token = new_tokens[:, 0:1], new_tokens[:, 1:2]
+        decoder_input = typing.NamedTuple('DecoderInput', [('new_tokens', Any), ('enc_output', Any), ('mask', Any)])(input_token, enc_output, input_mask)
+        dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
+        return target_token, dec_result.logits, dec_state
+
+    def _train_step(self, inputs):
+        input_text, target_text = inputs
+        input_tokens, input_mask, target_tokens, target_mask = self._preprocess(input_text, target_text)
+        max_target_length = tf.shape(target_tokens)[1]
         with tf.GradientTape() as tape:
-            enc_seq, enc_state = self.encoder(inp_toks)
-            state = enc_state
-            loss = 0.0
-            for t in range(targ_toks.shape[1] - 1):
-                new_tokens = targ_toks[:, t:t+2]
-                y_true = new_tokens[:, 1:2]
-                dec_in = DecoderInput(new_tokens=new_tokens[:, :1], enc_output=enc_seq, mask=inp_toks!=0)
-                dec_out, state = self.decoder(dec_in, state)
-                loss += self.loss_fn(y_true, dec_out.logits)
-                if training:
-                    self.train_acc.update_state(y_true, dec_out.logits)
-                else:
-                    self.val_acc.update_state(y_true, dec_out.logits)
-            loss /= tf.reduce_sum(tf.cast(mask, tf.float32))
-        if training:
-            grads = tape.gradient(loss, self.trainable_variables)
-            self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        return loss
+            enc_output, enc_state = self.encoder(input_tokens)
+            dec_state = enc_state
+            loss = tf.constant(0.0)
+            for t in tf.range(max_target_length - 1):
+                new_tokens = target_tokens[:, t:t+2]
+                y, y_pred, dec_state = self._loop_step(new_tokens, input_mask, enc_output, dec_state)
+                loss += self.loss(y, y_pred)
+                self.train_metric.update_state(y, y_pred)
+            average_loss = loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
+        variables = self.trainable_variables
+        gradients = tape.gradient(average_loss, variables)
+        self.optimizer.apply_gradients(zip(gradients, variables))
+        return {'loss': average_loss, 'accuracy': self.train_metric.result()}
 
-    def train_step(self, data):
-        loss = self._step(data, training=True)
-        return {"loss": loss, "accuracy": self.train_acc.result()}
+    def _test_step(self, inputs):
+        input_text, target_text = inputs
+        input_tokens, input_mask, target_tokens, target_mask = self._preprocess(input_text, target_text)
+        max_target_length = tf.shape(target_tokens)[1]
+        enc_output, enc_state = self.encoder(input_tokens)
+        dec_state = enc_state
+        loss = tf.constant(0.0)
+        for t in tf.range(max_target_length - 1):
+            new_tokens = target_tokens[:, t:t+2]
+            y, y_pred, dec_state = self._loop_step(new_tokens, input_mask, enc_output, dec_state)
+            loss += self.loss(y, y_pred)
+            self.test_metric.update_state(y, y_pred)
+        average_loss = loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
+        return {'loss': average_loss, 'accuracy': self.test_metric.result()}
 
-    def test_step(self, data):
-        loss = self._step(data, training=False)
-        return {"val_loss": loss, "val_accuracy": self.val_acc.result()}
+    @tf.function(input_signature=[[tf.TensorSpec(dtype=tf.string, shape=[None]), tf.TensorSpec(dtype=tf.string, shape=[None])]])
+    def _tf_train_step(self, inputs):
+        return self._train_step(inputs)
 
-# ----------------------------------------------------------------------------
-# Inference Translator
-# ----------------------------------------------------------------------------
+    @tf.function(input_signature=[[tf.TensorSpec(dtype=tf.string, shape=[None]), tf.TensorSpec(dtype=tf.string, shape=[None])]])
+    def _tf_test_step(self, inputs):
+        return self._test_step(inputs)
+
+    def train_step(self, inputs):
+        return self._tf_train_step(inputs) if self.use_tf_function else self._train_step(inputs)
+
+    def test_step(self, inputs):
+        return self._tf_test_step(inputs) if self.use_tf_function else self._test_step(inputs)
+
 
 class Translator(tf.Module):
-    def __init__(self, encoder, decoder, in_proc, out_proc):
+    """Inference class for translating input sequences using a trained model."""
+    def __init__(self, encoder, decoder, input_text_processor, output_text_processor):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
-        self.in_proc = in_proc
-        self.out_lookup = layers.experimental.preprocessing.StringLookup(
-            vocabulary=out_proc.get_vocabulary(), mask_token='', invert=True)
-        mask_ids = layers.experimental.preprocessing.StringLookup(
-            vocabulary=out_proc.get_vocabulary(), mask_token='')( ['','[UNK]','[start]']).numpy()
-        vocab_size = self.out_lookup.vocabulary_size()
-        mask = np.zeros(vocab_size, bool)
-        mask[mask_ids] = True
-        self.mask = tf.constant(mask)
-        self.start = self.out_lookup('[start]')
-        self.end = self.out_lookup('[end]')
+        self.input_text_processor = input_text_processor
+        self.output_text_processor = output_text_processor
+        self.output_token_string_from_index = preprocessing.StringLookup(
+            vocabulary=output_text_processor.get_vocabulary(), mask_token='', invert=True)
+        index_from_string = preprocessing.StringLookup(vocabulary=output_text_processor.get_vocabulary(), mask_token='')
+        token_mask_ids = index_from_string(['', '[UNK]', '[start]']).numpy()
+        self.token_mask = np.zeros(index_from_string.vocabulary_size(), dtype=bool)
+        self.token_mask[token_mask_ids] = True
+        self.start_token = index_from_string(tf.constant('[start]'))
+        self.end_token = index_from_string(tf.constant('[end]'))
 
-    def translate(self, inputs: List[str], max_len: int = 50, temp: float = 1.0) -> List[str]:
-        batch = tf.constant(inputs)
-        toks = self.in_proc(batch)
-        enc_seq, enc_state = self.encoder(toks)
-        state = enc_state
-        token = tf.fill([tf.shape(batch)[0], 1], self.start)
-        results = []
-        for _ in range(max_len):
-            dec_in = DecoderInput(new_tokens=token, enc_output=enc_seq, mask=toks!=0)
-            dec_out, state = self.decoder(dec_in, state)
-            logits = tf.where(self.mask, -np.inf, dec_out.logits)
-            if temp == 0.0:
-                token = tf.argmax(logits, axis=-1)
-            else:
-                token = tf.random.categorical(tf.squeeze(logits, 1)/temp, 1)
-            results.append(token)
-            if tf.reduce_all(token == self.end): break
-        seq = tf.concat(results, axis=1)
-        texts = self.out_lookup(seq)
-        return tf.strings.reduce_join(texts, separator=' ', axis=1).numpy().tolist()
+    def tokens_to_text(self, result_tokens):
+        shape_checker = ShapeChecker()
+        shape_checker(result_tokens, ('batch', 't'))
+        result_text_tokens = self.output_token_string_from_index(result_tokens)
+        result_text = tf.strings.reduce_join(result_text_tokens, axis=1, separator=' ')
+        return tf.strings.strip(result_text)
 
-# ----------------------------------------------------------------------------
-# Training and Evaluation Pipeline
-# ----------------------------------------------------------------------------
+    def sample(self, logits, temperature):
+        shape_checker = ShapeChecker()
+        shape_checker(logits, ('batch', 't', 'vocab'))
+        logits = tf.where(self.token_mask[tf.newaxis, tf.newaxis, :], -np.inf, logits)
+        if temperature == 0.0:
+            return tf.argmax(logits, axis=-1)
+        logits = tf.squeeze(logits, axis=1)
+        return tf.random.categorical(logits / temperature, num_samples=1)
 
-def train_and_evaluate(args):
-    # Load and prepare data
-    with open(args.trainData) as f: train_lines = f.readlines()
-    with open(args.testData)  as f: test_lines  = f.readlines()
-    train_pairs = [prepare_data(l, include_labels=False, all_start_end=True) for l in train_lines]
-    test_pairs  = [prepare_data(l, include_labels=False, all_start_end=True) for l in test_lines]
+    def translate(self, input_text, *, max_length=50, return_attention=True, temperature=1.0):
+        batch_size = tf.shape(input_text)[0]
+        input_tokens = self.input_text_processor(input_text)
+        enc_output, enc_state = self.encoder(input_tokens)
+        dec_state = enc_state
+        new_tokens = tf.fill([batch_size, 1], self.start_token)
+        result_tokens, attention = [], []
+        done = tf.zeros([batch_size, 1], dtype=tf.bool)
+        for _ in range(max_length):
+            dec_input = typing.NamedTuple('DecoderInput', [('new_tokens', Any), ('enc_output', Any), ('mask', Any)])(new_tokens, enc_output, input_tokens != 0)
+            dec_result, dec_state = self.decoder(dec_input, state=dec_state)
+            attention.append(dec_result.attention_weights)
+            new_tokens = self.sample(dec_result.logits, temperature)
+            done |= (new_tokens == self.end_token)
+            new_tokens = tf.where(done, tf.constant(0, dtype=tf.int64), new_tokens)
+            result_tokens.append(new_tokens)
+            if tf.executing_eagerly() and tf.reduce_all(done):
+                break
+        result_tokens = tf.concat(result_tokens, axis=-1)
+        result_text = self.tokens_to_text(result_tokens)
+        return {'text': result_text, 'attention': tf.concat(attention, axis=1)} if return_attention else {'text': result_text}
 
-    train_ds = make_dataset(train_pairs, args.batchSize)
-    val_ds   = make_dataset(test_pairs,  args.batchSize)
+    @tf.function(input_signature=[tf.TensorSpec(dtype=tf.string, shape=[None])])
+    def tf_translate(self, input_text):
+        return self.translate(input_text)
 
-    # Vectorizers
-    global input_vectorizer, output_vectorizer
-    input_vectorizer = layers.TextVectorization(
-        max_tokens=args.nFeatures,
-        output_sequence_length=args.seqLen,
-        standardize=custom_standardization
-    )
-    output_vectorizer = layers.TextVectorization(
-        max_tokens=args.nFeatures,
-        output_sequence_length=args.seqLen + 1,
-        standardize=custom_standardization
-    )
-    input_vectorizer.adapt([p[0] for p in train_pairs])
-    output_vectorizer.adapt([p[1] for p in train_pairs])
 
-    # Model
-    model = TrainTranslator(
-        embed_dim=args.embeddingDim,
-        units=args.nSteps,
-        in_processor=input_vectorizer,
-        out_processor=output_vectorizer,
-        num_layers=args.numLayers,
-        dropout=args.dropout
-    )
-    model.compile(optimizer=tf.optimizers.Adam())
+class BatchLogs(tf.keras.callbacks.Callback):
+    """Callback to log batch metrics during training."""
+    def __init__(self, key):
+        super().__init__()
+        self.key = key
+        self.logs = []
 
-    # Callbacks
-    ckpt = keras.callbacks.ModelCheckpoint(
-        filepath=os.path.join(args.resPath, "ckpt_{epoch}"),
-        save_weights_only=True, verbose=1
-    )
+    def on_train_batch_end(self, n, logs):
+        self.logs.append(logs[self.key])
 
-    # Train
-    history = model.fit(
-        train_ds,
-        validation_data=val_ds,
-        epochs=args.nEpochs,
-        callbacks=[ckpt]
-    )
 
-    # Save history
-    pd.DataFrame(history.history).to_csv(os.path.join(args.resPath, "history.csv"))
-
-    # Inference example
-    translator = Translator(model.encoder, model.decoder, input_vectorizer, output_vectorizer)
-    sample_inputs = [p[0] for p in random.sample(test_pairs, min(5, len(test_pairs)))]
-    logging.info("Sample translations: %s", translator.translate(sample_inputs))
-
-# ----------------------------------------------------------------------------
-# Main
-# ----------------------------------------------------------------------------
+# --- Main Execution ---
 
 def main():
-    configure_logging()
-    parser = argparse.ArgumentParser(description="Train Attention-GRU translator.")
-    parser.add_argument("-s", "--seqLen",     type=int, default=50)
-    parser.add_argument("-u", "--nSteps",     type=int, default=1024)
-    parser.add_argument("-f", "--nFeatures",  type=int, default=15000)
-    parser.add_argument("-b", "--batchSize",  type=int, default=64)
-    parser.add_argument("-e", "--nEpochs",    type=int, default=40)
-    parser.add_argument("-d", "--embeddingDim",type=int, default=1024)
-    parser.add_argument("-l", "--numLayers",   type=int, default=1)
-    parser.add_argument("--dropout",            type=float, default=0.0)
-    parser.add_argument("-T", "--trainData",  type=str, required=True)
-    parser.add_argument("-t", "--testData",   type=str, required=True)
-    parser.add_argument("-rp","--resPath",    type=str, default=os.getcwd())
+    parser = argparse.ArgumentParser(description="Train a sequence-to-sequence model with attention.")
+    parser.add_argument("-s", "--seqLen", type=int, default=50, help="Per-sample sequence length")
+    parser.add_argument("-u", "--nSteps", type=int, default=1024, help="Number of hidden recurrent steps (units)")
+    parser.add_argument("-f", "--nFeatures", type=int, default=15000, help="Maximum vocabulary size")
+    parser.add_argument("-b", "--batchSize", type=int, default=64, help="Batch size")
+    parser.add_argument("-e", "--nEpochs", type=int, default=40, help="Number of training epochs")
+    parser.add_argument("-d", "--embeddingDim", type=int, default=1024, help="Word embedding dimensionality")
+    parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked GRU layers")
+    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for GRU layers")
+    parser.add_argument("-D", "--nDemo", type=int, default=-1, help="Number of test samples to predict")
+    parser.add_argument("-T", "--trainData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_train.tsv", help="Training data TSV")
+    parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Test data TSV")
+    parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
     args = parser.parse_args()
-    train_and_evaluate(args)
+
+    # Hyperparameters and settings
+    sequence_length = args.seqLen
+    max_features = args.nFeatures
+    batch_size = args.batchSize
+    n_epochs = args.nEpochs
+    embedding_dim = args.embeddingDim
+    units = args.nSteps
+    num_layers = args.numLayers
+    dropout_rate = args.dropout
+    training_data = args.trainData
+    testing_data = args.testData
+    n_demo = args.nDemo
+    results_path = os.path.normpath(args.resPath) + os.sep
+    dataset_name = parse_dataset_name(training_data)
+
+    # Load and prepare data
+    logging.info("Preparing train and test data")
+    with open(training_data) as f:
+        train_text = f.readlines()
+    with open(testing_data) as f:
+        val_text = f.readlines()
+    train_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), train_text))
+    val_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text))
+
+    # Create datasets
+    train_in, train_out = zip(*train_pairs)
+    test_in, test_out = zip(*val_pairs)
+    dataset = tf.data.Dataset.from_tensor_slices((list(train_in), list(train_out))).shuffle(len(train_in)).batch(batch_size)
+    test_dataset = tf.data.Dataset.from_tensor_slices((list(test_in), list(test_out))).shuffle(len(test_in)).batch(batch_size)
+
+    # Initialize and train vectorizers
+    input_vectorizer = preprocessing.TextVectorization(
+        output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length,
+        standardize=custom_standardization)
+    output_vectorizer = preprocessing.TextVectorization(
+        output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length + 1,
+        standardize=custom_standardization)
+    train_in_texts = [pair[0] for pair in train_pairs]
+    train_out_texts = [pair[1][0] if CS_LABELS else pair[1] for pair in train_pairs]
+    logging.info("Training input text vectorizer")
+    input_vectorizer.adapt(train_in_texts)
+    logging.info("Training output text vectorizer")
+    output_vectorizer.adapt(train_out_texts)
+    vectorizer_path = f"{results_path}results{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}"
+    save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model")
+    save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model")
+    logging.info(f"Saved text vectorizers to {vectorizer_path}")
+    max_features = max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary()))
+
+    # Setup model and training
+    checkpoint_path = (f"results{os.sep}attentionGRU_{dataset_name}_epochs-{n_epochs}_seqlen-{sequence_length}_"
+                       f"maxfeat-{max_features}_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}{os.sep}cp.ckpt")
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+    out_dir = results_path + os.sep.join(checkpoint_path.split(os.sep)[:2]) + os.sep
+    cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
+    train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
+
+    train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
+    train_translator.compile(optimizer=tf.optimizers.Adam(), loss=MaskedLoss())
+    logging.info("Training neural reasoning model...")
+    history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
+                                   callbacks=[train_loss, train_accu, cp_callback])
+    logging.info("Training completed successfully")
+
+    # Save training history
+    logging.info("Saving evaluation results...")
+    rdf = pd.DataFrame(history.history)
+    rdf.to_csv(f"{out_dir}history.csv")
+    fig, axes = plt.subplots(2, 1)
+    rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
+    rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
+    plt.savefig(f"{out_dir}history_plot.pdf")
+
+    # Perform inference
+    if n_demo >= 0:
+        random.shuffle(val_pairs)
+        val_pairs = val_pairs[:n_demo]
+        inp_, targ_ = zip(*val_pairs)
+        results = []
+        logging.info("Performing inferences using the trained model...")
+        translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+        num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
+        if num_sections:
+            for chunk in np.array_split(list(inp_), num_sections):
+                result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+                results.append(result.tolist())
+            result = sum(results, [])
+            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
+            result_df.to_csv(f"{out_dir}predictions.csv")
+            print(result_df)
+            logging.info(f"Results written to {out_dir}predictions.csv")
+        else:
+            logging.warning("No inference samples to process.")
+
 
 if __name__ == "__main__":
     main()
