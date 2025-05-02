@@ -132,7 +132,13 @@ def sort_cols(columns):
 
 
 def load_vectorizer(from_file):
-    """Load a saved TextVectorization layer from disk."""
+    """
+    Load a saved TextVectorization layer from disk.
+    Ensure loading uses the new .keras filenames:
+    # When loading vectorizers, use:
+    input_vectorizer = load_vectorizer(f"{vectorizer_path}in_vect_model.keras")
+    output_vectorizer = load_vectorizer(f"{vectorizer_path}out_vect_model.keras")
+    """
     model = tf.keras.models.load_model(from_file)
     vocab = model.layers[0].get_vocabulary()
     config = model.layers[0].get_config()
@@ -151,7 +157,7 @@ def save_vectorizer(vectorizer, to_file):
         vectorizer
     ])
     model.compile()
-    model.save(to_file, save_format='tf')
+    model.save(to_file)
 
 
 def parse_dataset_name(training_data):
@@ -519,8 +525,10 @@ def main():
     vectorizer_path = f"{results_path}results{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}"
     os.makedirs(vectorizer_path, exist_ok=True)
     
-    save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model")
-    save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model")
+    #save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model")
+    #save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model")
+    save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model.keras")
+    save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model.keras")
     logging.info(f"Saved text vectorizers to {vectorizer_path}")
     max_features = max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary()))
 
