@@ -725,7 +725,7 @@ parser.add_argument("-d", "--embeddingDim", type=int,
     default=1024, help = "Word embedding dimensionality")
 parser.add_argument("-l", "--numLayers", type=int,
     default=1, help="Number of stacked GRU layers in encoder & decoder")
-+parser.add_argument("--dropout", type=float,
+parser.add_argument("--dropout", type=float,
     default=0.0, help="Dropout probability for each GRU layer (also used as recurrent_dropout)")
 parser.add_argument("-D", "--nDemo", type=int,
     default=-1, help = "Number of predicted test samples to save as output")
@@ -749,8 +749,8 @@ batch_size = args.batchSize
 n_epochs = args.nEpochs
 embedding_dim = args.embeddingDim
 units = args.nSteps
-+num_layers       = args.numLayers
-+dropout_rate     = args.dropout
+num_layers       = args.numLayers
+dropout_rate     = args.dropout
 # Input data
 training_data = args.trainData
 testing_data = args.testData
