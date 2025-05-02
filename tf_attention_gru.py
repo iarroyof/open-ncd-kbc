@@ -533,8 +533,10 @@ def main():
     max_features = max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary()))
 
     # Setup model and training
-    checkpoint_path = (f"results{os.sep}attentionGRU_{dataset_name}_epochs-{n_epochs}_seqlen-{sequence_length}_"
-                       f"maxfeat-{max_features}_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}{os.sep}cp.ckpt")
+    checkpoint_path = (
+        f"results{os.sep}attentionGRU_{dataset_name}_epochs-{n_epochs}_seqlen-{sequence_length}_"
+        f"maxfeat-{max_features}_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}{os.sep}cp.weights.h5"
+    )
     checkpoint_dir = os.path.dirname(checkpoint_path)
     # Create checkpoint directory if it doesn't exist
     os.makedirs(checkpoint_dir, exist_ok=True)
