@@ -18,9 +18,11 @@ import typing
 from typing import Any, Tuple, Dict, Optional, List
 
 # TensorFlow and Keras imports
+os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"       # NVIDIA perf tip
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras import mixed_precision
 
 # In TF 2.10+, preprocessing is no longer in experimental
 from tensorflow.keras.layers import TextVectorization
@@ -496,6 +498,11 @@ def main():
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
     args = parser.parse_args()
 
+    # --- GPU runtime init ---------------------------------------------
+    gpus = tf.config.list_physical_devices('GPU')
+    for dev in gpus:                                 # make TF allocate as‑needed
+        tf.config.experimental.set_memory_growth(dev, True)
+    mixed_precision.set_global_policy("mixed_float16")   # enable Tensor‑Cores
     # Hyperparameters and settings
     sequence_length = args.seqLen
     max_features = args.nFeatures
@@ -529,9 +536,8 @@ def main():
     dataset = (
         tf.data.Dataset.from_tensor_slices((train_in, train_out))
           .shuffle(len(train_in))
-          .batch(batch_size)
-          # return a **list**, not a tuple
-          #.map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
+          .batch(batch_size, drop_remainder=True)        # better for GPU :contentReference[oaicite:2]{index=2}
+          .prefetch(tf.data.AUTOTUNE)                    # overlap I/O‑compute :contentReference[oaicite:3]{index=3}
     )
     test_in  = [str(s) for s in test_in]
     test_out = [str(s) for s in test_out]
@@ -539,9 +545,8 @@ def main():
     test_dataset = (
         tf.data.Dataset.from_tensor_slices((test_in, test_out))
           .shuffle(len(test_in))
-          .batch(batch_size)
-          # return a **list**, not a tuple
-          #.map(lambda x, y: [x, y], num_parallel_calls=tf.data.AUTOTUNE)
+          .batch(batch_size, drop_remainder=True)
+          .prefetch(tf.data.AUTOTUNE)
     )
     # Initialize and train vectorizers
     # Updated TextVectorization usage for TF 2.10+
