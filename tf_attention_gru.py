@@ -214,7 +214,8 @@ class Encoder(tf.keras.layers.Layer):
     def call(self, tokens, state=None):
         vectors = self.embedding(tokens)
         outputs_and_states = self.gru(vectors, initial_state=state)
-        return outputs_and_states[0], outputs_and_states[-1]  # Output, final state
+        seq, *states = outputs_and_states                           # list of tensors
+        return seq, states                                          # keep list
     
     # Add get_config method for serialization compatibility
     def get_config(self):
@@ -250,7 +251,7 @@ class Decoder(tf.keras.layers.Layer):
             state = [state] * self.num_layers
         vectors = self.embedding(new_tokens)
         outputs_and_states = self.gru(vectors, initial_state=state)
-        rnn_output, dec_state = outputs_and_states[0], outputs_and_states[-1]
+        rnn_output, *dec_state = outputs_and_states                 # list out
         context_vector, attention_weights = self.attention(rnn_output, enc_output, mask)
         concat = tf.concat([context_vector, rnn_output], axis=-1)
         attention_vector = self.Wc(concat)
