@@ -281,6 +281,7 @@ class Decoder(tf.keras.layers.Layer):
         )
 
         # Attention and output layers
+        self.num_layers = num_layers
         self.attention = BahdanauAttention(dec_units)
         self.Wc = layers.Dense(dec_units,
                                 activation=tf.math.tanh,
@@ -289,6 +290,8 @@ class Decoder(tf.keras.layers.Layer):
 
     def call(self, inputs: DecoderInput, state=None):
         # inputs.new_tokens: (batch, t)
+        if state is not None and not isinstance(state, (list, tuple)):
+            state = [state] * self.num_layers
         vectors = self.embedding(inputs.new_tokens)  # (batch, t, embed_dim)
 
         # Pass through stacked GRUs
