@@ -371,7 +371,11 @@ class TrainTranslator(tf.keras.Model):
         self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
 
         # update metric on unscaled predictions
-        self.train_metric.update_state(y_true, y_pred)
+        pred_ids = tf.argmax(y_pred, axis=-1, output_type=y_true.dtype)   # (B,1)
+        mask     = tf.cast(y_true != 0, tf.bool)                          # (B,1)
+        self.train_metric.update_state(
+                y_true[mask],              # true tokens only
+                pred_ids[mask])            # predicted tokens at the same positions
         return {'loss': average_loss, 'accuracy': self.train_metric.result()}
 
     # ------------------------------------------------------------------
@@ -393,7 +397,9 @@ class TrainTranslator(tf.keras.Model):
 
             y_pred = tf.cast(y_pred, tf.float32)                # ensure dtype match
             loss += self.loss(y_true, y_pred)
-            self.test_metric.update_state(y_true, y_pred)
+            pred_ids = tf.argmax(y_pred, axis=-1, output_type=y_true.dtype)
+            mask     = tf.cast(y_true != 0, tf.bool)
+            self.test_metric.update_state(y_true[mask], pred_ids[mask])
 
         average_loss = loss / tf.reduce_sum(
             tf.cast(target_mask, tf.float32))
