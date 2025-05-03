@@ -506,15 +506,10 @@ class Translator(tf.Module):
         result_tokens, attention = [], []
         done = tf.zeros([batch_size, 1], dtype=tf.bool)
         
-        # Use class instead of namedtuple for better compatibility
-        class DecoderInput:
-            def __init__(self, new_tokens, enc_output, mask):
-                self.new_tokens = new_tokens
-                self.enc_output = enc_output
-                self.mask = mask
-        
         for _ in range(max_length):
-            dec_input = DecoderInput(new_tokens, enc_output, input_tokens != 0)
+            # tuple = (new_tokens, encoder_out, src_mask)  → exactly what
+            # Decoder.call() is written to unpack
+            dec_input = (new_tokens, enc_output, input_tokens != 0)
             dec_result, dec_state = self.decoder(dec_input, state=dec_state)
             attention.append(dec_result.attention_weights)
             new_tokens = self.sample(dec_result.logits, temperature)
