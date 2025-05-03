@@ -489,13 +489,28 @@ class Translator(tf.Module):
         return tf.strings.strip(result_text)
 
     def sample(self, logits, temperature):
-        shape_checker = ShapeChecker()
-        shape_checker(logits, ('batch', 't', 'vocab'))
-        logits = tf.where(self.token_mask[tf.newaxis, tf.newaxis, :], -np.inf, logits)
-        if temperature == 0.0:
-            return tf.argmax(logits, axis=-1)
-        logits = tf.squeeze(logits, axis=1)
-        return tf.random.categorical(logits / temperature, num_samples=1)
+        """
+        Apply the vocabulary mask and (optionally) temperature sampling.
+        The logits are up‑cast to float32 for numerical stability.
+        Returns int64 ids shaped (B, 1).
+        """
+        # ── make dtypes consistent ────────────────────────────────────
+        logits = tf.cast(logits, tf.float32)             # (B,1,V) fp32
+        mask   = self.token_mask[tf.newaxis, tf.newaxis, :]  # (1,1,V) bool
+        logits = tf.where(mask,
+                          tf.constant(-np.inf, dtype=tf.float32),
+                          logits)
+
+        if temperature == 0.0:                           # greedy
+            return tf.argmax(logits, axis=-1,
+                             output_type=tf.int64)       # (B,1)
+
+        # categorical requires 2‑D [batch, classes]
+        logits = tf.squeeze(logits, axis=1)              # (B,V)
+        return tf.random.categorical(logits / temperature,
+                                     num_samples=1,
+                                     dtype=tf.int64)     # (B,1)
+
 
     def translate(self, input_text, *, max_length=50, return_attention=True, temperature=1.0):
         batch_size = tf.shape(input_text)[0]
