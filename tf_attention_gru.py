@@ -24,6 +24,9 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import mixed_precision
 
+# ── experiment tracking ───────────────────────────────────────────────────
+import wandb
+
 # In TF 2.10+, preprocessing is no longer in experimental
 from tensorflow.keras.layers import TextVectorization
 
@@ -552,6 +555,23 @@ class BatchLogs(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, n, logs):
         self.logs.append(logs[self.key])
 
+class AttentionLogger(keras.callbacks.Callback):
+    """Logs a heat‑map of the attention matrix for a fixed dev sample."""
+    def __init__(self, translator, sample_in):
+        super().__init__()
+        self.translator = translator
+        self.sample = tf.constant([sample_in])
+
+    def on_epoch_end(self, epoch, logs=None):
+        out = self.translator.translate(self.sample, return_attention=True)
+        attn = tf.squeeze(out['attention'], 0).numpy()   # (T_src, T_tgt)
+        fig, ax = plt.subplots(figsize=(6,4))
+        im = ax.imshow(attn, aspect='auto', cmap='viridis')
+        ax.set_xlabel("Encoder timesteps"); ax.set_ylabel("Decoder timesteps")
+        plt.colorbar(im, ax=ax); plt.tight_layout()
+        wandb.log({"attention_matrix": wandb.Image(fig)}, step=self.model.optimizer.iterations)
+        plt.close(fig)
+
 
 # --- Main Execution ---
 
@@ -571,25 +591,46 @@ def main():
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
     args = parser.parse_args()
 
+    # ----------  W&B init  --------------------------------
+    #   • uses argparse values as the initial config
+    #   • allows sweep overrides automatically
+    wandb.init(
+        project="ncd_reasoning_tf_GRU",               # change to your project
+        config=vars(args),                     # makes each flag a wandb.config key
+        notes="TF‑2.19 migration ‑ mixed_fp16"
+    )
+    # keep a short alias
+    cfg = wandb.config
+    
+    # replace *all* reads of argparse fields with cfg.*
+    sequence_length = cfg.seqLen
+    max_features    = cfg.nFeatures
+    batch_size      = cfg.batchSize
+    n_epochs        = cfg.nEpochs
+    embedding_dim   = cfg.embeddingDim
+    units           = cfg.nSteps
+    num_layers      = cfg.numLayers
+    dropout_rate    = cfg.dropout
+    # ------------------------------------------------------    
     # --- GPU runtime init ---------------------------------------------
     gpus = tf.config.list_physical_devices('GPU')
     for dev in gpus:                                 # make TF allocate as‑needed
         tf.config.experimental.set_memory_growth(dev, True)
     mixed_precision.set_global_policy("mixed_float16")   # enable Tensor‑Cores
     # Hyperparameters and settings
-    sequence_length = args.seqLen
-    max_features = args.nFeatures
-    batch_size = args.batchSize
-    n_epochs = args.nEpochs
-    embedding_dim = args.embeddingDim
-    units = args.nSteps
-    num_layers = args.numLayers
-    dropout_rate = args.dropout
-    training_data = args.trainData
-    testing_data = args.testData
-    n_demo = args.nDemo
-    results_path = os.path.normpath(args.resPath) + os.sep
-    dataset_name = parse_dataset_name(training_data)
+    #sequence_length = args.seqLen
+    #max_features = args.nFeatures
+    #batch_size = args.batchSize
+    #n_epochs = args.nEpochs
+    #embedding_dim = args.embeddingDim
+    #units = args.nSteps
+    #num_layers = args.numLayers
+    #dropout_rate = args.dropout
+    #training_data = args.trainData
+    #testing_data = args.testData
+    #n_demo = args.nDemo
+    #results_path = os.path.normpath(args.resPath) + os.sep
+    #dataset_name = parse_dataset_name(training_data)
 
     # Load and prepare data
     logging.info("Preparing train and test data")
@@ -662,6 +703,13 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     
     cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
+    # default W&B callback logs loss/accuracy per step+epoch,
+    # system metrics, configurable plots, … :contentReference[oaicite:3]{index=3}
+    wandb_cb    = wandb.keras.WandbCallback(
+        save_model       = False,          # we already use ModelCheckpoint
+        log_weights      = False,
+        log_gradients    = False,
+        monitor          = "val_loss")    
     train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
 
     train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
@@ -669,8 +717,12 @@ def main():
     train_translator.compile(optimizer=tf.keras.optimizers.Adam(), loss=MaskedLoss())
     
     logging.info("Training neural reasoning model...")
+    translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+    # fixed example = first validation sentence
+    sample_sentence = val_pairs[0][0] if val_pairs else train_pairs[0][0]
+    attn_cb = AttentionLogger(translator, sample_sentence)
     history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
-                                   callbacks=[train_loss, train_accu, cp_callback])
+                                   callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb])
     logging.info("Training completed successfully")
 
     # Save training history
@@ -703,6 +755,7 @@ def main():
         else:
             logging.warning("No inference samples to process.")
 
+    wandb.finish()
 
 if __name__ == "__main__":
     main()
