@@ -338,88 +338,89 @@ class TrainTranslator(tf.keras.Model):
         dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
         return target_token, dec_result.logits, dec_state
 
+    # ------------------------------------------------------------------  
     def _train_step(self, inputs):
-        """One training iteration with loss‑scaling for fp16 stability."""
+        """
+        One training iteration that
+        • keeps the loss in fp32 (numerical stability under mixed‑precision)
+        • uses loss‑scaling for back‑prop
+        • updates SparseCategoricalAccuracy with squeezed labels / logits
+        """
         input_text, target_text = inputs
+
+        # --- tokenise ---------------------------------------------------
         (input_tokens, input_mask,
          target_tokens, target_mask) = self._preprocess(input_text, target_text)
-
         max_t = tf.shape(target_tokens)[1]
+
         with tf.GradientTape() as tape:
-            # ── forward pass ────────────────────────────────────────────
+            # --- forward ------------------------------------------------
             enc_output, enc_state = self.encoder(input_tokens)
             dec_state = enc_state
-            loss = tf.constant(0.0, dtype=tf.float32)
+            total_loss = tf.constant(0.0, tf.float32)
 
             for t in tf.range(max_t - 1):
                 new_tokens = target_tokens[:, t:t + 2]          # (B, 2)
                 y_true, y_pred, dec_state = self._loop_step(
                     new_tokens, input_mask, enc_output, dec_state)
 
-                y_pred = tf.cast(y_pred, tf.float32)            # <‑‑ keep loss in fp32
-                loss += self.loss(y_true, y_pred)               # (scalar)
-                pred_ids = tf.argmax(y_pred, axis=-1,
-                                     output_type=y_true.dtype)   # (B,1)
-                mask = tf.cast(y_true != 0, tf.bool)             # (B,1)
-    
-                def _update():
-                    self.train_metric.update_state(
-                        tf.boolean_mask(y_true,  mask),
-                        tf.boolean_mask(pred_ids, mask))
-                tf.cond(tf.reduce_any(mask), _update, lambda: None)
+                y_pred = tf.cast(y_pred, tf.float32)            # fp32 logits
+                total_loss += self.loss(y_true, y_pred)
 
+                # ---- metric (expects 1‑D ids & 2‑D logits) -------------
+                self.train_metric.update_state(
+                    tf.squeeze(y_true, 1),       # (B,)
+                    tf.squeeze(y_pred, 1))       # (B, vocab)
 
-            average_loss = loss / tf.reduce_sum(
+            # average over non‑pad tokens
+            average_loss = total_loss / tf.reduce_sum(
                 tf.cast(target_mask, tf.float32))
 
-            # ── loss‑scaling for mixed‑precision ───────────────────────
+            # scale loss for mixed‑precision
             scaled_loss = self.optimizer.get_scaled_loss(average_loss)
 
-        # ‑‑ backward pass ‑‑
+        # --- backward ---------------------------------------------------
         scaled_grads = tape.gradient(scaled_loss, self.trainable_variables)
         grads = self.optimizer.get_unscaled_gradients(scaled_grads)
         self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
 
-        # update metric on unscaled predictions
-        pred_ids = tf.argmax(y_pred, axis=-1, output_type=y_true.dtype)   # (B,1)
-        mask     = tf.cast(y_true != 0, tf.bool)                          # (B,1)
-        self.train_metric.update_state(
-                y_true[mask],              # true tokens only
-                pred_ids[mask])            # predicted tokens at the same positions
-        return {'loss': average_loss, 'accuracy': self.train_metric.result()}
+        return {'loss': average_loss,
+                'accuracy': self.train_metric.result()}
 
     # ------------------------------------------------------------------
     def _test_step(self, inputs):
-        """Validation step ‑‑ no gradients, but cast logits to fp32."""
+        """
+        Validation step – identical logic to _train_step, but without
+        gradient calculations or loss scaling.
+        """
         input_text, target_text = inputs
         (input_tokens, input_mask,
          target_tokens, target_mask) = self._preprocess(input_text, target_text)
-
         max_t = tf.shape(target_tokens)[1]
+
         enc_output, enc_state = self.encoder(input_tokens)
         dec_state = enc_state
-        loss = tf.constant(0.0, dtype=tf.float32)
+        total_loss = tf.constant(0.0, tf.float32)
 
         for t in tf.range(max_t - 1):
             new_tokens = target_tokens[:, t:t + 2]
             y_true, y_pred, dec_state = self._loop_step(
                 new_tokens, input_mask, enc_output, dec_state)
 
-            y_pred = tf.cast(y_pred, tf.float32)                # ensure dtype match
-            loss += self.loss(y_true, y_pred)
-            pred_ids = tf.argmax(y_pred, axis=-1,
-                                 output_type=y_true.dtype)
-            mask = tf.cast(y_true != 0, tf.bool)
-    
-            def _update():
-                self.test_metric.update_state(
-                    tf.boolean_mask(y_true,  mask),
-                    tf.boolean_mask(pred_ids, mask))
-            tf.cond(tf.reduce_any(mask), _update, lambda: None)
+            y_pred = tf.cast(y_pred, tf.float32)
+            total_loss += self.loss(y_true, y_pred)
 
-        average_loss = loss / tf.reduce_sum(
+            # metric update
+            self.test_metric.update_state(
+                tf.squeeze(y_true, 1),
+                tf.squeeze(y_pred, 1))
+
+        average_loss = total_loss / tf.reduce_sum(
             tf.cast(target_mask, tf.float32))
-        return {'loss': average_loss, 'accuracy': self.test_metric.result()}
+
+        return {'loss': average_loss,
+                'accuracy': self.test_metric.result()}
+
 
     @tf.function(
         input_signature=(
