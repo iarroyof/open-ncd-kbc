@@ -1,12 +1,12 @@
 # sweep_config.yaml
 program: main.py
-method: bayes  # Bayesian optimization for hyperparameter search
+method: grid  # Bayesian optimization for hyperparameter search
 metric:
   name: val_loss
   goal: minimize
 parameters:
   model_type:
-    values: ['attention_lstm'] #['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s']
+    values: ['attention_gru'] #['autoencoder', 'attention_gru', 'attention_lstm', 'transformer', 'conv_s2s']
   data_path:
     value: ['data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv'] #['data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'] #  
   
@@ -14,7 +14,7 @@ parameters:
   batch_size:
     values: [64] #[16, 64, 128]  # 4 values: min, mid-low, mid-high, max
   learning_rate:
-    values: [1e-4, 1e-3, 1e-2]  # 4 values: low, mid-low, mid-high, high
+    values: [1e-3]  # 4 values: low, mid-low, mid-high, high
   source_seq_len:
     values: [16] #[8, 16, 32]
   target_seq_len:
@@ -43,13 +43,13 @@ parameters:
 
   # Attention GRU
   attention_gru_embed_size:
-    values: [512, 1024, 2048]  # 3 values: updated low, mid, high (shifted from 128)
+    values: [512]  # 3 values: updated low, mid, high (shifted from 128)
   attention_gru_hidden_size:
-    values: [256, 512, 1024]  # 3 values: low, mid, high
+    values: [1024]  # 3 values: low, mid, high
   attention_gru_num_layers:
-    values: [1, 2, 4]  # 3 values: shallow, mid, deep
+    values: [2]  # 3 values: shallow, mid, deep
   attention_gru_use_attention:
-    values: [true, false]  # 2 values: binary toggle
+    values: [true]  # 2 values: binary toggle
   attention_gru_bidirectional_encoder:
     value: true  # Fixed: common for GRU
 
@@ -59,9 +59,9 @@ parameters:
   attention_lstm_hidden_size:
     values: [512] #[256, 512, 1024]  # 3 values: low, mid, high
   attention_lstm_num_layers:
-    values: [1] #[1, 2, 4]  # 3 values: shallow, mid, deep
+    values: [2] #[1, 2, 4]  # 3 values: shallow, mid, deep
   attention_lstm_use_attention:
-    values: [false] #[true, false]  # 2 values: binary toggle
+    values: [true] #[true, false]  # 2 values: binary toggle
   attention_lstm_bidirectional_encoder:
     value: true  # Fixed: common for LSTM
 
