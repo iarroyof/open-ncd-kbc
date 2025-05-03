@@ -569,7 +569,8 @@ class AttentionLogger(keras.callbacks.Callback):
         im = ax.imshow(attn, aspect='auto', cmap='viridis')
         ax.set_xlabel("Encoder timesteps"); ax.set_ylabel("Decoder timesteps")
         plt.colorbar(im, ax=ax); plt.tight_layout()
-        wandb.log({"attention_matrix": wandb.Image(fig)}, step=self.model.optimizer.iterations)
+        step = int(self.model.optimizer.iterations.numpy())     # convert tf.Variable → int
+        wandb.log({"attention_matrix": wandb.Image(fig)}, step=step)
         plt.close(fig)
 
 
