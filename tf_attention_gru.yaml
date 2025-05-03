@@ -11,7 +11,7 @@ parameters:
   embeddingDim:  {values: [256, 512, 1024]}
   nSteps:        {values: [512, 1024, 2048]}
   dropout:       {min: 0.0, max: 1.0}
-  batchSize:     {values: [128]}
+  batchSize:     {values: [64]}
   nEpochs:       {value: 1}
   trainData:       {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv}
   testData:        {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv}
