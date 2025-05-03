@@ -1,0 +1,21 @@
+# sweep.yaml  – minimal example
+program: tf_attention_gru.py          # your script
+method: bayes                       # or grid / random
+name: tf_gru_wide_blue-demon_GPU1
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  seqLen:        {values: [30]}
+  numLayers:     {values: [2]} #[1, 2, 4]}
+  embeddingDim:  {values: [512]} #[256, 512, 1024]}
+  nSteps:        {values: [1024]} #[512, 1024, 2048]}
+  dropout:
+    distribution: uniform
+    min: 0.0
+    max: 1.0
+  batchSize:     {values: [64]}
+  nEpochs:       {value: 5}
+  trainData:     {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv}
+  testData:      {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv}
+  resPath:       {value: ./results}
