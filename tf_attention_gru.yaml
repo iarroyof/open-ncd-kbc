@@ -1,6 +1,7 @@
 # sweep.yaml  – minimal example
 program: tf_attention_gru.py          # your script
-method: bayes                         # or grid / random
+method: bayes                       # or grid / random
+name: tf_gru_wide
 metric:
   name: val_loss
   goal: minimize
@@ -11,7 +12,7 @@ parameters:
   nSteps:        {values: [512, 1024, 2048]}
   dropout:       {min: 0.0, max: 1.0}
   batchSize:     {values: [128]}
-  nEpochs:       {value: 5}
+  nEpochs:       {value: 4}
   trainData:       {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv}
   testData:        {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv}
   resPath:         {value: ./results}
