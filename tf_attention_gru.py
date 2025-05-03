@@ -323,6 +323,14 @@ class TrainTranslator(tf.keras.Model):
         self.train_metric = keras.metrics.SparseCategoricalAccuracy()
         self.test_metric = keras.metrics.SparseCategoricalAccuracy()
 
+    def get_config(self):
+        return {             # put only *hyper‑parameters* here
+            "embedding_dim": self.encoder.embedding.output_dim,
+            "units":         self.encoder.enc_units,
+            "num_layers":    self.encoder.num_layers,
+            "dropout":       self.encoder.gru.cell.dropout,
+        }
+        
     def _preprocess(self, input_text, target_text):
         self.shape_checker(input_text, ('batch',))
         self.shape_checker(target_text, ('batch',))
