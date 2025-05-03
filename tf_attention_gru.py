@@ -769,6 +769,25 @@ def main():
     history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
                                    callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb])
     logging.info("Training completed successfully")
+    # ── store one‑number‑per‑run so sweeps can plot them ───────────
+    best_val_loss = float(np.min(history.history["val_loss"]))
+    best_val_acc  = float(np.max(history.history["val_accuracy"]))
+    
+    run.summary["best_val_loss"] = best_val_loss
+    run.summary["best_val_acc"]  = best_val_acc
+    
+    # log the swept hyper‑parameters explicitly (they are also in run.config,
+    # but putting them in summary makes life easier for plot scripts)
+    run.summary["embedding_dim"] = embedding_dim
+    run.summary["units"]         = units
+    run.summary["num_layers"]    = num_layers
+    run.summary["dropout"]       = dropout_rate
+    tbl = wandb.Table(columns=["embedding_dim", "units",
+                               "num_layers", "dropout",
+                               "best_val_loss", "best_val_acc"])
+    tbl.add_data(embedding_dim, units, num_layers, dropout_rate,
+                 best_val_loss, best_val_acc)
+    wandb.log({"sensitivity_row": tbl})      # one‑row “append” table
 
     # Save training history
     logging.info("Saving evaluation results...")
