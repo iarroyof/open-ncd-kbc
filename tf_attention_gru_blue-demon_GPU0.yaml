@@ -6,13 +6,25 @@ metric:
   name: val_loss
   goal: minimize
 parameters:
-  seqLen:        {values: [30]}
-  numLayers:     {values: [1]} #[1, 2, 4]}
-  embeddingDim:  {values: [256]} #[256, 512, 1024]}
-  nSteps:        {values: [512]} #[512, 1024, 2048]}
-  dropout:       {value: 0.1} # {min: 0.0, max: 1.0}
-  batchSize:     {values: [64]}
-  nEpochs:       {value: 5}
-  trainData:       {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv}
-  testData:        {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv}
-  resPath:         {value: ./results}
+  seqLen: 
+    values: [30]
+  numLayers:
+    values: [1, 2, 4]
+  embeddingDim:
+    values: [256, 512, 1024]
+  nSteps:
+    value: 2048
+  dropout:
+    distribution: uniform
+    min: 0.0
+    max: 1.0
+  batchSize:
+    values: [64]
+  nEpochs:
+    value: 5
+  trainData:
+    value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv
+  testData:
+    value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv
+  resPath:
+    value: ./results
