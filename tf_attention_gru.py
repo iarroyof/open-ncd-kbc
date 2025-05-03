@@ -555,23 +555,77 @@ class BatchLogs(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, n, logs):
         self.logs.append(logs[self.key])
 
+# ──────────────────────────────────────────────────────────────────────────────
+#  Callback: log one attention heat‑map per epoch
+# ──────────────────────────────────────────────────────────────────────────────
 class AttentionLogger(keras.callbacks.Callback):
-    """Logs a heat‑map of the attention matrix for a fixed dev sample."""
-    def __init__(self, translator, sample_in):
+    """
+    Logs a heat‑map of the attention matrix for one fixed validation sample,
+    *without* padded columns / rows and with the **real words** on the axes.
+    """
+    def __init__(self, translator, sample_sentence: str):
+        """
+        translator : instance of the `Translator` class above  
+        sample_sentence : the source sentence that will be fed every epoch
+        """
         super().__init__()
         self.translator = translator
-        self.sample = tf.constant([sample_in])
+        self.sample     = tf.constant([sample_sentence])
 
+        # 1⃣  build two inverse look‑ups once – cheap & re‑usable
+        self.src_lookup = tf.keras.layers.StringLookup(
+            vocabulary=translator.input_text_processor.get_vocabulary(),
+            mask_token='', invert=True)
+
+        self.tgt_lookup = tf.keras.layers.StringLookup(
+            vocabulary=translator.output_text_processor.get_vocabulary(),
+            mask_token='', invert=True)
+
+    # ------------------------------------------------------------------  
     def on_epoch_end(self, epoch, logs=None):
-        out = self.translator.translate(self.sample, return_attention=True)
-        attn = tf.squeeze(out['attention'], 0).numpy()   # (T_src, T_tgt)
-        fig, ax = plt.subplots(figsize=(6,4))
-        im = ax.imshow(attn, aspect='auto', cmap='viridis')
-        ax.set_xlabel("Encoder timesteps"); ax.set_ylabel("Decoder timesteps")
-        plt.colorbar(im, ax=ax); plt.tight_layout()
-        step = int(self.model.optimizer.iterations.numpy())     # convert tf.Variable → int
+        """
+        • runs the model  
+        • trims pads  
+        • converts token ids → strings  
+        • logs a single W&B image
+        """
+        out   = self.translator.translate(self.sample, return_attention=True)
+        attn  = tf.squeeze(out['attention'], 0)          # (dec_T, enc_T)
+
+        # ---------- original token ids ---------------------------------
+        src_ids = self.translator.input_text_processor(self.sample)[0].numpy()
+        tgt_ids = self.translator.output_text_processor(out['text'])[0].numpy()
+
+        # ---------- trim padding ---------------------------------------
+        enc_len = int((src_ids != 0).sum())
+        dec_len = int((tgt_ids != 0).sum())
+        attn    = attn[:dec_len, :enc_len]
+        src_ids = src_ids[:enc_len]
+        tgt_ids = tgt_ids[:dec_len]
+
+        # ---------- ids ➜ strings --------------------------------------
+        src_words = self.src_lookup(src_ids).numpy().astype(str)
+        tgt_words = self.tgt_lookup(tgt_ids).numpy().astype(str)
+
+        # ---------- plot -----------------------------------------------
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(enc_len * .4 + 1, dec_len * .4 + 1))
+        im = ax.imshow(attn.numpy(), aspect='auto', cmap='viridis')
+
+        ax.set_xticks(range(enc_len)); ax.set_xticklabels(src_words,
+                                                          rotation=90,
+                                                          fontsize=8)
+        ax.set_yticks(range(dec_len)); ax.set_yticklabels(tgt_words,
+                                                          fontsize=8)
+        ax.set_xlabel("Encoder tokens"); ax.set_ylabel("Decoder tokens")
+        fig.colorbar(im, ax=ax, fraction=.046)
+        fig.tight_layout()
+
+        # ---------- log to W&B -----------------------------------------
+        step = int(self.model.optimizer.iterations.numpy())   # plain int
         wandb.log({"attention_matrix": wandb.Image(fig)}, step=step)
         plt.close(fig)
+
 
 
 # --- Main Execution ---
@@ -617,25 +671,13 @@ def main():
     testing_data  = getattr(cfg, "testData",  args.testData)
     results_path  = os.path.normpath(
                    getattr(cfg, "resPath",  args.resPath)) + os.sep
-    # ------------------------------------------------------    
+    n_demo = args.nDemo
     # --- GPU runtime init ---------------------------------------------
     gpus = tf.config.list_physical_devices('GPU')
     for dev in gpus:                                 # make TF allocate as‑needed
         tf.config.experimental.set_memory_growth(dev, True)
     mixed_precision.set_global_policy("mixed_float16")   # enable Tensor‑Cores
-    # Hyperparameters and settings
-    #sequence_length = args.seqLen
-    #max_features = args.nFeatures
-    #batch_size = args.batchSize
-    #n_epochs = args.nEpochs
-    #embedding_dim = args.embeddingDim
-    #units = args.nSteps
-    #num_layers = args.numLayers
-    #dropout_rate = args.dropout
-    #training_data = args.trainData
-    #testing_data = args.testData
-    n_demo = args.nDemo
-    #results_path = os.path.normpath(args.resPath) + os.sep
+
     dataset_name = parse_dataset_name(training_data)
 
     # Load and prepare data
@@ -687,9 +729,6 @@ def main():
     # Create directory if it doesn't exist
     vectorizer_path = f"{results_path}results{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}"
     os.makedirs(vectorizer_path, exist_ok=True)
-    
-    #save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model")
-    #save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model")
     save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model.keras")
     save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model.keras")
     logging.info(f"Saved text vectorizers to {vectorizer_path}")
