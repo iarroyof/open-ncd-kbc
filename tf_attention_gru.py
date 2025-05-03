@@ -585,7 +585,7 @@ def main():
     parser.add_argument("-d", "--embeddingDim", type=int, default=1024, help="Word embedding dimensionality")
     parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked GRU layers")
     parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for GRU layers")
-    parser.add_argument("-D", "--nDemo", type=int, default=-1, help="Number of test samples to predict")
+    parser.add_argument("-D", "--nDemo", type=int, default=20, help="Number of test samples to predict")
     parser.add_argument("-T", "--trainData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_train.tsv", help="Training data TSV")
     parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Test data TSV")
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
@@ -633,9 +633,9 @@ def main():
     #dropout_rate = args.dropout
     #training_data = args.trainData
     #testing_data = args.testData
-    #n_demo = args.nDemo
+    n_demo = args.nDemo
     #results_path = os.path.normpath(args.resPath) + os.sep
-    #dataset_name = parse_dataset_name(training_data)
+    dataset_name = parse_dataset_name(training_data)
 
     # Load and prepare data
     logging.info("Preparing train and test data")
