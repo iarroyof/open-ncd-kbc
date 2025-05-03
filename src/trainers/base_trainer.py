@@ -103,7 +103,15 @@ class BaseTrainer:
         self.model.pad_id = pad_id
         self.model.sos_id = self.train_dataset.tokenizer.token_to_id("[BOS]")
         self.model.eos_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
-        
+        # ── vocabulary mask: never predict PAD / UNK (extend as you wish) ──
+        banned_tokens = ["[PAD]", "[UNK]"]
+        mask = torch.zeros(self.model_config["vocab_size"], dtype=torch.bool)
+        for tok in banned_tokens:
+            tid = self.train_dataset.tokenizer.token_to_id(tok)
+            if tid is not None:
+                mask[tid] = True
+        self.token_mask = mask.to(self.device)      # shape (V,) bool
+
         self.scaler = GradScaler()
 
         if training_config.get("optimizer", "adafactor") == "adafactor":
@@ -128,6 +136,72 @@ class BaseTrainer:
 
         self.metrics = TextGenerationMetrics(self.valid_dataset.tokenizer)
         self.use_wandb = use_wandb
+
+        # ────────────────────────────────────────────────────────────────
+    def sample(
+        self,
+        logits: torch.Tensor,          # (B,1,V) or (B,V)
+        temperature: float = 0.0
+    ) -> torch.LongTensor:
+        """
+        Choose a token index for each item in the batch.
+
+        * Masks out ids in self.token_mask
+        * Greedy when temperature==0, otherwise temperature sampling
+        * Returns shape (B,1) int64 on the current device
+        """
+        logits = logits.float()                     # up‑cast for stability
+        if logits.dim() == 3:                       # (B,1,V) → (B,V)
+            logits = logits.squeeze(1)
+
+        if self.token_mask is not None:
+            logits = logits.masked_fill(self.token_mask, -float("inf"))
+
+        if temperature == 0.0:                      # greedy
+            ids = torch.argmax(logits, dim=-1, keepdim=True)
+        else:
+            probs = torch.softmax(logits / temperature, dim=-1)
+            ids = torch.multinomial(probs, num_samples=1)
+
+        return ids.to(torch.int64)
+
+    @torch.no_grad()
+    def generate(
+        self,
+        src_ids: torch.Tensor,               # (B,S)
+        max_len: int = None,
+        temperature: float = 0.7
+    ) -> torch.LongTensor:
+        """
+        Autoregressively decode until EOS or max_len.
+
+        Returns tensor of shape (B, T_generated) **without** the initial <BOS>.
+        """
+        self.model.eval()
+        B = src_ids.size(0)
+        device = src_ids.device
+        max_len = max_len or self.model_config.get("target_seq_len", 64)
+
+        generated = torch.full(
+            (B, 1), self.model.sos_id, dtype=torch.long, device=device
+        )                                           # starts with <BOS>
+        finished = torch.zeros(B, dtype=torch.bool, device=device)
+
+        for _ in range(max_len):
+            logits = self.model(
+                src=src_ids,
+                tgt=generated,
+                teacher_forcing_ratio=0.0,
+            )                                       # (B,T,V)
+            next_logits = logits[:, -1:, :]         # (B,1,V)
+            next_token  = self.sample(next_logits, temperature)  # (B,1)
+
+            generated = torch.cat([generated, next_token], dim=1)
+            finished |= next_token.squeeze(1).eq(self.model.eos_id)
+            if finished.all():
+                break
+
+        return generated[:, 1:]                     # strip <BOS>
 
     def trim_sequence_at_eos(self, seq, eos_token_id):
         """Trim a sequence at the EOS token."""
@@ -191,105 +265,75 @@ class BaseTrainer:
         else:
             return max(0.0, 1.0 - (epoch / num_epochs))
 
-    def generate_seeded_samples(self, num_samples: int = 10, seed: int = 42) -> List[Dict[str, str]]:
+    def generate_seeded_samples(self, num_samples: int = 10, seed: int = 42):
         """
-        Generate a specified number of prediction samples from the validation set using a fixed seed.
-        
-        Args:
-            num_samples (int): Number of samples to generate
-            seed (int): Random seed for reproducibility
-            
-        Returns:
-            List[Dict[str, str]]: List of dictionaries containing source, target, and prediction text
+        Return a list of {source,target,prediction,bleu} dictionaries
+        using temperature‑based decoding.
         """
-        # Set random seeds for reproducibility
+        # reproducibility
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
-        
+
         self.model.eval()
         sample_predictions = []
         eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
-        
-        # Get total validation dataset size
-        total_samples = len(self.valid_dataset)
-        
-        # Generate random indices to sample from
-        if num_samples >= total_samples:
-            # If requesting more samples than available, use all samples
-            indices = list(range(total_samples))
-            random.shuffle(indices)
-            indices = indices[:num_samples]
-        else:
-            indices = random.sample(range(total_samples), num_samples)
-        
-        # Sort indices to access them in order for efficiency
+
+        N = len(self.valid_dataset)
+        indices = list(range(N)) if num_samples >= N else random.sample(range(N), num_samples)
         indices.sort()
-        
-        # Create a dictionary to keep track of which indices we still need to process
-        remaining_indices = set(indices)
-        
+        remaining = set(indices)
+
         with torch.no_grad():
             for batch_idx, batch in enumerate(self.valid_loader):
-                # Calculate which samples in this batch correspond to our target indices
-                batch_size = len(batch['source_text'])
-                batch_start_idx = batch_idx * self.training_config['batch_size']
-                batch_end_idx = batch_start_idx + batch_size
-                
-                # Find which indices we need from this batch
-                batch_indices_to_use = [
-                    i - batch_start_idx for i in indices 
-                    if i in remaining_indices and batch_start_idx <= i < batch_end_idx
-                ]
-                
-                # If no indices in this batch match our target indices, skip to next batch
-                if not batch_indices_to_use:
+                B = len(batch['source_text'])
+                start = batch_idx * self.training_config['batch_size']
+                end   = start + B
+                take  = [i - start for i in indices if i in remaining and start <= i < end]
+                if not take:
                     continue
-                
-                source_ids = batch['source_text'].to(self.device)
-                target_ids = batch['target_text'].to(self.device)
-                
-                # Only run model if we have indices to process
-                outputs = self.model(src=source_ids, teacher_forcing_ratio=0.0)
-                preds = outputs.argmax(dim=-1)
-                
-                for batch_idx in batch_indices_to_use:
-                    global_idx = batch_start_idx + batch_idx
-                    remaining_indices.remove(global_idx)
-                    
-                    src_trim = self.trim_sequence_at_eos(source_ids[batch_idx].cpu(), eos_token_id)
-                    tgt_trim = self.trim_sequence_at_eos(target_ids[batch_idx].cpu(), eos_token_id)
-                    pred_trim = self.trim_sequence_at_eos(preds[batch_idx].cpu(), eos_token_id)
-                    
-                    decoded_pred = self.train_dataset.tokenizer.decode(pred_trim)
+
+                src_ids = batch['source_text'].to(self.device)
+
+                preds = self.generate(
+                    src_ids,
+                    max_len=self.model_config.get("target_seq_len", 64),
+                    temperature=self.training_config.get("temperature", 0.7),
+                )
+
+                tgt_ids = batch['target_text'].to(self.device)
+
+                for j in take:
+                    global_j = start + j
+                    remaining.remove(global_j)
+
+                    src_trim  = self.trim_sequence_at_eos(src_ids[j].cpu(),  eos_token_id)
+                    tgt_trim  = self.trim_sequence_at_eos(tgt_ids[j].cpu(),  eos_token_id)
+                    pred_trim = self.trim_sequence_at_eos(preds[j].cpu(),    eos_token_id)
+
+                    decoded_pred   = self.train_dataset.tokenizer.decode(pred_trim)  or "[EMPTY]"
                     decoded_target = self.train_dataset.tokenizer.decode(tgt_trim)
                     decoded_source = self.train_dataset.tokenizer.decode(src_trim)
-                    
-                    if not decoded_pred.strip():
-                        decoded_pred = "[EMPTY]"
-                    
-                    # Compute metrics for this sample
-                    metrics_result = self.metrics.compute_metrics(
+
+                    bleu = self.metrics.compute_metrics(
                         [torch.tensor(pred_trim)],
                         [torch.tensor(tgt_trim)]
-                    )
-                    
-                    sample_bleu = metrics_result.get("bleu", 0.0)
-                    
+                    ).get("bleu", 0.0)
+
                     sample_predictions.append({
-                        'source': decoded_source.strip(),
-                        'target': decoded_target.strip(),
-                        'prediction': decoded_pred.strip(),
-                        'bleu': sample_bleu
+                        "source":     decoded_source.strip(),
+                        "target":     decoded_target.strip(),
+                        "prediction": decoded_pred.strip(),
+                        "bleu":       bleu,
                     })
-                
-                # If we've found all the samples we need, break
-                if not remaining_indices:
+
+                if not remaining:
                     break
-                
+
         return sample_predictions
+
 
     def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
         """Save model checkpoint."""
@@ -323,7 +367,12 @@ class BaseTrainer:
                 total_loss += loss.item()
                 
                 # Process predictions for metrics
-                preds = outputs.argmax(dim=-1).cpu()
+                preds = self.generate(
+                    source_ids,
+                    max_len=self.model_config.get("target_seq_len", 64),
+                    temperature=0.7          # greedy inside generate()
+                )
+
                 
                 eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
                 
