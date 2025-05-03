@@ -594,23 +594,28 @@ def main():
     # ----------  W&B init  --------------------------------
     #   • uses argparse values as the initial config
     #   • allows sweep overrides automatically
-    wandb.init(
-        project="ncd_reasoning_tf_GRU",               # change to your project
-        config=vars(args),                     # makes each flag a wandb.config key
-        notes="TF‑2.19 migration ‑ mixed_fp16"
+    run = wandb.init(
+            project="ncd_reasoning_tf_GRU",               # change to your project
+            config=vars(args),                     # makes each flag a wandb.config key
+        
     )
     # keep a short alias
-    cfg = wandb.config
+    cfg = run.config
     
     # replace *all* reads of argparse fields with cfg.*
-    sequence_length = cfg.seqLen
-    max_features    = cfg.nFeatures
-    batch_size      = cfg.batchSize
-    n_epochs        = cfg.nEpochs
-    embedding_dim   = cfg.embeddingDim
-    units           = cfg.nSteps
-    num_layers      = cfg.numLayers
-    dropout_rate    = cfg.dropout
+# ── hyper‑parameters (prefer sweep‑supplied values, else CLI defaults) ─────────
+    sequence_length = getattr(cfg, "seqLen",       args.seqLen)
+    max_features    = getattr(cfg, "nFeatures",    args.nFeatures)
+    batch_size      = getattr(cfg, "batchSize",    args.batchSize)
+    n_epochs        = getattr(cfg, "nEpochs",      args.nEpochs)
+    embedding_dim   = getattr(cfg, "embeddingDim", args.embeddingDim)
+    units           = getattr(cfg, "nSteps",       args.nSteps)
+    num_layers      = getattr(cfg, "numLayers",    args.numLayers)
+    dropout_rate    = getattr(cfg, "dropout",      args.dropout)
+    training_data = getattr(cfg, "trainData", args.trainData)
+    testing_data  = getattr(cfg, "testData",  args.testData)
+    results_path  = os.path.normpath(
+                   getattr(cfg, "resPath",  args.resPath)) + os.sep
     # ------------------------------------------------------    
     # --- GPU runtime init ---------------------------------------------
     gpus = tf.config.list_physical_devices('GPU')
