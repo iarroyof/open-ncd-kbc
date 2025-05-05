@@ -534,7 +534,6 @@ class AttentionLSTMSeq2Seq(nn.Module):
 
             return outputs
 
-# src/models/text2text_autoencoders.py
 
 class VanillaTransformer(nn.Module):
     def __init__(
@@ -548,7 +547,6 @@ class VanillaTransformer(nn.Module):
         dim_feedforward: int = 2048,
         dropout: float = 0.1,
         activation: str = "relu",
-        # Remove independent max_seq_len parameter; use source_seq_len instead.
         source_seq_len: int = 64,
         pe_mode: str = 'fixed',
         fixed_scale: float = 1.0,
@@ -558,12 +556,22 @@ class VanillaTransformer(nn.Module):
         self.d_model = d_model
         self.target_seq_len = target_seq_len
         self.source_seq_len = source_seq_len
+        self.vocab_size = vocab_size
+        self.nhead = nhead
+        self.num_encoder_layers = num_encoder_layers
+        # Explicitly store num_decoder_layers, accounting for default
+        self.num_decoder_layers = num_encoder_layers if num_decoder_layers is None else num_decoder_layers
+        self.dim_feedforward = dim_feedforward
+        self.dropout = dropout
+        self.activation = activation
+        self.pe_mode = pe_mode
+        self.fixed_scale = fixed_scale
+        self.learned_scale = learned_scale
 
         # Embedding layer
         self.embedding = nn.Embedding(vocab_size, d_model)
         
-        # Initialize positional encoder with a maximum length that covers both source and
-        # potential decoder sequence lengths (decoder may temporarily grow to target_seq_len+1).
+        # Initialize positional encoder
         max_len_for_pos = max(self.source_seq_len, self.target_seq_len + 1)
         self.pos_encoder = PositionalEncoding(
             d_model=d_model,
@@ -578,7 +586,7 @@ class VanillaTransformer(nn.Module):
             d_model=d_model,
             nhead=nhead,
             num_encoder_layers=num_encoder_layers,
-            num_decoder_layers=num_encoder_layers if num_decoder_layers is None else num_decoder_layers,
+            num_decoder_layers=self.num_decoder_layers,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             activation=activation,
@@ -587,12 +595,34 @@ class VanillaTransformer(nn.Module):
         
         # Final projection layer
         self.fc = nn.Linear(d_model, vocab_size)
-        self.vocab_size = vocab_size
         self.pad_id = None
         self.sos_id = None
         self.eos_id = None
         # Initialize weights
         self._init_weights()
+
+    def print_config(self):
+        """Print all model configurations."""
+        config = {
+            "vocab_size": self.vocab_size,
+            "target_seq_len": self.target_seq_len,
+            "source_seq_len": self.source_seq_len,
+            "d_model": self.d_model,
+            "nhead": self.nhead,
+            "num_encoder_layers": self.num_encoder_layers,
+            "num_decoder_layers": self.num_decoder_layers,
+            "dim_feedforward": self.dim_feedforward,
+            "dropout": self.dropout,
+            "activation": self.activation,
+            "pe_mode": self.pe_mode,
+            "fixed_scale": self.fixed_scale,
+            "learned_scale": self.learned_scale,
+            "pad_id": self.pad_id,
+            "sos_id": self.sos_id,
+            "eos_id": self.eos_id
+        }
+        for key, value in config.items():
+            print(f"{key}: {value}")
 
     def _init_weights(self):
         """Initialize weights using Xavier uniform initialization"""
