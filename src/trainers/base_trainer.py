@@ -286,9 +286,7 @@ class BaseTrainer:
 
                 src_ids = batch['source_text'].to(self.device)
 
-                preds = self
-
-.generate(
+                preds = self.generate(
                     src_ids,
                     max_len=self.model_config.get("target_seq_len", 64),
                     temperature=self.training_config.get("temperature", 0.7),
