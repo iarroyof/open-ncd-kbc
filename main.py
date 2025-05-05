@@ -354,12 +354,6 @@ def setup_logging(log_dir: str=None):
   
 
 def train_with_wandb(run_config: Dict):
-    """
-    The run_config dictionary includes:
-      - parent_log_dir: Path object for the parent log directory.
-      - debug_log_predictions: Boolean flag.
-      - workstation_name: The workstation name.
-    """
     os.environ["WANDB_SYSTEM_METRICS"] = (
         "system.cpu,system.gpu.0.memory,system.gpu.1.memory,"
         "system.gpu.0.temp,system.gpu.1.temp,"
@@ -367,19 +361,15 @@ def train_with_wandb(run_config: Dict):
         "system.disk.free"
     )
     with wandb.init() as run:
-        
         model_type = wandb.config['model_type']
-        #filtered_config = filter_wandb_config(dict(config), model_type)
-        #wandb.config.update(filtered_config, allow_val_change=True)
         config = filter_wandb_config(dict(wandb.config), model_type)
         try:
             total_memory_gb = 24 if run_config["workstation_name"] != 'lizmark' else 48
             memory_kwargs = get_memory_estimate_kwargs(wandb.config, total_vram=total_memory_gb, safety_buff=0.05)
             fraction = estimate_memory_fraction(**memory_kwargs)
-            #torch.cuda.set_per_process_memory_fraction(fraction, device=0)                
             logging.info(f"The current CUDA device can be assigned with {fraction}% of total GPU memory to the current process.")
         except (RuntimeError, AssertionError, AttributeError) as e:
-            logging.warning(f"[WARN] Failed to set memory fraction — likely due to early CUDA iitialization: {e}")
+            logging.warning(f"[WARN] Failed to set memory fraction — likely due to early CUDA initialization: {e}")
         except ImportError as e:
             logging.error(f"[ERROR] Torch or wandb not found: {e}")
         except KeyError as e:
@@ -395,6 +385,12 @@ def train_with_wandb(run_config: Dict):
         sweep_id = wandb.run.sweep_id if wandb.run.sweep_id is not None else "default_sweep"
         log_dir = parent_log_dir / sweep_id / wandb.run.id
         log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Dataset-specific cache directory
+        dataset_name = Path(train_path).stem
+        cache_dir = Path(run_config["parent_cache_dir"]) / dataset_name
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
         setup_logging(str(log_dir))
         logging.info(f"Starting sweep run {wandb.run.id} (sweep: {sweep_id}) with model type: {model_type}")
         
@@ -414,17 +410,22 @@ def train_with_wandb(run_config: Dict):
         
         train_configs, valid_configs = setup_data_configs(train_path, valid_path)
         
+        # Use dataset-specific tokenizer path
+        tokenizer_path = f"{dataset_name}_tokenizer.json"
+        
         trainer = BaseTrainer(
             model_type=model_type,
             model_config=model_config,
             training_config=training_config,
             train_configs=train_configs,
             valid_configs=valid_configs,
+            tokenizer_path=tokenizer_path,
+            cache_dir=str(cache_dir),
             log_dir=str(log_dir),
             use_wandb=True
         )
         trainer.train()
-        
+
 def main():
     parser = argparse.ArgumentParser(description='Train sequence-to-sequence models with W&B sweeps in Docker')
     parser.add_argument('--model_type', type=str, default=None,
@@ -458,6 +459,7 @@ def main():
     logging.info("Workstation Name: %s", workstation_name)
     run_config = {
         "parent_log_dir": Path(args.log_dir),
+        "parent_cache_dir": Path(args.cache_dir),
         "debug_log_predictions": args.debug_log_predictions,
         "workstation_name": workstation_name
     }
@@ -467,8 +469,39 @@ def main():
 
     try:
         if not args.avoid_wandb:
-            # ... (W&B sweep logic remains unchanged)
-            pass
+            if not args.yaml:
+                yaml_file = f'sweep_config_{run_config["workstation_name"]}.yaml'
+            else:
+                yaml_file = args.yaml
+            with open(yaml_file, 'r') as f:
+                sweep_config = yaml.safe_load(f)
+
+            model_type = args.model_type
+            if model_type is None:
+                try:
+                    model_type = sweep_config['parameters']['model_type']['values'][0]
+                    logging.info(f"Using model_type '{model_type}' from YAML configuration.")
+                except (KeyError, IndexError):
+                    logging.error("No model_type specified in YAML or CLI. Please provide --model_type or define in YAML.")
+                    raise ValueError("Model type must be specified in YAML or CLI.")
+
+            if args.sweep:
+                sweep_id = args.sweep
+                if args.project:
+                    logging.info(f"Using existing sweep '{sweep_id}' with project '{args.project}'.")
+            else:
+                sweep_config = filter_sweep_config(sweep_config, model_type)
+                sweep_id = wandb.sweep(sweep_config, project=args.project)
+                logging.info(f"Created new sweep with ID: {sweep_id}")
+
+            agent_fn = partial(train_with_wandb, run_config)
+            for attempt in range(3):
+                try:
+                    wandb.agent(sweep_id, function=agent_fn)
+                    break
+                except Exception as e:
+                    logging.error(f"Sweep attempt {attempt + 1} failed on {run_config['workstation_name']}: {str(e)}. Retrying in 60 seconds...")
+                    time.sleep(60)
         else:
             if args.model_type is None:
                 logging.error("No model_type specified for non-W&B run. Please provide --model_type.")
@@ -490,12 +523,15 @@ def main():
             train_path, val_path = ast.literal_eval(args.data_path)
             train_configs, valid_configs = setup_data_configs(train_path, val_path)
 
-            # Generate dataset-specific tokenizer path if not provided
             tokenizer_path = args.tokenizer_path
             if tokenizer_path is None:
                 dataset_name = Path(train_path).stem
                 tokenizer_path = f"{dataset_name}_tokenizer.json"
                 logging.info(f"No tokenizer_path provided, using dataset-specific: {tokenizer_path}")
+
+            dataset_name = Path(train_path).stem
+            cache_dir = Path(args.cache_dir) / dataset_name
+            cache_dir.mkdir(parents=True, exist_ok=True)
 
             trainer = BaseTrainer(
                 model_type=args.model_type,
@@ -504,7 +540,7 @@ def main():
                 train_configs=train_configs,
                 valid_configs=valid_configs,
                 tokenizer_path=tokenizer_path,
-                cache_dir=args.cache_dir,
+                cache_dir=str(cache_dir),
                 log_dir=str(args.log_dir),
                 use_wandb=False
             )
