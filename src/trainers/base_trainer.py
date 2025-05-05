@@ -34,7 +34,7 @@ class BaseTrainer:
         training_config: dict,
         train_configs: List[ColumnConfig],
         valid_configs: List[ColumnConfig],
-        tokenizer_path: Optional[str] = None,
+        tokenizer_path: Optional[str] = "model_tokenizer.json",
         cache_dir: str = "./cache",
         log_dir: str = "./logs",
         use_wandb: bool = False
@@ -53,16 +53,22 @@ class BaseTrainer:
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
 
+        # Ensure tokenizer_path is absolute and stored in cache_dir
+        self.tokenizer_path = Path(tokenizer_path)
+        if not self.tokenizer_path.is_absolute():
+            self.tokenizer_path = Path(cache_dir) / self.tokenizer_path
+
         cache_config = CacheConfig(
             enable_cache=True,
             cache_dir=cache_dir,
-            cache_format='h5'
+            cache_format='h5',
+            tokenizer_path=str(self.tokenizer_path)
         )
 
         self.train_dataset = CachedTSVDataset(
             configs=train_configs,
             cache_config=cache_config,
-            tokenizer_path=tokenizer_path,
+            tokenizer_path=str(self.tokenizer_path),  # Use fixed tokenizer path
             vocab_size=self.model_config.get('vocab_size', 32000),
             max_length=self.model_config.get('source_seq_len', 512)
         )
@@ -70,7 +76,7 @@ class BaseTrainer:
         self.valid_dataset = CachedTSVDataset(
             configs=valid_configs,
             cache_config=cache_config,
-            tokenizer_path=tokenizer_path,
+            tokenizer_path=str(self.tokenizer_path),  # Use same tokenizer path
             vocab_size=self.model_config.get('vocab_size', 32000),
             max_length=self.model_config.get('source_seq_len', 512)
         )
@@ -138,22 +144,14 @@ class BaseTrainer:
             label_smoothing=training_config.get('label_smoothing', 0.05)
         )
 
-        self.metrics = TextGenerationMetrics(self.valid_dataset.tokenizer)
+        self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
         self.use_wandb = use_wandb
 
-        # ────────────────────────────────────────────────────────────────
     def sample(
         self,
         logits: torch.Tensor,          # (B,1,V) or (B,V)
         temperature: float = 0.0
     ) -> torch.LongTensor:
-        """
-        Choose a token index for each item in the batch.
-
-        * Masks out ids in self.token_mask
-        * Greedy when temperature==0, otherwise temperature sampling
-        * Returns shape (B,1) int64 on the current device
-        """
         logits = logits.float()                     # up‑cast for stability
         if logits.dim() == 3:                       # (B,1,V) → (B,V)
             logits = logits.squeeze(1)
@@ -176,11 +174,6 @@ class BaseTrainer:
         max_len: int = None,
         temperature: float = 0.7
     ) -> torch.LongTensor:
-        """
-        Autoregressively decode until EOS or max_len.
-
-        Returns tensor of shape (B, T_generated) **without** the initial <BOS>.
-        """
         self.model.eval()
         B = src_ids.size(0)
         device = src_ids.device
@@ -208,7 +201,6 @@ class BaseTrainer:
         return generated[:, 1:]                     # strip <BOS>
 
     def trim_sequence_at_eos(self, seq, eos_token_id):
-        """Trim a sequence at the EOS token."""
         if hasattr(seq, "tolist"):
             seq = seq.tolist()
         if eos_token_id in seq:
@@ -216,7 +208,6 @@ class BaseTrainer:
         return seq
 
     def train_epoch(self, epoch: int) -> float:
-        """Train for one epoch."""
         self.current_epoch = epoch
         self.model.train()
         total_loss, valid_batches = 0.0, 0
@@ -253,7 +244,6 @@ class BaseTrainer:
         return total_loss / valid_batches if valid_batches > 0 else float('inf')
 
     def get_teacher_forcing_ratio(self, epoch):
-        """Calculate teacher forcing ratio based on epoch."""
         num_epochs = self.training_config['num_epochs']
         schedule = self.training_config.get('teacher_forcing_schedule', 'adaptive')
 
@@ -270,11 +260,6 @@ class BaseTrainer:
             return max(0.0, 1.0 - (epoch / num_epochs))
 
     def generate_seeded_samples(self, num_samples: int = 10, seed: int = 42):
-        """
-        Return a list of {source,target,prediction,bleu} dictionaries
-        using temperature‑based decoding.
-        """
-        # reproducibility
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -301,7 +286,9 @@ class BaseTrainer:
 
                 src_ids = batch['source_text'].to(self.device)
 
-                preds = self.generate(
+                preds = self
+
+.generate(
                     src_ids,
                     max_len=self.model_config.get("target_seq_len", 64),
                     temperature=self.training_config.get("temperature", 0.7),
@@ -338,9 +325,7 @@ class BaseTrainer:
 
         return sample_predictions
 
-
     def save_checkpoint(self, epoch: int, metrics: Dict[str, float]):
-        """Save model checkpoint."""
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -352,7 +337,6 @@ class BaseTrainer:
         torch.save(checkpoint, self.log_dir / f'checkpoint_epoch_{epoch}.pt')
 
     def evaluate(self, epoch: int = None) -> Dict[str, float]:
-        """Evaluate the model on the validation set."""
         self.model.eval()
         total_loss = 0.0
         all_predictions = []
@@ -370,13 +354,11 @@ class BaseTrainer:
                 
                 total_loss += loss.item()
                 
-                # Process predictions for metrics
                 preds = self.generate(
                     source_ids,
                     max_len=self.model_config.get("target_seq_len", 64),
-                    temperature=0.7          # greedy inside generate()
+                    temperature=0.7
                 )
-
                 
                 eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
                 
@@ -387,13 +369,9 @@ class BaseTrainer:
                     all_predictions.append(torch.tensor(pred_trim))
                     all_targets.append(torch.tensor(tgt_trim))
         
-        # Calculate metrics
         metrics_results = self.metrics.compute_metrics(all_predictions, all_targets)
-        
-        # Add loss to metrics
         metrics_results['val_loss'] = total_loss / len(self.valid_loader)
         
-        # Log metrics
         logging.info(f"Epoch {epoch if epoch is not None else 'N/A'} - Validation Metrics: {metrics_results}")
         
         if self.use_wandb:
@@ -404,13 +382,6 @@ class BaseTrainer:
         return metrics_results
 
     def train(self, num_final_samples: int = 10, seed: int = 42):
-        """
-        Train the model and log predictions only at the final epoch.
-        
-        Args:
-            num_final_samples (int): Number of samples to log at the final epoch
-            seed (int): Random seed for sample selection
-        """
         best_metrics = {'val_loss': float('inf'), 'bleu': 0.0}
         num_epochs = self.training_config['num_epochs']
 
@@ -421,18 +392,15 @@ class BaseTrainer:
             if self.use_wandb:
                 wandb.log({"epoch": epoch, "train_loss": train_loss})
 
-            # Log predictions only at the final epoch
             if epoch == num_epochs - 1:
                 final_samples = self.generate_seeded_samples(num_samples=num_final_samples, seed=seed)
                 PredictionLogger.log_predictions(self, final_samples)
 
-            # Save checkpoint if we have better validation metrics
             if val_metrics['val_loss'] < best_metrics['val_loss']:
                 best_metrics = val_metrics
                 self.save_checkpoint(epoch, val_metrics)
 
     def pad_or_trim(self, target_ids):
-        """Pad or trim target IDs to match target sequence length."""
         target_seq_len = self.model_config.get('target_seq_len', 512)
         if target_ids.size(1) > target_seq_len:
             return target_ids[:, :target_seq_len]
@@ -442,6 +410,5 @@ class BaseTrainer:
         return target_ids
 
     def __del__(self):
-        """Clean up GPU memory."""
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
