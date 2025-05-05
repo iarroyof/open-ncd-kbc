@@ -145,7 +145,7 @@ class BaseTrainer:
         self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
         self.use_wandb = use_wandb
         try:
-            logging.info(self.model.print_config())
+            logging.info("Confirmed configuration from model's object:\n" + self.model.print_config())
         except:
             logging.info("No print_config() method implemented for this model.")
 
