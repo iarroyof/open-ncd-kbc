@@ -1,6 +1,6 @@
 program: tf_attention_gru.py          # your script
 method: bayes                       # or grid / random
-name: tf_gru_dropout_lizmark_GPU1
+name: tf_gru_dropout_santo_GPU0
 metric:
   name: val_loss
   goal: minimize
