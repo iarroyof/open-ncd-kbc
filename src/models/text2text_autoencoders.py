@@ -621,8 +621,8 @@ class VanillaTransformer(nn.Module):
             "sos_id": self.sos_id,
             "eos_id": self.eos_id
         }
-        for key, value in config.items():
-            print(f"{key}: {value}")
+        return '\n'.join([f"{key}: {value}" for key, value in config.items()])
+        
 
     def _init_weights(self):
         """Initialize weights using Xavier uniform initialization"""
