@@ -12,6 +12,7 @@ from tokenizers import Tokenizer, trainers
 from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import Whitespace
 import re
+from filelock import FileLock
 
 @dataclass
 class ColumnConfig:
@@ -53,12 +54,13 @@ class CachedTSVDataset(Dataset):
         self.cache_dir = Path(cache_config.cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         
-        # Cache path based on data config and tokenizer
-        self.cache_path = self._get_cache_path()
-        # Use model-specific tokenizer path
+        # Initialize tokenizer path from cache_config
         self.tokenizer_path = Path(cache_config.tokenizer_path)
         if not self.tokenizer_path.is_absolute():
             self.tokenizer_path = self.cache_dir / self.tokenizer_path
+        
+        # Cache path based on data config and tokenizer
+        self.cache_path = self._get_cache_path()
         
         # Load or initialize tokenizer
         self.tokenizer = self._setup_tokenizer(str(self.tokenizer_path))
@@ -178,9 +180,11 @@ class CachedTSVDataset(Dataset):
         return h5py.File(self.cache_path, 'r')
 
     def _setup_tokenizer(self, tokenizer_path: str) -> Tokenizer:
-        """Load or train tokenizer"""
+        """Load or train tokenizer with file locking"""
         if Path(tokenizer_path).exists():
             tokenizer = Tokenizer.from_file(tokenizer_path)
+            if tokenizer.get_vocab_size() != self.vocab_size:
+                raise ValueError(f"Tokenizer vocab size ({tokenizer.get_vocab_size()}) does not match expected ({self.vocab_size})")
             for token in ["[PAD]", "[UNK]", "[BOS]", "[EOS]"]:
                 if tokenizer.token_to_id(token) is None:
                     raise ValueError(f"Tokenizer at {tokenizer_path} missing special token: {token}")
@@ -204,7 +208,9 @@ class CachedTSVDataset(Dataset):
                         yield from chunk['target'].tolist()
         
         tokenizer.train_from_iterator(text_iterator(), trainer=trainer)
-        tokenizer.save(tokenizer_path)
+        with FileLock(f"{tokenizer_path}.lock"):
+            tokenizer.save(tokenizer_path)
+        logging.info(f"Saved tokenizer to {tokenizer_path}")
         return tokenizer
 
     def get_vocab_size(self) -> int:
