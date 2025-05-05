@@ -107,10 +107,6 @@ class BaseTrainer:
         
         self.model_config['vocab_size'] = self.train_dataset.get_vocab_size()
         self.model = build_model(model_type, self.model_config).to(self.device)
-        try:
-            logging.info(self.model.print_config())
-        except:
-            logging.info("No print_config() method implemented for this model.")
         pad_id = self.train_dataset.tokenizer.token_to_id("[PAD]")
         self.model.pad_id = pad_id
         self.model.sos_id = self.train_dataset.tokenizer.token_to_id("[BOS]")
@@ -148,6 +144,10 @@ class BaseTrainer:
 
         self.metrics = TextGenerationMetrics(self.train_dataset.tokenizer)
         self.use_wandb = use_wandb
+        try:
+            logging.info(self.model.print_config())
+        except:
+            logging.info("No print_config() method implemented for this model.")
 
     def sample(
         self,
