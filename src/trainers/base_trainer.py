@@ -65,20 +65,22 @@ class BaseTrainer:
             tokenizer_path=str(self.tokenizer_path)
         )
 
+        # Initialize datasets
         self.train_dataset = CachedTSVDataset(
             configs=train_configs,
             cache_config=cache_config,
-            tokenizer_path=str(self.tokenizer_path),  # Use fixed tokenizer path
             vocab_size=self.model_config.get('vocab_size', 32000),
-            max_length=self.model_config.get('source_seq_len', 512)
+            max_length=self.model_config.get('source_seq_len', 512),
+            target_length=self.model_config.get('target_seq_len', 64),
+            seed=42
         )
-
         self.valid_dataset = CachedTSVDataset(
             configs=valid_configs,
             cache_config=cache_config,
-            tokenizer_path=str(self.tokenizer_path),  # Use same tokenizer path
             vocab_size=self.model_config.get('vocab_size', 32000),
-            max_length=self.model_config.get('source_seq_len', 512)
+            max_length=self.model_config.get('source_seq_len', 512),
+            target_length=self.model_config.get('target_seq_len', 64),
+            seed=42
         )
 
         self.train_loader = DataLoader(
