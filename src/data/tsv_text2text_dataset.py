@@ -65,6 +65,9 @@ class CachedTSVDataset(Dataset):
         # Load or initialize tokenizer
         self.tokenizer = self._setup_tokenizer(str(self.tokenizer_path))
         
+        # Update vocab_size to match tokenizer's actual size
+        self.vocab_size = self.tokenizer.get_vocab_size()
+        
         # Create or load cache with tokenized sequences
         self.data_cache = self._setup_cache()
         
@@ -183,8 +186,11 @@ class CachedTSVDataset(Dataset):
         """Load or train tokenizer with file locking"""
         if Path(tokenizer_path).exists():
             tokenizer = Tokenizer.from_file(tokenizer_path)
-            if tokenizer.get_vocab_size() != self.vocab_size:
-                raise ValueError(f"Tokenizer vocab size ({tokenizer.get_vocab_size()}) does not match expected ({self.vocab_size})")
+            actual_vocab_size = tokenizer.get_vocab_size()
+            if actual_vocab_size > self.vocab_size:
+                raise ValueError(f"Tokenizer vocab size ({actual_vocab_size}) exceeds expected maximum ({self.vocab_size})")
+            if actual_vocab_size < self.vocab_size:
+                logging.warning(f"Tokenizer vocab size ({actual_vocab_size}) is smaller than expected ({self.vocab_size}). Using actual vocab size.")
             for token in ["[PAD]", "[UNK]", "[BOS]", "[EOS]"]:
                 if tokenizer.token_to_id(token) is None:
                     raise ValueError(f"Tokenizer at {tokenizer_path} missing special token: {token}")
