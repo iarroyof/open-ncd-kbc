@@ -37,8 +37,8 @@ parameters:
     values: [4, 8] # [4, 8, 16]  # 3 values: low, mid, high
   transformer_num_encoder_layers:  # Key block parameter
     values: [1, 6] # [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
-  transformer_num_decoder_layers:  # Key block parameter
-    values: [1, 6] # [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
+  #transformer_num_decoder_layers:  # Key block parameter
+  #  values: [1, 6] # [1, 2, 4]  # 4 values: shallow, mid-low, mid-high, deep
   # Less critical parameters
   transformer_activation:
     value: 'relu'  # Fixed: standard choice
