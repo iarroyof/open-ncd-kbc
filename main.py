@@ -163,7 +163,7 @@ def get_model_config(model_type: str) -> Dict:
             'd_model': 512,
             'nhead': 8,
             'num_encoder_layers': 6,
-            'num_decoder_layers': 6,
+            'num_decoder_layers': None,
             'dim_feedforward': 2048,
             'activation': 'relu',
             'pe_mode': 'fixed',
@@ -181,16 +181,7 @@ def get_model_config(model_type: str) -> Dict:
         }
     else:
         raise ValueError(f"Unknown model type: {model_type}")
-    #if wandb_config:
-    #    prefix = f"{model_type}_"
-    #    for key in config:
-    #        wandb_key = prefix + key
-    #        if wandb_key in wandb_config:
-    #            config[key] = wandb_config[wandb_key]
-    #    if 'target_seq_len' in wandb_config:
-    #        config['target_seq_len'] = wandb_config['target_seq_len']
-    #    if 'source_seq_len' in wandb_config:
-    # config['source_seq_len'] = wandb_config['source_seq_len']
+
     return config
 
 def get_training_config(model_type: str) -> Dict:
@@ -238,10 +229,6 @@ def get_training_config(model_type: str) -> Dict:
             **base_config,
             'learning_rate': None if base_config['optimizer'] == 'adafactor' else 1e-3
         }
-    #if wandb_config:
-    #    for key in ['batch_size', 'learning_rate', 'num_epochs']:
-    #        if key in wandb_config:
-    #            config[key] = wandb_config[key]
 
     return config
 
