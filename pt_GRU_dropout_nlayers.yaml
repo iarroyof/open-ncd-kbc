@@ -1,7 +1,7 @@
 # sweep_GRU_dropout_nlayers.yaml
 program: main.py
 method: grid #bayes  # Bayesian optimization for hyperparameter search
-name: dropout_nlayers
+name: pt_gru_dropout_nlayers
 metric:
   name: val_loss
   goal: minimize
