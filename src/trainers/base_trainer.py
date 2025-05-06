@@ -336,38 +336,38 @@ class BaseTrainer:
         }
         torch.save(checkpoint, self.log_dir / f'checkpoint_epoch_{epoch}.pt')
 
+    @torch.no_grad()
     def evaluate(self, epoch: int = None) -> Dict[str, float]:
         self.model.eval()
         total_loss = 0.0
         all_predictions = []
         all_targets = []
         
-        with torch.no_grad():
-            for batch in tqdm(self.valid_loader, desc="Evaluating"):
-                source_ids = batch['source_text'].to(self.device)
-                target_ids = batch['target_text'].to(self.device)
-                target_ids = self.pad_or_trim(target_ids)
+        for batch in tqdm(self.valid_loader, desc="Evaluating"):
+            source_ids = batch['source_text'].to(self.device)
+            target_ids = batch['target_text'].to(self.device)
+            target_ids = self.pad_or_trim(target_ids)
+            
+            with autocast(device_type="cuda"):
+                outputs = self.model(src=source_ids, tgt=target_ids, teacher_forcing_ratio=0.0)
+                loss = self.criterion(outputs.reshape(-1, outputs.size(-1)), target_ids.reshape(-1))
+            
+            total_loss += loss.item()
+            
+            preds = self.generate(
+                source_ids,
+                max_len=self.model_config.get("target_seq_len", 64),
+                temperature=0.7
+            )
+            
+            eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
+            
+            for i in range(preds.size(0)):
+                pred_trim = self.trim_sequence_at_eos(preds[i], eos_token_id)
+                tgt_trim = self.trim_sequence_at_eos(target_ids[i].cpu(), eos_token_id)
                 
-                with autocast(device_type="cuda"):
-                    outputs = self.model(src=source_ids, tgt=target_ids, teacher_forcing_ratio=0.0)
-                    loss = self.criterion(outputs.reshape(-1, outputs.size(-1)), target_ids.reshape(-1))
-                
-                total_loss += loss.item()
-                
-                preds = self.generate(
-                    source_ids,
-                    max_len=self.model_config.get("target_seq_len", 64),
-                    temperature=0.7
-                )
-                
-                eos_token_id = self.train_dataset.tokenizer.token_to_id("[EOS]")
-                
-                for i in range(preds.size(0)):
-                    pred_trim = self.trim_sequence_at_eos(preds[i], eos_token_id)
-                    tgt_trim = self.trim_sequence_at_eos(target_ids[i].cpu(), eos_token_id)
-                    
-                    all_predictions.append(torch.tensor(pred_trim))
-                    all_targets.append(torch.tensor(tgt_trim))
+                all_predictions.append(torch.tensor(pred_trim))
+                all_targets.append(torch.tensor(tgt_trim))
         
         metrics_results = self.metrics.compute_metrics(all_predictions, all_targets)
         metrics_results['val_loss'] = total_loss / len(self.valid_loader)
