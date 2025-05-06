@@ -8,7 +8,7 @@ parameters:
   model_type:
     values: ['transformer']
   data_path:
-    value: ['data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv'] # ['data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv'] ['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv']
+    value: ['data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv'] # ['data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv', 'data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv'] ['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv']
   #data_path:
   #  value: ['data/conceptnet_gp/conceptnet_gp_train.tsv', 'data/conceptnet_gp/conceptnet_gp_valid.tsv'] # 'data/conceptnet_gp/conceptnet_gp_valid.tsv' #['data/conceptnet_gp/conceptnet_gp_valid.tsv', 'data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv']
   
