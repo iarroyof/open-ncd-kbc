@@ -214,8 +214,8 @@ class BaseTrainer:
         self.model.train()
         total_loss, valid_batches = 0.0, 0
         teacher_forcing_ratio = self.get_teacher_forcing_ratio(epoch)
-
-        for batch in tqdm(self.train_loader, desc=f"Epoch {epoch}"):
+        progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
+        for batch in progress_bar:
             try:
                 source_ids = batch['source_text'].to(self.device)
                 target_ids = batch['target_text'].to(self.device)
