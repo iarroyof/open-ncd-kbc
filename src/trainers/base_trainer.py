@@ -233,7 +233,7 @@ class BaseTrainer:
 
                 total_loss += loss.item()
                 valid_batches += 1
-
+                progress_bar.set_postfix({"batch_loss": f"{batch_loss:.4f}"})
                 if self.use_wandb:
                     wandb.log({"batch_loss": loss.item(), "teacher_forcing_ratio": teacher_forcing_ratio})
 
