@@ -373,7 +373,7 @@ def train_with_wandb(run_config: Dict):
         except ImportError as e:
             logging.error(f"[ERROR] Torch or wandb not found: {e}")
         except KeyError as e:
-            logging.error(f"[ERROR] Missing config key in YAML for model type {model_type}: {e}")
+            logging.warning(f"[WARN] Missing config key in YAML for model type {model_type}: {e}. Using default if it is set.")
         except Exception as e:
             logging.exception("[ERROR] Unexpected exception during CUDA memory fraction setup")
         
