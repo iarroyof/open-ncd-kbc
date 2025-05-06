@@ -230,8 +230,8 @@ class BaseTrainer:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-
-                total_loss += loss.item()
+                batch_loss = loss.item()
+                total_loss += batch_loss
                 valid_batches += 1
                 progress_bar.set_postfix({"batch_loss": f"{batch_loss:.4f}"})
                 if self.use_wandb:
