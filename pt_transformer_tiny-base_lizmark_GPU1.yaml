@@ -26,7 +26,7 @@ parameters:
   optimizer:
     value: 'adafactor'
   dropout:
-    value: 0.3
+    value: 0.3 # As per "Attention is all you need" paper.
 
   # Transformer (with blocks)
   transformer_d_model:
