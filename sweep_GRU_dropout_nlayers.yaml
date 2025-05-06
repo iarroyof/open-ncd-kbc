@@ -13,31 +13,31 @@ parameters:
   
   # Key shared hyperparameters (3-5 values for critical ones)
   batch_size:
-    values: [64] # 80 in Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473 (we use 64 given computing resources contraints). 64 also resulted good in our own sensivity analysis with  fixed0.1 droput
+    values: [128] # 80 in Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473 (we use 64 given computing resources contraints). 64 also resulted good in our own sensivity analysis with  fixed0.1 droput
   #learning_rate:
   #  values: [1e-4, 1e-3, 1e-2]  # 4 values: low, mid-low, mid-high, high
   source_seq_len:
-    values: [16] # 30|50 was used in (src and trg) Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473 Luong et.al. uses 50. we obtained 32 in our own task-specific sens analysis with fixed 0.1 droput.
+    values: [32] # 30|50 was used in (src and trg) Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473 Luong et.al. uses 50. we obtained 32 in our own task-specific sens analysis with fixed 0.1 droput.
   target_seq_len:
-    values: [64]  # we obtained 64 in our own task-specific sens analysis with fixed 0.1 droput.
+    values: [32]  # we obtained 64 in our own task-specific sens analysis with fixed 0.1 droput.
   num_epochs:
-    value: 3  # 5 a 6.5 for AttGRU in Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473 (3 in UTAH NLP for T5 https://aclanthology.org/2024.naacl-long.310.pdf)
+    value: 10  # 5 a 6.5 for AttGRU in Bahdanau and Bengio et.al. http://arxiv.org/abs/1409.0473 (3 in UTAH NLP for T5 https://aclanthology.org/2024.naacl-long.310.pdf)
   optimizer:
     value: 'adafactor'
   dropout:
-    values: [0.16798, 0.92735, 0.32786]
+    values: [0.0, 0.1, 0.5, 0.9]
     #distribution: 'uniform'
     #min: 0.0
     #max: 0.95
 
   # Attention GRU
   attention_gru_embed_size:
-    values: [512]  # we obtained 512 in our own task-specific sens analysis with fixed 0.1 droput. luong et.al. used 1000 dimensions (and also 1000 cells)
+    values: [256]  # we obtained 512 in our own task-specific sens analysis with fixed 0.1 droput. luong et.al. used 1000 dimensions (and also 1000 cells)
                   # Bahdanau and Bengio et.al. used hidden layer 1000, word embedding dimensionality 620 (so similar to 512)
   attention_gru_hidden_size:
-    values: [1024]  # we obtained 1024 in our own task-specific sens analysis with fixed 0.1 droput. luong et.al. used 1000 dimensions (and also 1000 cells)
+    values: [2048]  # we obtained 1024 in our own task-specific sens analysis with fixed 0.1 droput. luong et.al. used 1000 dimensions (and also 1000 cells)
   attention_gru_num_layers:
-    values: [2, 4]  #  # luong et.al. used 4 layers
+    values: [1, 2, 4]  #  # luong et.al. used 4 layers
   attention_gru_use_attention:
     values: [true]  # 2 values: binary toggle
   attention_gru_bidirectional_encoder:
