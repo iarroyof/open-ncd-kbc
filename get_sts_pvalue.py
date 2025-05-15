@@ -16,13 +16,14 @@ SO overall the execution looks like
 3. Run the sentence embedding script (https://github.com/iarroyof/sentence_embedding/blob/master/sts.py) in the 
     https://github.com/iarroyof/sentence_embedding repository. This will output a file with the output_fstx_300d_indexed_sum_local_local suffix.
 
-4. Run this script so that it takes as input the outputs obtained from the sentence emebeddings and starts calculating the statistic_target, pvalue_target. 
+4. Run this script (get_sts_pvalue.py) so that it takes as input the outputs obtained from the sentence emebeddings and starts calculating the statistic_target, pvalue_target. 
 
 
 Notes:
 
 Since most of the the AIgroKB repo has been migrated to this repo (open-ncd-kbc), the paths for these set of scripts (the ones mentioned above) have changed.
-Looking at the files, looks like the new correct path is now under open-ncd-kbc/results instead of open-ncd-kbc/results_final.
+Looking at the files, looks like the new correct path is now under open-ncd-kbc/results instead of open-ncd-kbc/results_final. To avoid overwrite, you can comment
+out the current csv files and names and just add new ones. 
 
 Check the val set to make sure you are performing inference on the correct set defined in the article
 
