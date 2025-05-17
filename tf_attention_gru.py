@@ -379,9 +379,11 @@ class TrainTranslator(tf.keras.Model):
                 total_loss += self.loss(y_true, y_pred)
 
                 # ---- metric (expects 1‑D ids & 2‑D logits) -------------
+                mask = tf.cast(tf.squeeze(y_true, 1) != 0, tf.float32)
                 self.train_metric.update_state(
                     tf.squeeze(y_true, 1),       # (B,)
-                    tf.squeeze(y_pred, 1))       # (B, vocab)
+                    tf.squeeze(y_pred, 1),
+                    sample_weight=mask)       # (B, vocab)
 
             # average over non‑pad tokens
             average_loss = total_loss / tf.reduce_sum(
@@ -424,7 +426,10 @@ class TrainTranslator(tf.keras.Model):
             # metric update
             self.test_metric.update_state(
                 tf.squeeze(y_true, 1),
-                tf.squeeze(y_pred, 1))
+                tf.squeeze(y_pred, 1),                 # logits   (B, vocab)
+                sample_weight=tf.cast(                 # 1-liner mask ⟶ weights
+                    tf.squeeze(y_true, 1) != 0, tf.float32)
+            )
 
         average_loss = total_loss / tf.reduce_sum(
             tf.cast(target_mask, tf.float32))
