@@ -813,7 +813,7 @@ def main():
     train_translator.compile(
         optimizer=tf.keras.optimizers.Adam(),
         loss=MaskedLoss(), 
-        metrics=[metrics.AUC(from_logits=True, name="auroc")]
+        metrics=[keras.metrics.AUC(from_logits=True, name="auroc")]
     )
     
     logging.info("Training neural reasoning model...")
