@@ -48,6 +48,52 @@ STRIP_CHARS = string.punctuation.replace("[", "").replace("]", "")
 
 # --- Utility Functions ---
 
+# ── wandb_helper.py ──────────────────────────────────────────────────────────
+
+def make_overfit_callback(total_epochs: int,
+                          a: float = 12.,
+                          b: float = 8.,
+                          c: float = -4.):
+    """
+    Returns a Keras Callback that, every epoch,
+      • computes rel_gap, epoch_ratio, p_overfit
+      • reads AUROC from logs (added via model.compile)
+      • logs everything to Weights & Biases.
+
+    Parameters
+    ----------
+    total_epochs : int
+        The number of training epochs you passed to `model.fit(...)`
+        so epoch_ratio = (epoch + 1) / total_epochs is in [0, 1].
+    a, b, c : float
+        Coefficients of the logistic formula.
+        p_overfit = sigmoid(a*rel_gap + b*epoch_ratio + c).
+    """
+    class OverfitLogger(keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            logs = logs or {}
+            train_loss = logs.get("loss")
+            val_loss   = logs.get("val_loss")
+            if train_loss is None or val_loss is None:
+                return                                  # can’t compute
+
+            rel_gap     = (val_loss - train_loss) / max(train_loss, 1e-8)
+            epoch_ratio = (epoch + 1) / total_epochs
+            z           = a * rel_gap + b * epoch_ratio + c
+            p_overfit   = 1. / (1. + math.exp(-z))
+
+            # fetch AUROC if the metric is present
+            auroc = logs.get("val_auroc")              # name in `compile(...)`
+            wandb.log({
+                "epoch":        epoch + 1,
+                "rel_gap":      rel_gap,
+                "epoch_ratio":  epoch_ratio,
+                "p_overfit":    p_overfit,
+                "val_auroc":    auroc
+            }, step=epoch)                             # 1 log per epoch
+
+    return OverfitLogger()
+
 class ShapeChecker:
     """Utility class to check tensor shapes during execution."""
     def __init__(self):
@@ -764,35 +810,40 @@ def main():
 
     train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
     # Using Adam with default learning rate for TF 2.10+ compatibility
-    train_translator.compile(optimizer=tf.keras.optimizers.Adam(), loss=MaskedLoss())
+    train_translator.compile(
+        optimizer=tf.keras.optimizers.Adam(),
+        loss=MaskedLoss(), 
+        metrics=[metrics.AUC(from_logits=True, name="auroc")]
+    )
     
     logging.info("Training neural reasoning model...")
     translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
     # fixed example = first validation sentence
     sample_sentence = val_pairs[0][0] if val_pairs else train_pairs[0][0]
     attn_cb = AttentionLogger(translator, sample_sentence)
+    overfit_cb = make_overfit_callback(total_epochs=n_epochs)
     history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
-                                   callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb])
+                                   callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
     logging.info("Training completed successfully")
     # ── store one‑number‑per‑run so sweeps can plot them ───────────
-    best_val_loss = float(np.min(history.history["val_loss"]))
-    best_val_acc  = float(np.max(history.history["val_accuracy"]))
+    #best_val_loss = float(np.min(history.history["val_loss"]))
+    #best_val_acc  = float(np.max(history.history["val_accuracy"]))
     
-    run.summary["best_val_loss"] = best_val_loss
-    run.summary["best_val_acc"]  = best_val_acc
+    #run.summary["best_val_loss"] = best_val_loss
+    #run.summary["best_val_acc"]  = best_val_acc
     
     # log the swept hyper‑parameters explicitly (they are also in run.config,
     # but putting them in summary makes life easier for plot scripts)
-    run.summary["embedding_dim"] = embedding_dim
-    run.summary["units"]         = units
-    run.summary["num_layers"]    = num_layers
-    run.summary["dropout"]       = dropout_rate
-    tbl = wandb.Table(columns=["embedding_dim", "units",
-                               "num_layers", "dropout",
-                               "best_val_loss", "best_val_acc"])
-    tbl.add_data(embedding_dim, units, num_layers, dropout_rate,
-                 best_val_loss, best_val_acc)
-    wandb.log({"sensitivity_row": tbl})      # one‑row “append” table
+    #run.summary["embedding_dim"] = embedding_dim
+    #run.summary["units"]         = units
+    #run.summary["num_layers"]    = num_layers
+    #run.summary["dropout"]       = dropout_rate
+    #tbl = wandb.Table(columns=["embedding_dim", "units",
+    #                           "num_layers", "dropout",
+    #                           "best_val_loss", "best_val_acc"])
+    #tbl.add_data(embedding_dim, units, num_layers, dropout_rate,
+    #             best_val_loss, best_val_acc)
+    #wandb.log({"sensitivity_row": tbl})      # one‑row “append” table
 
     # Save training history
     logging.info("Saving evaluation results...")
