@@ -41,20 +41,49 @@ def prepare_data(
     include_labels: bool = False,
     include_sent: bool = False,
     all_start_end: bool = False
-) -> Tuple[str, Any, Optional[str]]:
-    """Prepare data for model input, handling PMID, labels, and tokenization."""
+) -> tuple:
+    """
+    Prepare data for model input, handling PMID, labels, and tokenization.
+
+    Args:
+        line (str): Input line from the TSV file.
+        start_token (str): Token to prepend to the object string.
+        end_token (str): Token to append to the object string.
+        include_pmid (bool): Whether to include PMID in the output.
+        include_labels (bool): Whether to include labels in the sample.
+        include_sent (bool): Whether to include the sentence in the input.
+        all_start_end (bool): Whether to wrap the input with start/end tokens.
+
+    Returns:
+        tuple: Processed input and output data, optionally with PMID.
+    """
     parts = line.strip().split('\t')
-    pmid = parts.pop(0) if include_pmid else parts.pop(0)  # Remove PMID or first column
+    if include_pmid:
+        pmid = parts.pop(0)
+    else:
+        parts.pop(0)  # Remove first column if not including PMID
 
     pred = ' '.join(re.findall('[A-Z][a-z]*', parts[1])).lower() or parts[1]
     complements = []
     i = 4
-    while i < len(parts) and not parts[i].strip().isdigit():
-        complements.append(parts[i])
-        parts.pop(i)
-    parts[3] = " ".join([parts[3]] + complements)
+    while i < len(parts):
+        try:
+            float(parts[i])
+            break  # Found the label
+        except ValueError:
+            complements.append(parts[i])
+            parts.pop(i)  # Remove additional object
+    else:
+        raise ValueError(f"No label found in line: {line}")
 
-    sample = [parts[0], pred, parts[2], f"{start_token}{parts[3]}{end_token}", float(parts[4].strip())]
+    # Combine primary object with any additional objects
+    if complements:
+        parts[3] = " ".join([parts[3]] + complements)
+
+    # Label is at parts[4] after popping additional objects
+    label = float(parts[4].strip())
+
+    sample = [parts[0], pred, parts[2], f"{start_token}{parts[3]}{end_token}", label]
     if not include_labels:
         sample.pop(-1)
         sample_o = sample[-1]
