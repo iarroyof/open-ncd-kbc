@@ -186,7 +186,7 @@ class EncBlock(layers.Layer):
         return self.norm2(x + ffn_out)
 
 
-class DecBlock(layers.Layer):(layers.Layer):
+class DecBlock(layers.Layer):
     def __init__(
         self,
         dim: int,
