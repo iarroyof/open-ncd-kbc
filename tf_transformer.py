@@ -144,9 +144,14 @@ class PositionalEmbedding(layers.Layer):
 
 import tensorflow as tf
 
+import tensorflow as tf
+
 class TransformerEncoder(tf.keras.layers.Layer):
     def __init__(self, num_heads, key_dim, model_dim, **kwargs):
         super(TransformerEncoder, self).__init__(**kwargs)
+        self.num_heads = num_heads
+        self.key_dim = key_dim
+        self.model_dim = model_dim
         self.attention = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)
         self.dense_proj = tf.keras.Sequential([
             tf.keras.layers.Dense(model_dim, activation="relu"),
@@ -157,31 +162,44 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self.supports_masking = True
 
     def call(self, inputs, mask=None, training=False):
-        # Handle the mask for attention
+        # Debug: Print input and mask shapes
+        tf.print("Encoder inputs shape:", tf.shape(inputs))
+        if mask is not None:
+            tf.print("Encoder mask shape:", tf.shape(mask))
+
+        # Prepare the attention mask
         if mask is not None:
             # Original mask shape: (batch_size, seq_len)
             # Reshape to (batch_size, 1, 1, seq_len) for broadcasting
             padding_mask = tf.cast(mask[:, tf.newaxis, tf.newaxis, :], dtype=tf.bool)
+            tf.print("Encoder padding_mask shape:", tf.shape(padding_mask))
         else:
             padding_mask = None
 
-        # Self-attention with the mask
+        # Self-attention
         attention_output = self.attention(
             query=inputs,
             value=inputs,
             key=inputs,
-            attention_mask=padding_mask
+            attention_mask=padding_mask,
+            training=training
         )
+        tf.print("Encoder attention output shape:", tf.shape(attention_output))
 
         # Residual connection and normalization
         proj_input = self.layernorm_1(inputs + attention_output)
         proj_output = self.dense_proj(proj_input)
         return self.layernorm_2(proj_input + proj_output)
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self):
         config = super().get_config()
-        config.update({"embed_dim": self.embed_dim, "dense_dim": self.dense_dim, "num_heads": self.num_heads, "key_dim": self.key_dim})
+        config.update({
+            "num_heads": self.num_heads,
+            "key_dim": self.key_dim,
+            "model_dim": self.model_dim
+        })
         return config
+
 
 class TransformerDecoder(layers.Layer):
     """Transformer decoder layer with self-attention and cross-attention."""
