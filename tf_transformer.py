@@ -150,17 +150,9 @@ def load_tv(path: Path) -> TextVectorization:
 # ════════════════════════════════════════════════════════════════════════════
 # 4. Transformer building blocks
 # ════════════════════════════════════════════════════════════════════════════
-class PosEmbed(layers.Layer):
-    def __init__(self, max_len: int, vocab: int, dim: int):
-        super().__init__()
-        self.tok = layers.Embedding(vocab, dim)
-        self.pos = layers.Embedding(max_len, dim)
-        self.idx = tf.range(max_len)
-    def call(self, x: tf.Tensor) -> tf.Tensor:
-        length = tf.shape(x)[-1]
-        return self.tok(x) + self.pos(self.idx[:length])
     def compute_mask(self, x: tf.Tensor, _=None) -> tf.Tensor:
-        return tf.not_equal(x, 0)
+        # Disable mask propagation to avoid broadcast errors in attention layers
+        return None
 
 class EncBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
