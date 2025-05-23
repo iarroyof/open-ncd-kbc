@@ -199,7 +199,7 @@ class PositionalEmbedding(layers.Layer):
         self.pos_emb = layers.Embedding(seq_len, embed_dim)
 
     def call(self, x):
-        length = tf.shape(x)[-1]
+        length = tf.shape(x)[‑1]
         positions = tf.range(length)
         return self.tok_emb(x) + self.pos_emb(positions)
 
@@ -208,6 +208,8 @@ class PositionalEmbedding(layers.Layer):
 
 
 class TransformerEncoder(layers.Layer):
+    """Single Encoder block with pre-norm layout (MultiHeadAttention → FFN)."""
+
     def __init__(self, *, embed_dim: int, latent_dim: int, heads: int, key_dim: int, **kw):
         super().__init__(**kw)
         self.mha = layers.MultiHeadAttention(heads, key_dim, output_shape=embed_dim)
@@ -218,14 +220,56 @@ class TransformerEncoder(layers.Layer):
         self.norm1 = layers.LayerNormalization()
         self.norm2 = layers.LayerNormalization()
 
-    def call(self, x, mask=None):
-        attn = self.mha(x, x, attention_mask=mask, training=self.training)
+    def call(self, x, *, mask=None, training=None):
+        attn = self.mha(x, x, attention_mask=mask, training=training)
         x = self.norm1(x + attn)
-        ffn_out = self.ffn(x)
+        ffn_out = self.ffn(x, training=training)
         return self.norm2(x + ffn_out)
 
 
 class TransformerDecoder(layers.Layer):
+    """Single Decoder block with masked self‑attention and cross‑attention."""
+
+    def __init__(self, *, embed_dim: int, latent_dim: int, heads: int, key_dim: int, **kw):
+        super().__init__(**kw)
+        self.self_mha = layers.MultiHeadAttention(heads, key_dim, output_shape=embed_dim)
+        self.cross_mha = layers.MultiHeadAttention(heads, key_dim, output_shape=embed_dim)
+        self.ffn = keras.Sequential([
+            layers.Dense(latent_dim, activation="relu"),
+            layers.Dense(embed_dim),
+        ])
+        self.norm1 = layers.LayerNormalization()
+        self.norm2 = layers.LayerNormalization()
+        self.norm3 = layers.LayerNormalization()
+
+    @staticmethod
+    def _causal_mask(x):  # (B, T)
+        t = tf.shape(x)[1]
+        i = tf.range(t)[:, None]
+        j = tf.range(t)
+        mask = tf.cast(i >= j, tf.int32)  # (T, T)
+        return mask[None, None, :, :]  # (1,1,T,T)
+
+    def call(self, y, enc_out, *, y_mask=None, enc_mask=None, training=None):
+        causal = self._causal_mask(y)
+        if y_mask is not None:
+            y_mask = tf.cast(y_mask[:, None, None, :], tf.int32)
+            self_mask = tf.minimum(causal, y_mask)
+        else:
+            self_mask = causal
+
+        attn1 = self.self_mha(y, y, attention_mask=self_mask, training=training)
+        y = self.norm1(y + attn1)
+
+        if enc_mask is not None:
+            enc_mask = tf.cast(enc_mask[:, None, None, :], tf.int32)
+        attn2 = self.cross_mha(y, enc_out, attention_mask=enc_mask, training=training)
+        y = self.norm2(y + attn2)
+
+        ffn_out = self.ffn(y, training=training)
+        return self.norm3(y + ffn_out)
+
+(layers.Layer):
     def __init__(self, *, embed_dim: int, latent_dim: int, heads: int, key_dim: int, **kw):
         super().__init__(**kw)
         self.self_mha = layers.MultiHeadAttention(heads, key_dim, output_shape=embed_dim)
