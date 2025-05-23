@@ -217,14 +217,14 @@ class DecBlock(layers.Layer):
         T = tf.shape(y)[1]
         mask_self = self.causal_mask(T)
         if hasattr(y, '_keras_mask') and y._keras_mask is not None:
-            y_mask = tf.cast(y._keras_mask[:, None, None, :], tf.int32)
+            y_mask = tf.cast(y._keras_mask[:, None, None, :], mask_self.dtype)  # match self mask dtype
             mask_self = tf.minimum(mask_self, y_mask)
         y = self.norm1(
             y + self.self_mha(y, y, attention_mask=mask_self, training=training)
         )
         enc_mask = None
         if hasattr(enc_out, '_keras_mask') and enc_out._keras_mask is not None:
-            enc_mask = tf.cast(enc_out._keras_mask[:, None, None, :], tf.int32)
+            enc_mask = tf.cast(enc_out._keras_mask[:, None, None, :], mask_self.dtype)  # match self mask dtype
         y = self.norm2(
             y + self.cross_mha(y, enc_out, attention_mask=enc_mask, training=training)
         )
