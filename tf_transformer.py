@@ -288,7 +288,7 @@ def main():
     # Training
     if args.train:
         callbacks = [
-            keras.callbacks.ModelCheckpoint(h.out_dir / "ckpt.weights.h5", save_weights_only=True, verbose=1),
+            keras.callbacks.ModelCheckpoint(h.out_dir / "ckpt.weights.keras", save_weights_only=True, verbose=1),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
             wandb.keras.WandbCallback(),
         ]
