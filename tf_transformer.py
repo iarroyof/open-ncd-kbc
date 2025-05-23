@@ -174,7 +174,7 @@ class EncBlock(layers.Layer):
             layers.Dense(latent, activation="relu"),
             layers.Dense(dim),
         ])
-        self.norm1 = layers.LayerNormalization(dtype='float32')
+        self.norm2 = layers.LayerNormalization(fused=False)
         self.norm2 = layers.LayerNormalization(dtype='float32')
 
     def call(
@@ -207,7 +207,7 @@ class DecBlock(layers.Layer):
         ])
         self.norm1 = layers.LayerNormalization()
         self.norm2 = layers.LayerNormalization()
-        self.norm3 = layers.LayerNormalization(dtype='float32')
+        self.norm3 = layers.LayerNormalization(fused=False)
 
     def call(
         self,
