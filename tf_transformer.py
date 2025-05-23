@@ -19,7 +19,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.layers import TextVectorization
 import wandb
-from wandb.keras import WandbCallback
+
 
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -290,7 +290,7 @@ def main():
         callbacks = [
             keras.callbacks.ModelCheckpoint(h.out_dir / "ckpt.weights.h5", save_weights_only=True, verbose=1),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
-            WandbCallback(),
+            wandb.keras.WandbCallback(),
         ]
         hist = model.fit(
             train_ds,
