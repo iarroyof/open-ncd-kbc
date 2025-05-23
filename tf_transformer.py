@@ -1,173 +1,375 @@
-"""Transformer‑based text‑to‑text generation (TensorFlow 2.10+)
-Minimal, self‑contained script: load TSV → train / evaluate Transformer.
-"""
-from __future__ import annotations
-
-from dataclasses import dataclass
-from pathlib import Path
-import argparse, logging, random, re, string
-from typing import List, Tuple
-
+import argparse
+import logging
+import os
+import random
+import re
+import string
+import functools
+from typing import List, Tuple, Optional, Dict, Any
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.layers import TextVectorization
+from joblib import Parallel, delayed
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-LOGGER = logging.getLogger(__name__)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(message)s',
+    datefmt='%m/%d/%Y %I:%M:%S %p'
+)
 
-# ───── HYPER‑PARAMS ─────────────────────────────────────────────────────────
-@dataclass(kw_only=True)
-class HParams:
-    seq_len: int = 30
-    vocab_size: int = 15000
-    model_dim: int = 512
-    latent_dim: int = 2048
-    heads: int = 8
-    stacks: int = 1
-    key_dim: int | None = None
-    batch: int = 64
-    epochs: int = 30
-    train_path: Path | None = None
-    valid_path: Path | None = None
-    out_dir: Path = Path("results")
-    seed: int = 42
+# Constants
+STRIP_CHARS = string.punctuation.replace("[", "").replace("]", "")
+CS_LABELS = False
+PMID_VAL_LABELS = True
 
-    def __post_init__(self):
-        if self.key_dim is None:
-            self.key_dim = self.model_dim // self.heads
-        random.seed(self.seed); np.random.seed(self.seed); tf.random.set_seed(self.seed)
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-        (self.out_dir / "vectorizers").mkdir(exist_ok=True)
+# Utility Functions
+def custom_standardization(input_string: tf.Tensor) -> tf.Tensor:
+    """Standardize input strings by lowering case and removing punctuation."""
+    lowercase = tf.strings.lower(input_string)
+    return tf.strings.regex_replace(lowercase, f"[{re.escape(STRIP_CHARS)}]", "")
 
-START, END = "[start]", "[end]"
-STRIP = string.punctuation.replace("[", "").replace("]", "")
+def prepare_data(
+    line: str,
+    start_token: str = '[start] ',
+    end_token: str = ' [end]',
+    include_pmid: bool = False,
+    include_labels: bool = False,
+    include_sent: bool = False,
+    all_start_end: bool = False
+) -> Tuple[str, Any, Optional[str]]:
+    """Prepare data for model input, handling PMID, labels, and tokenization."""
+    parts = line.strip().split('\t')
+    pmid = parts.pop(0) if include_pmid else parts.pop(0)  # Remove PMID or first column
 
-# ───── DATA UTILS ───────────────────────────────────────────────────────────
+    pred = ' '.join(re.findall('[A-Z][a-z]*', parts[1])).lower() or parts[1]
+    complements = []
+    i = 4
+    while i < len(parts) and not parts[i].strip().isdigit():
+        complements.append(parts[i])
+        parts.pop(i)
+    parts[3] = " ".join([parts[3]] + complements)
 
-def _std():
-    return lambda s: tf.strings.regex_replace(tf.strings.lower(s), f"[{re.escape(STRIP)}]", "")
+    sample = [parts[0], pred, parts[2], f"{start_token}{parts[3]}{end_token}", float(parts[4].strip())]
+    if not include_labels:
+        sample.pop(-1)
+        sample_o = sample[-1]
+    else:
+        sample_o = tuple(sample[-2:])
 
+    if not include_sent:
+        sample.pop(0)
+        sample_i = ' '.join([sample[1], sample[0]])
+        if all_start_end:
+            sample_i = f"{start_token}{sample_i}{end_token}"
+    else:
+        sample_i = ' '.join([sample[0], sample[2], sample[1]])
 
-def parse_line(line: str) -> Tuple[str, str]:
-    cols = line.rstrip("\n").split("\t")
-    if len(cols) < 5:
-        raise ValueError("Bad TSV row")
-    cols.pop(0)
-    pred = " ".join(re.findall(r"[A-Z][a-z]*", cols[1])).lower() or cols[1]
-    if not cols[4].isdigit() and not re.match(r"^-?\d+(?:\.\d+)?$", cols[4]):
-        extra = []
-        while not cols[4].isdigit():
-            extra.append(cols.pop(4))
-        cols[3] = " ".join([cols[3], *extra])
-    src = f"{pred} {cols[2]}"
-    tgt = f"{START} {cols[3]} {END}"
-    return src, tgt
+    return (sample_i, sample_o, pmid) if include_pmid else (sample_i, sample_o)
 
-# ───── VECTORIZERS ─────────────────────────────────────────────────────────
+def format_dataset(in_phr: tf.Tensor, out_phr: tf.Tensor) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
+    """Format dataset for Transformer input-output pairs."""
+    in_phr = input_vectorizer(in_phr)
+    out_phr = output_vectorizer(out_phr)
+    return ({"encoder_inputs": in_phr, "decoder_inputs": out_phr[:, :-1]}, out_phr[:, 1:])
 
-def make_vect(vocab: int, seq: int) -> TextVectorization:
-    return TextVectorization(max_tokens=vocab, output_sequence_length=seq, standardize=_std(), output_mode="int")
+def make_dataset(pairs: List[Tuple], include_pmid: bool = False) -> tf.data.Dataset:
+    """Create a TensorFlow dataset from input-output pairs."""
+    if include_pmid:
+        in_texts, out_texts, _ = zip(*pairs)
+    else:
+        in_texts, out_texts = zip(*pairs)
+    dataset = tf.data.Dataset.from_tensor_slices((list(in_texts), list(out_texts)))
+    return dataset.batch(batch_size).map(format_dataset).shuffle(2048).prefetch(16).cache()
 
+def decode_sequence(input_sentence: str, transformer: keras.Model, max_length: int) -> str:
+    """Decode a sequence using the Transformer model."""
+    tokenized_input = input_vectorizer([input_sentence])
+    decoded = "[start]"
+    for i in range(max_length):
+        tokenized_target = output_vectorizer([decoded])[:, :-1]
+        predictions = transformer([tokenized_input, tokenized_target])
+        try:
+            sampled_token_idx = np.argmax(predictions[0, i, :])
+            sampled_token = out_phr_index_lookup[sampled_token_idx]
+        except (IndexError, KeyError) as e:
+            logging.error(f"Decoding error at step {i}: {e}")
+            continue
+        decoded += " " + sampled_token
+        if sampled_token == "[end]":
+            break
+    return decoded
 
-def save_vect(tv: TextVectorization, path: Path):
-    keras.Sequential([keras.Input(shape=(1,), dtype="string"), tv]).save(path, save_format="keras")
+# Custom Layers
+class PositionalEmbedding(layers.Layer):
+    """Layer to add positional embeddings to token embeddings."""
+    def __init__(self, sequence_length: int, vocab_size: int, embed_dim: int, **kwargs):
+        super().__init__(**kwargs)
+        self.sequence_length = sequence_length
+        self.vocab_size = vocab_size
+        self.embed_dim = embed_dim
+        self.token_embeddings = layers.Embedding(vocab_size, embed_dim)
+        self.position_embeddings = layers.Embedding(sequence_length, embed_dim)
 
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
+        length = tf.shape(inputs)[-1]
+        positions = tf.range(start=0, limit=length, delta=1)
+        embedded_tokens = self.token_embeddings(inputs)
+        embedded_positions = self.position_embeddings(positions)
+        return embedded_tokens + embedded_positions
 
-def load_vect(path: Path) -> TextVectorization:
-    m = keras.models.load_model(path)
-    v_old: TextVectorization = m.layers[1]
-    cfg, voc = v_old.get_config(), v_old.get_vocabulary()
-    v_new = TextVectorization.from_config(cfg); v_new.adapt(["init"]); v_new.set_vocabulary(voc)
-    return v_new
+    def compute_mask(self, inputs: tf.Tensor, mask: Optional[tf.Tensor] = None) -> tf.Tensor:
+        return tf.math.not_equal(inputs, 0)
 
-# ───── MODEL BLOCKS ────────────────────────────────────────────────────────
-class PosEmbed(layers.Layer):
-    def __init__(self, seq: int, vocab: int, dim: int):
-        super().__init__(); self.tok = layers.Embedding(vocab, dim); self.pos = layers.Embedding(seq, dim)
-        self.idx = tf.range(seq)
-    def call(self, x):
-        return self.tok(x) + self.pos(self.idx[: tf.shape(x)[-1]])
-    def compute_mask(self, x, _=None):
-        return tf.not_equal(x, 0)
+    def get_config(self) -> Dict[str, Any]:
+        config = super().get_config()
+        config.update({"sequence_length": self.sequence_length, "vocab_size": self.vocab_size, "embed_dim": self.embed_dim})
+        return config
 
-class Enc(layers.Layer):
-    def __init__(self, dim, lat, heads, k):
-        super().__init__(); self.m = layers.MultiHeadAttention(heads, k); self.f = keras.Sequential([layers.Dense(lat, 'relu'), layers.Dense(dim)])
-        self.n1, self.n2 = layers.LayerNormalization(), layers.LayerNormalization()
-    def call(self, x, mask=None, training=None):
-        x = self.n1(x + self.m(x, x, attention_mask=mask, training=training))
-        return self.n2(x + self.f(x, training=training))
+class TransformerEncoder(layers.Layer):
+    """Transformer encoder layer with multi-head attention and feed-forward network."""
+    def __init__(self, embed_dim: int, dense_dim: int, num_heads: int, key_dim: int, **kwargs):
+        super().__init__(**kwargs)
+        self.embed_dim = embed_dim
+        self.dense_dim = dense_dim
+        self.num_heads = num_heads
+        self.key_dim = key_dim
+        self.attention = layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim, value_dim=key_dim)
+        self.dense_proj = keras.Sequential([
+            layers.Dense(dense_dim, activation="relu", kernel_initializer='random_normal'),
+            layers.Dense(embed_dim)
+        ])
+        self.layernorm_1 = layers.LayerNormalization()
+        self.layernorm_2 = layers.LayerNormalization()
+        self.supports_masking = True
 
-class Dec(layers.Layer):
-    def __init__(self, dim, lat, heads, k):
-        super().__init__(); self.s = layers.MultiHeadAttention(heads, k); self.c = layers.MultiHeadAttention(heads, k)
-        self.f = keras.Sequential([layers.Dense(lat, 'relu'), layers.Dense(dim)]); self.n1, self.n2, self.n3 = [layers.LayerNormalization() for _ in range(3)]
-    def _causal(self, t):
-        return tf.linalg.band_part(tf.ones((t, t)), -1, 0)[None, None]
-    def call(self, y, enc, y_m=None, e_m=None, training=None):
-        t = tf.shape(y)[1]; c = self._causal(t)
-        if y_m is not None:
-            y_m = tf.cast(y_m[:, None, None, :], tf.int32); c = tf.minimum(c, y_m)
-        y = self.n1(y + self.s(y, y, attention_mask=c, training=training))
-        if e_m is not None:
-            e_m = tf.cast(e_m[:, None, None, :], tf.int32)
-        y = self.n2(y + self.c(y, enc, attention_mask=e_m, training=training))
-        return self.n3(y + self.f(y, training=training))
+    def call(self, inputs: tf.Tensor, mask: Optional[tf.Tensor] = None) -> tf.Tensor:
+        if mask is not None:
+            padding_mask = tf.cast(mask[:, tf.newaxis, tf.newaxis, :], dtype=tf.float32)
+        else:
+            padding_mask = None
+        attention_output = self.attention(inputs, inputs, inputs, attention_mask=padding_mask)
+        proj_input = self.layernorm_1(inputs + attention_output)
+        proj_output = self.dense_proj(proj_input)
+        return self.layernorm_2(proj_input + proj_output)
 
-# ───── BUILD MODEL ─────────────────────────────────────────────────────────
+    def get_config(self) -> Dict[str, Any]:
+        config = super().get_config()
+        config.update({"embed_dim": self.embed_dim, "dense_dim": self.dense_dim, "num_heads": self.num_heads, "key_dim": self.key_dim})
+        return config
 
-def build_model(h: HParams) -> keras.Model:
-    ei, di = keras.Input((None,), dtype="int64"), keras.Input((None,), dtype="int64")
-    x = PosEmbed(h.seq_len, h.vocab_size, h.model_dim)(ei)
-    for _ in range(h.stacks):
-        x = Enc(h.model_dim, h.latent_dim, h.heads, h.key_dim)(x)
-    y = PosEmbed(h.seq_len + 1, h.vocab_size, h.model_dim)(di)
-    for _ in range(h.stacks):
-        y = Dec(h.model_dim, h.latent_dim, h.heads, h.key_dim)(y, x, y_mask=y._keras_mask, enc_mask=x._keras_mask)
-    y = layers.Dropout(0.1)(y)
-    out = layers.Dense(h.vocab_size, activation="softmax")(y)
-    return keras.Model([ei, di], out)
+class TransformerDecoder(layers.Layer):
+    """Transformer decoder layer with self-attention and cross-attention."""
+    def __init__(self, embed_dim: int, latent_dim: int, num_heads: int, key_dim: int, **kwargs):
+        super().__init__(**kwargs)
+        self.embed_dim = embed_dim
+        self.latent_dim = latent_dim
+        self.num_heads = num_heads
+        self.key_dim = key_dim
+        self.attention_1 = layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim, value_dim=key_dim)
+        self.attention_2 = layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim, value_dim=key_dim)
+        self.dense_proj = keras.Sequential([
+            layers.Dense(latent_dim, activation="relu", kernel_initializer='random_normal'),
+            layers.Dense(embed_dim)
+        ])
+        self.layernorm_1 = layers.LayerNormalization()
+        self.layernorm_2 = layers.LayerNormalization()
+        self.layernorm_3 = layers.LayerNormalization()
+        self.supports_masking = True
 
-# ───── DATASET PIPELINE ────────────────────────────────────────────────────
-INPUT_V, OUTPUT_V = None, None
+    def call(self, inputs: tf.Tensor, encoder_outputs: tf.Tensor, mask: Optional[tf.Tensor] = None) -> tf.Tensor:
+        causal_mask = self.get_causal_attention_mask(inputs)
+        if mask is not None:
+            padding_mask = tf.cast(mask[:, tf.newaxis, :], dtype=tf.float32)
+            self_attention_mask = tf.minimum(causal_mask, padding_mask)
+        else:
+            self_attention_mask = tf.cast(causal_mask, dtype=tf.float32)
 
-def _fmt(src: tf.Tensor, tgt: tf.Tensor):
-    s = INPUT_V(src); t = OUTPUT_V(tgt); return {"input_1": s, "input_2": t[:, :-1]}, t[:, 1:]
+        attention_output_1 = self.attention_1(inputs, inputs, inputs, attention_mask=self_attention_mask)
+        out_1 = self.layernorm_1(inputs + attention_output_1)
 
-def make_ds(pairs: List[Tuple[str, str]], h: HParams):
-    s, t = zip(*pairs); ds = tf.data.Dataset.from_tensor_slices((list(s), list(t)))
-    return ds.batch(h.batch).map(_fmt).prefetch(tf.data.AUTOTUNE)
+        encoder_mask = getattr(encoder_outputs, '_keras_mask', None)
+        cross_attention_mask = tf.cast(encoder_mask[:, tf.newaxis, tf.newaxis, :], dtype=tf.float32) if encoder_mask is not None else None
+        attention_output_2 = self.attention_2(out_1, encoder_outputs, encoder_outputs, attention_mask=cross_attention_mask)
+        out_2 = self.layernorm_2(out_1 + attention_output_2)
 
-# ───── CLI ────────────────────────────────────────────────────────────────
-parser = argparse.ArgumentParser(); add = parser.add_argument
-add("--train", action="store_true"); add("--evaluate", action="store_true")
-add("--train-path", required=True); add("--valid-path", required=True)
-add("--seq-len", type=int, default=30); add("--vocab-size", type=int, default=15000)
-add("--batch", type=int, default=64); add("--epochs", type=int, default=30)
-args = parser.parse_args()
+        proj_output = self.dense_proj(out_2)
+        return self.layernorm_3(out_2 + proj_output)
 
-hp = HParams(seq_len=args.seq_len, vocab_size=args.vocab_size, batch=args.batch, epochs=args.epochs,
-             train_path=Path(args.train_path), valid_path=Path(args.valid_path))
+    def get_causal_attention_mask(self, inputs: tf.Tensor) -> tf.Tensor:
+        batch_size, seq_len = tf.shape(inputs)[0], tf.shape(inputs)[1]
+        i = tf.range(seq_len)[:, tf.newaxis]
+        j = tf.range(seq_len)
+        mask = tf.cast(i >= j, dtype="int32")
+        mask = tf.reshape(mask, (1, seq_len, seq_len))
+        return tf.tile(mask, [batch_size, 1, 1])
 
-train_pairs = [parse_line(l) for l in hp.train_path.read_text().splitlines()]
-valid_pairs = [parse_line(l) for l in hp.valid_path.read_text().splitlines()]
+    def get_config(self) -> Dict[str, Any]:
+        config = super().get_config()
+        config.update({"embed_dim": self.embed_dim, "latent_dim": self.latent_dim, "num_heads": self.num_heads, "key_dim": self.key_dim})
+        return config
 
-INPUT_V = make_vect(hp.vocab_size, hp.seq_len); OUTPUT_V = make_vect(hp.vocab_size, hp.seq_len + 1)
-INPUT_V.adapt([p[0] for p in train_pairs]); OUTPUT_V.adapt([p[1] for p in train_pairs])
+# Model Building
+def build_transformer_encodec(
+    sequence_length: int,
+    max_features: int,
+    model_dim: int,
+    stack_size: int,
+    latent_dim: int,
+    num_heads: int,
+    key_dim: int
+) -> keras.Model:
+    """Build a Transformer model for text-to-text generation."""
+    # Encoder
+    encoder_inputs = keras.Input(shape=(None,), dtype="int64", name="encoder_inputs")
+    x = PositionalEmbedding(sequence_length, max_features, model_dim)(encoder_inputs)
+    for _ in range(stack_size):
+        x = TransformerEncoder(model_dim, latent_dim, num_heads, key_dim)(x)
+    encoder_outputs = x
 
-save_vect(INPUT_V, hp.out_dir / "vectorizers" / "inp.keras"); save_vect(OUTPUT_V, hp.out_dir / "vectorizers" / "out.keras")
+    # Decoder
+    decoder_inputs = keras.Input(shape=(None,), dtype="int64", name="decoder_inputs")
+    x = PositionalEmbedding(sequence_length + 1, max_features, model_dim)(decoder_inputs)
+    for _ in range(stack_size):
+        x = TransformerDecoder(model_dim, latent_dim, num_heads, key_dim)(x, encoder_outputs)
+    x = layers.Dropout(0.1)(x)
+    outputs = layers.Dense(max_features, activation="softmax")(x)
 
-hp.vocab_size = max(len(INPUT_V.get_vocabulary()), len(OUTPUT_V.get_vocabulary()))
-model = build_model(hp)
-model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["sparse_categorical_accuracy"])
-model.summary()
+    return keras.Model([encoder_inputs, decoder_inputs], outputs, name="transformer")
 
-train_ds, valid_ds = make_ds(train_pairs, hp), make_ds(valid_pairs, hp)
-ckpt = keras.callbacks.ModelCheckpoint(hp.out_dir / "ckpt.h5", save_weights_only=True, verbose=1)
-if args.train:
-    model.fit(train_ds, validation_data=valid_ds, epochs=hp.epochs, callbacks=[ckpt])
-if args.evaluate:
-    loss, acc = model.evaluate(valid_ds, verbose=0); LOGGER.info("val_loss %.4f | val_acc %.4f", loss, acc)
+# Prediction and Saving
+def save_predictions(pairs: List[Tuple], filepath: str, transformer: keras.Model, max_length: int) -> None:
+    """Save model predictions to a file."""
+    logging.info(f"Generating predictions to {filepath}")
+    with open(filepath, 'w') as f:
+        f.write("Subj_Pred\tObj\tObj_true\n")
+        results = Parallel(n_jobs=1)(delayed(lambda p: '\t'.join([p[0], decode_sequence(p[0], transformer, max_length), p[1]]))(p) for p in pairs)
+        f.write('\n'.join(results) + '\n')
+
+# Main Execution
+def main():
+    parser = argparse.ArgumentParser(description="Train or evaluate a Transformer model.")
+    parser.add_argument("--trainFlag", "-tf", action="store_true", help="Train the model")
+    parser.add_argument("--evaluateFlag", "-ev", action="store_true", help="Evaluate the model")
+    parser.add_argument("--predictFlag", "-mp", action="store_true", help="Generate predictions")
+    parser.add_argument("--seqLen", "-s", type=int, default=30, help="Sequence length")
+    parser.add_argument("--nFeatures", "-f", type=int, default=15000, help="Max vocabulary size")
+    parser.add_argument("--batchSize", "-b", type=int, default=64, help="Batch size")
+    parser.add_argument("--nEpochs", "-e", type=int, default=100, help="Number of epochs")
+    parser.add_argument("--stackSize", "-N", type=int, default=1, help="Stack size")
+    parser.add_argument("--keyDim", "-kd", type=int, default=0, help="Key dimension (0 for modelDim/nHeads)")
+    parser.add_argument("--modelDim", "-md", type=int, default=512, help="Model dimension")
+    parser.add_argument("--latentDim", "-l", type=int, default=2048, help="Latent dimension")
+    parser.add_argument("--nHeads", "-H", type=int, default=8, help="Number of attention heads")
+    parser.add_argument("--nDemo", "-D", type=int, default=-1, help="Number of demo predictions")
+    parser.add_argument("--trainData", "-tnD", type=str, default="data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv")
+    parser.add_argument("--validData", "-vD", type=str, default="data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv")
+    parser.add_argument("--testData", "-ttD", type=str, default="data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv")
+    parser.add_argument("--datasetName", "-dN", type=str, default="TOY_DATA")
+    parser.add_argument("--testName", "-tN", type=str, default="TOY_TEST")
+
+    args = parser.parse_args()
+    logging.info("Arguments:\n" + pd.DataFrame([(k, v) for k, v in vars(args).items()]).to_string())
+
+    global batch_size, input_vectorizer, output_vectorizer, out_phr_index_lookup
+    batch_size = args.batchSize
+
+    # Hyperparameters
+    key_dim = args.modelDim // args.nHeads if args.keyDim <= 0 else args.keyDim
+    checkpoint_path = (
+        f"results_final{os.sep}{args.datasetName}-transformer_epochs-{args.nEpochs}"
+        f"*stackSize-{args.stackSize}*seqlen-{args.seqLen}_maxfeat-{args.nFeatures}"
+        f"_batch-{args.batchSize}*keydim-{key_dim}*modeldim-{args.modelDim}"
+        f"_latent-{args.latentDim}_heads-{args.nHeads}{os.sep}cp.weights.h5"
+    )
+    out_dir = os.path.dirname(os.path.dirname(checkpoint_path))
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Data Preparation
+    if args.trainFlag:
+        with open(args.trainData) as f:
+            train_text = f.readlines()
+        with open(args.testData) as f:
+            test_text = f.readlines()
+        with open(args.validData) as f:
+            val_text = f.readlines()
+
+        train_pairs = [prepare_data(line, include_labels=CS_LABELS) for line in train_text]
+        test_pairs = [prepare_data(line, include_labels=CS_LABELS, include_pmid=True) for line in test_text]
+        val_pairs = [prepare_data(line, include_labels=CS_LABELS, include_pmid=True) for line in val_text]
+
+        train_in_texts = [p[0] for p in train_pairs]
+        train_out_texts = [p[1] for p in train_pairs]
+
+        global input_vectorizer, output_vectorizer
+        input_vectorizer = TextVectorization(max_tokens=args.nFeatures, output_mode="int", output_sequence_length=args.seqLen, standardize=custom_standardization)
+        output_vectorizer = TextVectorization(max_tokens=args.nFeatures, output_mode="int", output_sequence_length=args.seqLen + 1, standardize=custom_standardization)
+        input_vectorizer.adapt(train_in_texts)
+        output_vectorizer.adapt(train_out_texts)
+
+        vectorizer_dir = os.path.join(out_dir, 'vectorizers')
+        os.makedirs(vectorizer_dir, exist_ok=True)
+        input_vectorizer.save_assets(vectorizer_dir + "/input")
+        output_vectorizer.save_assets(vectorizer_dir + "/output")
+
+        train_ds = make_dataset(train_pairs)
+        val_ds = make_dataset(test_pairs, include_pmid=PMID_VAL_LABELS)
+        eval_ds = make_dataset(val_pairs, include_pmid=PMID_VAL_LABELS)
+    else:
+        vectorizer_dir = os.path.join(out_dir, 'vectorizers')
+        if os.path.exists(vectorizer_dir):
+            input_vectorizer = TextVectorization.from_assets(vectorizer_dir + "/input")
+            output_vectorizer = TextVectorization.from_assets(vectorizer_dir + "/output")
+        with open(args.validData) as f:
+            val_text = f.readlines()
+        val_pairs = [prepare_data(line, include_labels=CS_LABELS, include_pmid=True) for line in val_text]
+        eval_ds = make_dataset(val_pairs, include_pmid=PMID_VAL_LABELS)
+
+    # Adjust max_features
+    max_features = min(args.nFeatures, max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary())))
+    logging.info(f"Adjusted max_features: {max_features}")
+
+    # Model Setup
+    transformer = build_transformer_encodec(args.seqLen, max_features, args.modelDim, args.stackSize, args.latentDim, args.nHeads, key_dim)
+    transformer.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["sparse_categorical_accuracy"])
+    transformer.summary()
+
+    if args.trainFlag:
+        callbacks = [
+            keras.callbacks.ModelCheckpoint(checkpoint_path, save_weights_only=True, verbose=1),
+            keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, min_delta=0.005, restore_best_weights=True, verbose=1)
+        ]
+        history = transformer.fit(train_ds, epochs=args.nEpochs, validation_data=val_ds, callbacks=callbacks)
+        pd.DataFrame(history.history).to_csv(os.path.join(out_dir, "history.csv"))
+        # Plotting (simplified for brevity)
+        plt.figure()
+        plt.plot(history.history['loss'])
+        plt.plot(history.history['val_loss'])
+        plt.savefig(os.path.join(out_dir, 'history_plot.pdf'))
+    else:
+        transformer.load_weights(checkpoint_path)
+
+    # Prediction and Evaluation
+    global out_phr_index_lookup
+    out_phr_index_lookup = dict(enumerate(output_vectorizer.get_vocabulary()))
+    max_decoded_length = args.seqLen + 1
+
+    if args.predictFlag or args.evaluateFlag:
+        if args.predictFlag:
+            predict_pairs = val_pairs[:args.nDemo] if args.nDemo >= 0 else val_pairs
+            random.shuffle(predict_pairs)
+            save_predictions(predict_pairs, os.path.join(out_dir, f"{args.testName}_predictions.tsv"), transformer, max_decoded_length)
+
+        if args.evaluateFlag:
+            val_loss, val_acc = transformer.evaluate(eval_ds)
+            with open(os.path.join(out_dir, 'evaluation.txt'), 'w') as f:
+                f.write(f"Validation_loss: {val_loss}\nValidation_acc: {val_acc}\n")
+
+    logging.info(f"Tasks completed. Results in {out_dir}")
+
+if __name__ == "__main__":
+    main()
