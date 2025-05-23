@@ -150,6 +150,21 @@ def load_tv(path: Path) -> TextVectorization:
 # ════════════════════════════════════════════════════════════════════════════
 # 4. Transformer building blocks
 # ════════════════════════════════════════════════════════════════════════════
+class PosEmbed(layers.Layer):
+    """Token+position embedding layer without mask propagation (mask disabled)."""
+    def __init__(self, max_len: int, vocab: int, dim: int):
+        super().__init__()
+        self.tok = layers.Embedding(vocab, dim)
+        self.pos = layers.Embedding(max_len, dim)
+        self.idx = tf.range(max_len)
+    def call(self, x: tf.Tensor) -> tf.Tensor:
+        length = tf.shape(x)[-1]
+        return self.tok(x) + self.pos(self.idx[:length])
+    def compute_mask(self, x: tf.Tensor, _=None) -> None:
+        # Disable mask propagation\        return None
+
+
+# ════════════════════════════════════════════════════════════════════════════
     def compute_mask(self, x: tf.Tensor, _=None) -> tf.Tensor:
         # Disable mask propagation to avoid broadcast errors in attention layers
         return None
