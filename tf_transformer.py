@@ -142,10 +142,6 @@ class PositionalEmbedding(layers.Layer):
         config.update({"sequence_length": self.sequence_length, "vocab_size": self.vocab_size, "embed_dim": self.embed_dim})
         return config
 
-import tensorflow as tf
-
-import tensorflow as tf
-
 class TransformerEncoder(tf.keras.layers.Layer):
     def __init__(self, num_heads, key_dim, model_dim, **kwargs):
         super(TransformerEncoder, self).__init__(**kwargs)
@@ -162,7 +158,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self.supports_masking = True
 
     def call(self, inputs, mask=None, training=False):
-        # Debug: Print input and mask shapes
+        # Debug: Print shapes
         tf.print("Encoder inputs shape:", tf.shape(inputs))
         if mask is not None:
             tf.print("Encoder mask shape:", tf.shape(mask))
@@ -170,8 +166,11 @@ class TransformerEncoder(tf.keras.layers.Layer):
         # Prepare the attention mask
         if mask is not None:
             # Original mask shape: (batch_size, seq_len)
-            # Reshape to (batch_size, 1, 1, seq_len) for broadcasting
-            padding_mask = tf.cast(mask[:, tf.newaxis, tf.newaxis, :], dtype=tf.bool)
+            # Reshape to (batch_size, 1, seq_len, seq_len) for attention
+            seq_len = tf.shape(inputs)[1]
+            padding_mask = tf.cast(mask[:, tf.newaxis, :], dtype=tf.bool)
+            padding_mask = padding_mask[:, :, :, tf.newaxis]  # Shape: (batch_size, 1, seq_len, 1)
+            padding_mask = tf.tile(padding_mask, [1, self.num_heads, 1, seq_len])  # Shape: (batch_size, num_heads, seq_len, seq_len)
             tf.print("Encoder padding_mask shape:", tf.shape(padding_mask))
         else:
             padding_mask = None
@@ -199,7 +198,6 @@ class TransformerEncoder(tf.keras.layers.Layer):
             "model_dim": self.model_dim
         })
         return config
-
 
 class TransformerDecoder(layers.Layer):
     """Transformer decoder layer with self-attention and cross-attention."""
