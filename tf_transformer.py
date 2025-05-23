@@ -180,6 +180,8 @@ class PosEmbed(layers.Layer):
         # Disable mask propagation
         return None
 
+# prompt: Now fix the new error, which i included in the last code cell
+
 class EncBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
         super().__init__()
@@ -202,10 +204,14 @@ class EncBlock(layers.Layer):
         training: bool = False,
     ) -> tf.Tensor:
         # Self-attention without padding mask
-        attn = self.mha(x, x, training=training)
-        x = self.norm1(x + attn)
-        ffn_out = self.ffn(x, training=training)
-        return self.norm2(x + ffn_out)
+        # Ensure the input to attention is float32
+        attn = self.mha(tf.cast(x, dtype=tf.float32), tf.cast(x, dtype=tf.float32), training=training)
+        # Add residual connection and normalize. Ensure addition is between compatible dtypes.
+        x = self.norm1(tf.cast(x, dtype=tf.float32) + tf.cast(attn, dtype=tf.float32))
+        # Ensure input to FFN is float32
+        ffn_out = self.ffn(tf.cast(x, dtype=tf.float32), training=training)
+        # Add residual connection and normalize. Ensure addition is between compatible dtypes.
+        return self.norm2(tf.cast(x, dtype=tf.float32) + tf.cast(ffn_out, dtype=tf.float32))
 
 
 class DecBlock(layers.Layer):
@@ -235,15 +241,20 @@ class DecBlock(layers.Layer):
         training: bool = False,
     ) -> tf.Tensor:
         # Unmasked self-attention
+        # Ensure inputs to attention are float32
         y = self.norm1(
-            y + self.self_mha(y, y, training=training)
+            tf.cast(y, dtype=tf.float32) + tf.cast(self.self_mha(tf.cast(y, dtype=tf.float32), tf.cast(y, dtype=tf.float32), training=training), dtype=tf.float32)
         )
         # Unmasked cross-attention
+        # Ensure inputs to attention are float32
         y = self.norm2(
-            y + self.cross_mha(y, enc_out, training=training)
+            tf.cast(y, dtype=tf.float32) + tf.cast(self.cross_mha(tf.cast(y, dtype=tf.float32), tf.cast(enc_out, dtype=tf.float32), training=training), dtype=tf.float32)
         )
-        ffn_out = self.ffn(y, training=training)
-        return self.norm3(y + ffn_out)
+        # Ensure input to FFN is float32
+        ffn_out = self.ffn(tf.cast(y, dtype=tf.float32), training=training)
+        # Add residual connection and normalize. Ensure addition is between compatible dtypes.
+        return self.norm3(tf.cast(y, dtype=tf.float32) + tf.cast(ffn_out, dtype=tf.float32))
+
 # ════════════════════════════════════════════════════════════════════════════
 # 5. Model builder
 # ════════════════════════════════════════════════════════════════════════════
