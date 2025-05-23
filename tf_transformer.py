@@ -150,7 +150,35 @@ def load_tv(path: Path) -> TextVectorization:
 # ════════════════════════════════════════════════════════════════════════════
 # 4. Transformer building blocks
 # ════════════════════════════════════════════════════════════════════════════
+
+class MyLayerNorm(layers.Layer):
+    """Manual LayerNorm implementation to ensure GPU compatibility."""
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.gamma = self.add_weight('gamma', shape=(dim,), initializer='ones', trainable=True)
+        self.beta = self.add_weight('beta', shape=(dim,), initializer='zeros', trainable=True)
+
+    def call(self, x: tf.Tensor) -> tf.Tensor:
+        mean, var = tf.nn.moments(x, axes=[-1], keepdims=True)
+        normed = (x - mean) * tf.math.rsqrt(var + self.eps)
+        return normed * self.gamma + self.beta
+
 class PosEmbed(layers.Layer):
+    """Token+position embedding layer without mask propagation (mask disabled)."""
+    def __init__(self, max_len: int, vocab: int, dim: int):
+        super().__init__()
+        self.tok = layers.Embedding(vocab, dim)
+        self.pos = layers.Embedding(max_len, dim)
+        self.idx = tf.range(max_len)
+
+    def call(self, x: tf.Tensor) -> tf.Tensor:
+        length = tf.shape(x)[-1]
+        return self.tok(x) + self.pos(self.idx[:length])
+
+    def compute_mask(self, x: tf.Tensor, _=None) -> None:
+        # Disable mask propagation
+        return None(layers.Layer):
     """Token+position embedding layer without mask propagation (mask disabled)."""
     def __init__(self, max_len: int, vocab: int, dim: int):
         super().__init__()
