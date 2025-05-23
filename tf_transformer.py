@@ -172,18 +172,21 @@ class EncBlock(layers.Layer):
         ])
         self.norm1 = layers.LayerNormalization()
         self.norm2 = layers.LayerNormalization()
+
     def call(
         self,
         x: tf.Tensor,
         mask: tf.Tensor | None = None,
         training: bool = False,
     ) -> tf.Tensor:
-        attn = self.mha(x, x, attention_mask=mask, training=training)
+        # Self-attention without padding mask
+        attn = self.mha(x, x, training=training)
         x = self.norm1(x + attn)
         ffn_out = self.ffn(x, training=training)
         return self.norm2(x + ffn_out)
 
-class DecBlock(layers.Layer):
+
+class DecBlock(layers.Layer):(layers.Layer):
     def __init__(
         self,
         dim: int,
