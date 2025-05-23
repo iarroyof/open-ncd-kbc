@@ -157,9 +157,11 @@ class PosEmbed(layers.Layer):
         self.tok = layers.Embedding(vocab, dim)
         self.pos = layers.Embedding(max_len, dim)
         self.idx = tf.range(max_len)
+
     def call(self, x: tf.Tensor) -> tf.Tensor:
         length = tf.shape(x)[-1]
         return self.tok(x) + self.pos(self.idx[:length])
+
     def compute_mask(self, x: tf.Tensor, _=None) -> None:
         # Disable mask propagation
         return None
@@ -172,8 +174,8 @@ class EncBlock(layers.Layer):
             layers.Dense(latent, activation="relu"),
             layers.Dense(dim),
         ])
-        self.norm1 = layers.LayerNormalization()
-        self.norm2 = layers.LayerNormalization()
+        self.norm1 = layers.LayerNormalization(dtype='float32')
+        self.norm2 = layers.LayerNormalization(dtype='float32')
 
     def call(
         self,
@@ -205,7 +207,7 @@ class DecBlock(layers.Layer):
         ])
         self.norm1 = layers.LayerNormalization()
         self.norm2 = layers.LayerNormalization()
-        self.norm3 = layers.LayerNormalization()
+        self.norm3 = layers.LayerNormalization(dtype='float32')
 
     def call(
         self,
