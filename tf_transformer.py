@@ -333,6 +333,14 @@ def main():
         loss="sparse_categorical_crossentropy",
         metrics=["sparse_categorical_accuracy"],
     )
+
+    # Explicitly build the model with input shapes
+    model.build(input_shape=[
+        (None, None),  # encoder_inputs shape: (batch_size, seq_len)
+        (None, None),  # decoder_inputs shape: (batch_size, seq_len)
+    ])
+
+    # Now summary() works safely
     model.summary()
 
     # WandB setup
