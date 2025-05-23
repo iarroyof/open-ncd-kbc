@@ -164,7 +164,7 @@ class PosEmbed(layers.Layer):
         # Disable mask propagation\        return None
 
 
-# ════════════════════════════════════════════════════════════════════════════
+    # ════════════════════════════════════════════════════════════════════════════
     def compute_mask(self, x: tf.Tensor, _=None) -> tf.Tensor:
         # Disable mask propagation to avoid broadcast errors in attention layers
         return None
