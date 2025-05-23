@@ -193,8 +193,8 @@ class EncBlock(layers.Layer):
         # Corrected: Use LayerNormalization without the 'fused' argument
         # which seems to be causing issues in TF 2.10+ or the specific Colab environment.
         # Using a simple LayerNormalization layer.
-        self.norm1 = layers.LayerNormalization()
-        self.norm2 = layers.LayerNormalization()
+        self.norm1 = layers.MyLayerNorm()
+        self.norm2 = layers.MyLayerNorm()
 
 
     def call(
@@ -230,9 +230,9 @@ class DecBlock(layers.Layer):
             layers.Dense(dim),
         ])
         # Corrected: Use LayerNormalization without the 'fused' argument
-        self.norm1 = layers.LayerNormalization()
-        self.norm2 = layers.LayerNormalization()
-        self.norm3 = layers.LayerNormalization() # Removed fused=False here as well
+        self.norm1 = layers.MyLayerNorm()
+        self.norm2 = layers.MyLayerNorm()
+        self.norm3 = layers.MyLayerNorm() # Removed fused=False here as well
 
     def call(
         self,
