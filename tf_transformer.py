@@ -205,31 +205,19 @@ class DecBlock(layers.Layer):
         self.norm2 = layers.LayerNormalization()
         self.norm3 = layers.LayerNormalization()
 
-    @staticmethod
-    def causal_mask(seq_len: int) -> tf.Tensor:
-        # (1, 1, T, T)
-        mask = tf.linalg.band_part(tf.ones((seq_len, seq_len)), -1, 0)
-        return mask[None, None, :, :]
-
     def call(
         self,
         y: tf.Tensor,
         enc_out: tf.Tensor,
         training: bool = False,
     ) -> tf.Tensor:
-        T = tf.shape(y)[1]
-        mask_self = self.causal_mask(T)
-        if hasattr(y, '_keras_mask') and y._keras_mask is not None:
-            y_mask = tf.cast(y._keras_mask[:, None, None, :], mask_self.dtype)  # match self mask dtype
-            mask_self = tf.minimum(mask_self, y_mask)
+        # Unmasked self-attention
         y = self.norm1(
-            y + self.self_mha(y, y, attention_mask=mask_self, training=training)
+            y + self.self_mha(y, y, training=training)
         )
-        enc_mask = None
-        if hasattr(enc_out, '_keras_mask') and enc_out._keras_mask is not None:
-            enc_mask = tf.cast(enc_out._keras_mask[:, None, None, :], mask_self.dtype)  # match self mask dtype
+        # Unmasked cross-attention
         y = self.norm2(
-            y + self.cross_mha(y, enc_out, attention_mask=enc_mask, training=training)
+            y + self.cross_mha(y, enc_out, training=training)
         )
         ffn_out = self.ffn(y, training=training)
         return self.norm3(y + ffn_out)
