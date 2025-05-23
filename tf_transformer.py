@@ -142,33 +142,30 @@ class PositionalEmbedding(layers.Layer):
         config.update({"sequence_length": self.sequence_length, "vocab_size": self.vocab_size, "embed_dim": self.embed_dim})
         return config
 
-class TransformerEncoder(layers.Layer):
-    """Transformer encoder layer with multi-head attention and feed-forward network."""
-    def __init__(self, embed_dim: int, dense_dim: int, num_heads: int, key_dim: int, **kwargs):
-        super().__init__(**kwargs)
-        self.embed_dim = embed_dim
-        self.dense_dim = dense_dim
-        self.num_heads = num_heads
-        self.key_dim = key_dim
-        self.attention = layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim, value_dim=key_dim)
-        self.dense_proj = keras.Sequential([
-            layers.Dense(dense_dim, activation="relu", kernel_initializer='random_normal'),
-            layers.Dense(embed_dim)
+import tensorflow as tf
+
+class TransformerEncoder(tf.keras.layers.Layer):
+    def __init__(self, num_heads, key_dim, model_dim, **kwargs):
+        super(TransformerEncoder, self).__init__(**kwargs)
+        self.attention = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)
+        self.dense_proj = tf.keras.Sequential([
+            tf.keras.layers.Dense(model_dim, activation="relu"),
+            tf.keras.layers.Dense(model_dim)
         ])
-        self.layernorm_1 = layers.LayerNormalization()
-        self.layernorm_2 = layers.LayerNormalization()
+        self.layernorm_1 = tf.keras.layers.LayerNormalization()
+        self.layernorm_2 = tf.keras.layers.LayerNormalization()
         self.supports_masking = True
 
     def call(self, inputs, mask=None, training=False):
-        # If mask exists, reshape it appropriately for MultiHeadAttention
+        # Handle the mask for attention
         if mask is not None:
             # Original mask shape: (batch_size, seq_len)
-            # Expand to (batch_size, 1, 1, seq_len) for broadcasting over heads and query
+            # Reshape to (batch_size, 1, 1, seq_len) for broadcasting
             padding_mask = tf.cast(mask[:, tf.newaxis, tf.newaxis, :], dtype=tf.bool)
         else:
             padding_mask = None
 
-        # Self-attention: query, key, and value are the same (inputs)
+        # Self-attention with the mask
         attention_output = self.attention(
             query=inputs,
             value=inputs,
