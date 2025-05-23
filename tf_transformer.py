@@ -160,7 +160,7 @@ class PosEmbed(layers.Layer):
     def call(self, x: tf.Tensor) -> tf.Tensor:
         length = tf.shape(x)[-1]
         return self.tok(x) + self.pos(self.idx[:length])
-        def compute_mask(self, x: tf.Tensor, _=None) -> None:
+    def compute_mask(self, x: tf.Tensor, _=None) -> None:
         # Disable mask propagation
         return None
 
