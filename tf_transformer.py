@@ -243,24 +243,24 @@ def build_transformer_encodec(
     latent_dim: int,
     num_heads: int,
     key_dim: int
-) -> keras.Model:
+) -> tf.keras.Model:
     """Build a Transformer model for text-to-text generation."""
     # Encoder
-    encoder_inputs = keras.Input(shape=(None,), dtype="int64", name="encoder_inputs")
+    encoder_inputs = tf.keras.Input(shape=(None,), dtype="int64", name="encoder_inputs")
     x = PositionalEmbedding(sequence_length, max_features, model_dim)(encoder_inputs)
     for _ in range(stack_size):
-        x = TransformerEncoder(model_dim, latent_dim, num_heads, key_dim)(x)
+        x = TransformerEncoder(num_heads, key_dim, model_dim)(x)  # Removed latent_dim
     encoder_outputs = x
 
     # Decoder
-    decoder_inputs = keras.Input(shape=(None,), dtype="int64", name="decoder_inputs")
+    decoder_inputs = tf.keras.Input(shape=(None,), dtype="int64", name="decoder_inputs")
     x = PositionalEmbedding(sequence_length + 1, max_features, model_dim)(decoder_inputs)
     for _ in range(stack_size):
         x = TransformerDecoder(model_dim, latent_dim, num_heads, key_dim)(x, encoder_outputs)
-    x = layers.Dropout(0.1)(x)
-    outputs = layers.Dense(max_features, activation="softmax")(x)
+    x = tf.keras.layers.Dropout(0.1)(x)
+    outputs = tf.keras.layers.Dense(max_features, activation="softmax")(x)
 
-    return keras.Model([encoder_inputs, decoder_inputs], outputs, name="transformer")
+    return tf.keras.Model([encoder_inputs, decoder_inputs], outputs, name="transformer")
 
 # Prediction and Saving
 def save_predictions(pairs: List[Tuple], filepath: str, transformer: keras.Model, max_length: int) -> None:
