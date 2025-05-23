@@ -199,7 +199,7 @@ class PositionalEmbedding(layers.Layer):
         self.pos_emb = layers.Embedding(seq_len, embed_dim)
 
     def call(self, x):
-        length = tf.shape(x)[‑1]
+        length = tf.shape(x)[-1]
         positions = tf.range(length)
         return self.tok_emb(x) + self.pos_emb(positions)
 
