@@ -159,12 +159,24 @@ class TransformerEncoder(layers.Layer):
         self.layernorm_2 = layers.LayerNormalization()
         self.supports_masking = True
 
-    def call(self, inputs: tf.Tensor, mask: Optional[tf.Tensor] = None) -> tf.Tensor:
+    def call(self, inputs, mask=None, training=False):
+        # If mask exists, reshape it appropriately for MultiHeadAttention
         if mask is not None:
-            padding_mask = tf.cast(mask[:, tf.newaxis, tf.newaxis, :], dtype=tf.float32)
+            # Original mask shape: (batch_size, seq_len)
+            # Expand to (batch_size, 1, 1, seq_len) for broadcasting over heads and query
+            padding_mask = tf.cast(mask[:, tf.newaxis, tf.newaxis, :], dtype=tf.bool)
         else:
             padding_mask = None
-        attention_output = self.attention(inputs, inputs, inputs, attention_mask=padding_mask)
+
+        # Self-attention: query, key, and value are the same (inputs)
+        attention_output = self.attention(
+            query=inputs,
+            value=inputs,
+            key=inputs,
+            attention_mask=padding_mask
+        )
+
+        # Residual connection and normalization
         proj_input = self.layernorm_1(inputs + attention_output)
         proj_output = self.dense_proj(proj_input)
         return self.layernorm_2(proj_input + proj_output)
