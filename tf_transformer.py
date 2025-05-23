@@ -217,23 +217,6 @@ class DecBlock(layers.Layer):
         ffn_out = self.ffn(tf.cast(y, tf.float32), training=training)
         return self.norm3(tf.cast(y, tf.float32) + tf.cast(ffn_out, tf.float32))
 
-class DecBlock(layers.Layer):
-    def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
-        super().__init__()
-        self.dim = dim  # Store constructor args
-        self.latent = latent
-        self.heads = heads
-        self.key_dim = key_dim
-        self.self_mha = layers.MultiHeadAttention(heads, key_dim)
-        self.cross_mha = layers.MultiHeadAttention(heads, key_dim)
-        self.ffn = keras.Sequential([
-            layers.Dense(latent, activation="relu"),
-            layers.Dense(dim),
-        ])
-        self.norm1 = MyLayerNorm(dim)
-        self.norm2 = MyLayerNorm(dim)
-        self.norm3 = MyLayerNorm(dim)
-
     def get_config(self):
         config = super().get_config()
         config.update({
