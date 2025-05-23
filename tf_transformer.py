@@ -110,8 +110,8 @@ def save_tv(tv: TextVectorization, path: Path) -> None:
         path, save_format="keras"
     )
 
-def load_tv(path: Path) -> TextVectorization:
-    mdl = keras.models.load_model(path, safe_mode=False)
+def load_tv(path: Path, custom_objects=None) -> TextVectorization:
+    mdl = keras.models.load_model(path, custom_objects=custom_objects)
     old: TextVectorization = mdl.layers[1]
     cfg, vocab = old.get_config(), old.get_vocabulary()
     new = TextVectorization.from_config(cfg)
@@ -134,6 +134,14 @@ class MyLayerNorm(layers.Layer):
         normed = (x - mean) * tf.math.rsqrt(var + self.eps)
         return normed * self.gamma + self.beta
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "dim": self.dim,
+            "eps": self.eps
+        })
+        return config
+
 class PosEmbed(layers.Layer):
     def __init__(self, max_len: int, vocab: int, dim: int):
         super().__init__()
@@ -147,6 +155,15 @@ class PosEmbed(layers.Layer):
 
     def compute_mask(self, x: tf.Tensor, _=None) -> None:
         return None
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "max_len": self.max_len,
+            "vocab": self.vocab,
+            "dim": self.dim
+        })
+        return config
 
 class EncBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
@@ -164,6 +181,16 @@ class EncBlock(layers.Layer):
         x = self.norm1(tf.cast(x, tf.float32) + tf.cast(attn, tf.float32))
         ffn_out = self.ffn(tf.cast(x, tf.float32), training=training)
         return self.norm2(tf.cast(x, tf.float32) + tf.cast(ffn_out, tf.float32))
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "dim": self.dim,
+            "latent": self.latent,
+            "heads": self.heads,
+            "key_dim": self.key_dim
+        })
+        return config
 
 class DecBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
@@ -189,6 +216,33 @@ class DecBlock(layers.Layer):
         )
         ffn_out = self.ffn(tf.cast(y, tf.float32), training=training)
         return self.norm3(tf.cast(y, tf.float32) + tf.cast(ffn_out, tf.float32))
+
+class DecBlock(layers.Layer):
+    def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
+        super().__init__()
+        self.dim = dim  # Store constructor args
+        self.latent = latent
+        self.heads = heads
+        self.key_dim = key_dim
+        self.self_mha = layers.MultiHeadAttention(heads, key_dim)
+        self.cross_mha = layers.MultiHeadAttention(heads, key_dim)
+        self.ffn = keras.Sequential([
+            layers.Dense(latent, activation="relu"),
+            layers.Dense(dim),
+        ])
+        self.norm1 = MyLayerNorm(dim)
+        self.norm2 = MyLayerNorm(dim)
+        self.norm3 = MyLayerNorm(dim)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "dim": self.dim,
+            "latent": self.latent,
+            "heads": self.heads,
+            "key_dim": self.key_dim
+        })
+        return config
 
 # ════════════════════════════════════════════════════════════════════════════
 # 5. Model builder
@@ -271,7 +325,7 @@ def main():
 
     train_ds = make_ds(train_pairs, h) if args.train else None
     valid_ds = make_ds(valid_pairs, h)
-
+    
     # Build and compile model
     model = build_model(h)
     model.compile(
