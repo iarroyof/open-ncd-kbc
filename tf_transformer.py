@@ -1,40 +1,14 @@
-"""tf_transformer.py
-====================
-Minimal, **complete** TensorFlow 2.10+ script to train and evaluate
-a small Transformer encoder–decoder on TSV triples.
-
-Key features:
-* Single file, no lambdas in serialized objects.
-* Automatic mask propagation via `compute_mask`.
-* Vectorizers saved/loaded in native `.keras` format.
-* Checkpoints, history and metrics under `results/`.
-* Compatible with CPU or GPU execution.
-
-Example usage:
--------------
-```bash
-python tf_transformer.py \
-  --train-path data/train.tsv \
-  --valid-path data/valid.tsv \
-  --train --epochs 2 --seq-len 30 --batch 32
-```
-```bash
-python tf_transformer.py \
-  --train-path data/train.tsv \
-  --valid-path data/valid.tsv \
-  --evaluate
-```
-"""
 from __future__ import annotations
 
 # ── standard library ─────────────────────────────────────────────────────────
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 import argparse
 import logging
 import random
 import re
 import string
+import yaml
 from typing import List, Tuple
 
 # ── third-party ───────────────────────────────────────────────────────────────
@@ -44,7 +18,10 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.layers import TextVectorization
+import wandb
+from wandb.keras import WandbCallback
 
+# ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
@@ -63,24 +40,30 @@ class HParams:
     heads: int = 8
     stacks: int = 1
     key_dim: int | None = None
-
     batch: int = 64
     epochs: int = 30
-
     train_path: Path | None = None
     valid_path: Path | None = None
     out_dir: Path = Path("results")
-
     seed: int = 42
 
     def __post_init__(self):
+        # Convert strings to Path objects
+        if self.train_path is not None:
+            self.train_path = Path(str(self.train_path))
+        if self.valid_path is not None:
+            self.valid_path = Path(str(self.valid_path))
+        self.out_dir = Path(str(self.out_dir))
+
         # Compute key_dim if not provided
         if self.key_dim is None:
             self.key_dim = self.model_dim // self.heads
+
         # Set random seeds
         random.seed(self.seed)
         np.random.seed(self.seed)
         tf.random.set_seed(self.seed)
+
         # Create output dirs
         self.out_dir.mkdir(parents=True, exist_ok=True)
         (self.out_dir / "vectorizers").mkdir(exist_ok=True)
@@ -89,29 +72,21 @@ class HParams:
 # 2. Data utilities
 # ════════════════════════════════════════════════════════════════════════════
 START, END = "[start]", "[end]"
-# strip brackets from punctuation list
 STRIP = string.punctuation.translate({ord("["): None, ord("]"): None})
 
-
 def standardize(text: tf.Tensor) -> tf.Tensor:
-    """Lowercase and remove punctuation."""
     text = tf.strings.lower(text)
     return tf.strings.regex_replace(text, f"[{re.escape(STRIP)}]", "")
 
-
 def parse_line(line: str) -> Tuple[str, str]:
-    """Parse one TSV line into (source, target)."""
     cols = line.rstrip("\n").split("\t")
     if len(cols) < 5:
         raise ValueError("Each row needs ≥5 tab-separated fields")
-    # Drop PMID
     cols.pop(0)
-    # Clean predicate (split CamelCase)
     raw_pred = cols[1]
     pred = " ".join(re.findall(r"[A-Z][a-z]*", raw_pred)).lower() or raw_pred
-    # Merge multi-token object until numeric label
     if not cols[4].isdigit() and not re.match(r"^-?\d+(?:\.\d+)?$", cols[4]):
-        extras: list[str] = []
+        extras = []
         while not cols[4].isdigit():
             extras.append(cols.pop(4))
         cols[3] = " ".join([cols[3], *extras])
@@ -122,7 +97,6 @@ def parse_line(line: str) -> Tuple[str, str]:
 # ════════════════════════════════════════════════════════════════════════════
 # 3. Vectorizer helpers
 # ════════════════════════════════════════════════════════════════════════════
-
 def build_vectorizer(vocab: int, seq_len: int) -> TextVectorization:
     return TextVectorization(
         max_tokens=vocab,
@@ -131,12 +105,10 @@ def build_vectorizer(vocab: int, seq_len: int) -> TextVectorization:
         output_mode="int",
     )
 
-
 def save_tv(tv: TextVectorization, path: Path) -> None:
     keras.Sequential([keras.Input(shape=(1,), dtype="string"), tv]).save(
         path, save_format="keras"
     )
-
 
 def load_tv(path: Path) -> TextVectorization:
     mdl = keras.models.load_model(path, safe_mode=False)
@@ -150,9 +122,7 @@ def load_tv(path: Path) -> TextVectorization:
 # ════════════════════════════════════════════════════════════════════════════
 # 4. Transformer building blocks
 # ════════════════════════════════════════════════════════════════════════════
-
 class MyLayerNorm(layers.Layer):
-    """Manual LayerNorm implementation to ensure GPU compatibility."""
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
         self.eps = eps
@@ -165,7 +135,6 @@ class MyLayerNorm(layers.Layer):
         return normed * self.gamma + self.beta
 
 class PosEmbed(layers.Layer):
-    """Token+position embedding layer without mask propagation (mask disabled)."""
     def __init__(self, max_len: int, vocab: int, dim: int):
         super().__init__()
         self.tok = layers.Embedding(vocab, dim)
@@ -177,10 +146,7 @@ class PosEmbed(layers.Layer):
         return self.tok(x) + self.pos(self.idx[:length])
 
     def compute_mask(self, x: tf.Tensor, _=None) -> None:
-        # Disable mask propagation
         return None
-
-# prompt: Now fix the new error, which i included in the last code cell
 
 class EncBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
@@ -190,38 +156,17 @@ class EncBlock(layers.Layer):
             layers.Dense(latent, activation="relu"),
             layers.Dense(dim),
         ])
-        # Corrected: Use LayerNormalization without the 'fused' argument
-        # which seems to be causing issues in TF 2.10+ or the specific Colab environment.
-        # Using a simple LayerNormalization layer.
         self.norm1 = MyLayerNorm(dim)
         self.norm2 = MyLayerNorm(dim)
 
-
-    def call(
-        self,
-        x: tf.Tensor,
-        mask: tf.Tensor | None = None,
-        training: bool = False,
-    ) -> tf.Tensor:
-        # Self-attention without padding mask
-        # Ensure the input to attention is float32
-        attn = self.mha(tf.cast(x, dtype=tf.float32), tf.cast(x, dtype=tf.float32), training=training)
-        # Add residual connection and normalize. Ensure addition is between compatible dtypes.
-        x = self.norm1(tf.cast(x, dtype=tf.float32) + tf.cast(attn, dtype=tf.float32))
-        # Ensure input to FFN is float32
-        ffn_out = self.ffn(tf.cast(x, dtype=tf.float32), training=training)
-        # Add residual connection and normalize. Ensure addition is between compatible dtypes.
-        return self.norm2(tf.cast(x, dtype=tf.float32) + tf.cast(ffn_out, dtype=tf.float32))
-
+    def call(self, x: tf.Tensor, mask: tf.Tensor | None = None, training: bool = False) -> tf.Tensor:
+        attn = self.mha(tf.cast(x, tf.float32), tf.cast(x, tf.float32), training=training)
+        x = self.norm1(tf.cast(x, tf.float32) + tf.cast(attn, tf.float32))
+        ffn_out = self.ffn(tf.cast(x, tf.float32), training=training)
+        return self.norm2(tf.cast(x, tf.float32) + tf.cast(ffn_out, tf.float32))
 
 class DecBlock(layers.Layer):
-    def __init__(
-        self,
-        dim: int,
-        latent: int,
-        heads: int,
-        key_dim: int,
-    ):
+    def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
         super().__init__()
         self.self_mha = layers.MultiHeadAttention(heads, key_dim)
         self.cross_mha = layers.MultiHeadAttention(heads, key_dim)
@@ -229,31 +174,21 @@ class DecBlock(layers.Layer):
             layers.Dense(latent, activation="relu"),
             layers.Dense(dim),
         ])
-        # Corrected: Use LayerNormalization without the 'fused' argument
         self.norm1 = MyLayerNorm(dim)
         self.norm2 = MyLayerNorm(dim)
-        self.norm3 = MyLayerNorm(dim) # Removed fused=False here as well
+        self.norm3 = MyLayerNorm(dim)
 
-    def call(
-        self,
-        y: tf.Tensor,
-        enc_out: tf.Tensor,
-        training: bool = False,
-    ) -> tf.Tensor:
-        # Unmasked self-attention
-        # Ensure inputs to attention are float32
+    def call(self, y: tf.Tensor, enc_out: tf.Tensor, training: bool = False) -> tf.Tensor:
         y = self.norm1(
-            tf.cast(y, dtype=tf.float32) + tf.cast(self.self_mha(tf.cast(y, dtype=tf.float32), tf.cast(y, dtype=tf.float32), training=training), dtype=tf.float32)
+            tf.cast(y, tf.float32) +
+            tf.cast(self.self_mha(tf.cast(y, tf.float32), tf.cast(y, tf.float32), training=training), tf.float32)
         )
-        # Unmasked cross-attention
-        # Ensure inputs to attention are float32
         y = self.norm2(
-            tf.cast(y, dtype=tf.float32) + tf.cast(self.cross_mha(tf.cast(y, dtype=tf.float32), tf.cast(enc_out, dtype=tf.float32), training=training), dtype=tf.float32)
+            tf.cast(y, tf.float32) +
+            tf.cast(self.cross_mha(tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), training=training), tf.float32)
         )
-        # Ensure input to FFN is float32
-        ffn_out = self.ffn(tf.cast(y, dtype=tf.float32), training=training)
-        # Add residual connection and normalize. Ensure addition is between compatible dtypes.
-        return self.norm3(tf.cast(y, dtype=tf.float32) + tf.cast(ffn_out, dtype=tf.float32))
+        ffn_out = self.ffn(tf.cast(y, tf.float32), training=training)
+        return self.norm3(tf.cast(y, tf.float32) + tf.cast(ffn_out, tf.float32))
 
 # ════════════════════════════════════════════════════════════════════════════
 # 5. Model builder
@@ -261,12 +196,10 @@ class DecBlock(layers.Layer):
 def build_model(h: HParams) -> keras.Model:
     enc_in = keras.Input((None,), dtype="int64", name="encoder_inputs")
     dec_in = keras.Input((None,), dtype="int64", name="decoder_inputs")
-
     x = PosEmbed(h.seq_len, h.vocab_size, h.model_dim)(enc_in)
     for _ in range(h.stacks):
         x = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(x)
     enc_out = x
-
     y = PosEmbed(h.seq_len + 1, h.vocab_size, h.model_dim)(dec_in)
     for _ in range(h.stacks):
         y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(y, enc_out)
@@ -277,7 +210,6 @@ def build_model(h: HParams) -> keras.Model:
 # ════════════════════════════════════════════════════════════════════════════
 # 6. Dataset pipeline
 # ════════════════════════════════════════════════════════════════════════════
-# These will be set after adapting vectorizers
 INPUT_VECT: TextVectorization
 OUTPUT_VECT: TextVectorization
 
@@ -296,27 +228,30 @@ def make_ds(pairs: List[Tuple[str, str]], h: HParams) -> tf.data.Dataset:
 # ════════════════════════════════════════════════════════════════════════════
 def main():
     parser = argparse.ArgumentParser(description="Train/evaluate Transformer model")
+    parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--train-path", required=True)
     parser.add_argument("--valid-path", required=True)
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--evaluate", action="store_true")
-    parser.add_argument("--seq-len", type=int, default=30)
-    parser.add_argument("--vocab-size", type=int, default=15000)
-    parser.add_argument("--batch", type=int, default=64)
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--seq-len", type=int, default=None)
+    parser.add_argument("--vocab-size", type=int, default=None)
+    parser.add_argument("--batch", type=int, default=None)
+    parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--out-dir", default="results")
     args = parser.parse_args()
 
-    # Build hyper-parameters
-    h = HParams(
-        seq_len=args.seq_len,
-        vocab_size=args.vocab_size,
-        batch=args.batch,
-        epochs=args.epochs,
-        train_path=Path(args.train_path),
-        valid_path=Path(args.valid_path),
-        out_dir=Path(args.out_dir),
-    )
+    config = {}
+    if args.config:
+        with open(args.config, 'r') as f:
+            config = yaml.safe_load(f) or {}
+
+    # Override config with CLI args
+    args_dict = vars(args)
+    for k, v in args_dict.items():
+        if v is not None and k in HParams.__dataclass_fields__:
+            config[k] = v
+
+    h = HParams(**config)
 
     # Load and parse data
     train_lines = h.train_path.read_text().splitlines()
@@ -332,10 +267,8 @@ def main():
     OUTPUT_VECT.adapt([t for _, t in train_pairs])
     save_tv(INPUT_VECT, h.out_dir / "vectorizers" / "input.keras")
     save_tv(OUTPUT_VECT, h.out_dir / "vectorizers" / "output.keras")
-    # Adjust vocab based on actual size
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
-    # Build datasets
     train_ds = make_ds(train_pairs, h) if args.train else None
     valid_ds = make_ds(valid_pairs, h)
 
@@ -348,15 +281,16 @@ def main():
     )
     model.summary()
 
+    # WandB setup
+    wandb_config = {k: v for k, v in asdict(h).items() if not isinstance(v, Path)}
+    wandb.init(project="tf-transformer", config=wandb_config, save_code=True)
+
     # Training
     if args.train:
         callbacks = [
-            keras.callbacks.ModelCheckpoint(
-                h.out_dir / "ckpt.weights.h5", save_weights_only=True, verbose=1
-            ),
-            keras.callbacks.EarlyStopping(
-                patience=5, min_delta=0.001, restore_best_weights=True, verbose=1
-            ),
+            keras.callbacks.ModelCheckpoint(h.out_dir / "ckpt.weights.h5", save_weights_only=True, verbose=1),
+            keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
+            WandbCallback(),
         ]
         hist = model.fit(
             train_ds,
