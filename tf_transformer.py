@@ -216,7 +216,7 @@ class TransformerDecoder(layers.Layer):
         batch_size, seq_len = tf.shape(inputs)[0], tf.shape(inputs)[1]
         i = tf.range(seq_len)[:, tf.newaxis]
         j = tf.range(seq_len)
-        mask = tf.cast(i >= j, dtype="int32")
+        mask = tf.cast(i >= j, dtype="float32")  # Changed from "int32" to "float32"
         mask = tf.reshape(mask, (1, seq_len, seq_len))
         return tf.tile(mask, [batch_size, 1, 1])
 
