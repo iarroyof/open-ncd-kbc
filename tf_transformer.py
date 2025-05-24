@@ -383,7 +383,7 @@ def main():
         callbacks = [
             keras.callbacks.ModelCheckpoint(Path(h.out_dir) / "ckpt.weights.h5", save_weights_only=True, verbose=1),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
-            wand WandaCallback(save_model=False),
+            wand.WandaCallback(save_model=False),
         ]
         hist = model.fit(
             train_ds,
