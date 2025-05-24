@@ -44,6 +44,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.layers import TextVectorization
+import wandb
 
 logging.basicConfig(
     level=logging.INFO,
