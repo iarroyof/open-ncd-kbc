@@ -362,16 +362,20 @@ def main():
     # Set run-specific out_path
     run_out_path = h.out_path / wandb.run.project / (wandb.run.sweep_id or "nosweep") / wandb.run.id
     run_out_path.mkdir(parents=True, exist_ok=True)
+
+    # Save config with original paths (before updating out_path)
+    config_dict = h.to_dict()
+    config_dict['out_path'] = str(run_out_path)  # Update out_path to run-specific path as string
+    with open(run_out_path / "config.yaml", 'w') as f:
+        yaml.dump(config_dict, f)
+
+    # Update h.out_path for subsequent operations
     h.out_path = run_out_path
 
     # Save vectorizers
     save_tv(INPUT_VECT, h.out_path / "vectorizers" / "input.keras")
     save_tv(OUTPUT_VECT, h.out_path / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
-
-    # Save config for later use in evaluation
-    with open(h.out_path / "config.yaml", 'w') as f:
-        yaml.dump(h.to_dict(), f)
 
     train_ds = make_ds(train_pairs, h) if args.train else None
     valid_ds = make_ds(valid_pairs, h)
