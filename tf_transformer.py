@@ -10,6 +10,7 @@ import re
 import string
 import yaml
 from typing import List, Tuple
+import zipfile
 
 # ── third-party ───────────────────────────────────────────────────────────────
 import numpy as np
@@ -44,21 +45,17 @@ class HParams:
     epochs: int = 30
     train_path: str | None = None
     valid_path: str | None = None
-    out_dir: str = "results"  # Changed to out_dir to match current config.yaml
+    out_dir: str = "results"
     seed: int = 42
 
     def __post_init__(self):
-        # Compute key_dim if not provided
         if self.key_dim is None:
             self.key_dim = self.model_dim // self.heads
-
-        # Set random seeds
         random.seed(self.seed)
         np.random.seed(self.seed)
         tf.random.set_seed(self.seed)
 
     def to_dict(self):
-        """Convert HParams to a dictionary with string paths for YAML serialization."""
         return asdict(self)
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -112,9 +109,16 @@ def build_vectorizer(vocab: int, seq_len: int) -> TextVectorization:
 
 def save_tv(tv: TextVectorization, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    keras.Sequential([keras.Input(shape=(1,), dtype="string"), tv]).save(
-        path, save_format="keras"
-    )
+    model = keras.Sequential([keras.Input(shape=(1,), dtype="string"), tv])
+    model.save(path, save_format="keras")
+    # Verify the saved file
+    try:
+        with zipfile.ZipFile(path, 'r') as zip_ref:
+            zip_ref.testzip()
+        LOGGER.info(f"Saved and verified {path}")
+    except zipfile.BadZipFile as e:
+        LOGGER.error(f"Failed to save {path}: {e}")
+        raise
 
 def load_tv(path: Path, custom_objects=None) -> TextVectorization:
     mdl = keras.models.load_model(path, custom_objects=custom_objects)
@@ -215,7 +219,7 @@ def build_model(h: HParams) -> keras.Model:
     for _ in range(h.stacks):
         y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(y, enc_out)
     y = layers.Dropout(0.1)(y)
-    out = layers.Dense(h.vocab_size, activation="softmax")(y)
+    out = layers.Dense(h.vocab_size, activation="softmax")
     return keras.Model([enc_in, dec_in], out, name="transformer")
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -257,7 +261,8 @@ def predict(model, src_seq, max_len, start_token, end_token):
 # ════════════════════════════════════════════════════════════════════════════
 
 def main():
-    global INPUT_VECT, OUTPUT_VECT  # Declare global at the start
+    global INPUT_VECT, OUTPUT_VECT
+    LOGGER.info("Starting tf_transformer.py")
 
     parser = argparse.ArgumentParser(description="Train/evaluate Transformer model")
     parser.add_argument("--config", type=str, default=None)
@@ -270,7 +275,7 @@ def main():
     parser.add_argument("--vocab-size", type=int, default=None)
     parser.add_argument("--batch", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--out-dir", default="results")  # Changed to out_dir
+    parser.add_argument("--out-dir", default="results")
     args = parser.parse_args()
 
     if args.evaluate and args.eval_path is None:
@@ -278,7 +283,6 @@ def main():
     if args.train and args.train_path is None:
         parser.error("--train-path is required when --train is specified")
 
-    # Evaluation mode: Load config exclusively from eval-path
     if args.evaluate:
         eval_path = Path(args.eval_path)
         with open(eval_path / "config.yaml", 'r') as f:
@@ -291,38 +295,32 @@ def main():
         model = build_model(h)
         model.load_weights(eval_path / "ckpt.weights.h5")
 
-        # Load and parse source data for prediction
         valid_lines = Path(h.valid_path).read_text().splitlines()
         src_list = [parse_src(l) for l in valid_lines]
         src_vect = INPUT_VECT(src_list).numpy()
 
-        # Get start and end tokens
         start_token = OUTPUT_VECT([START])[0, 0].numpy()
         end_token = OUTPUT_VECT([END])[0, 0].numpy()
 
-        # Generate predictions
         predictions = []
         for src in src_vect:
             pred = predict(model, src, h.seq_len, start_token, end_token)
             predictions.append(pred)
 
-        # Convert predictions to text
         vocab = OUTPUT_VECT.get_vocabulary()
         pred_texts = [" ".join([vocab[token] for token in pred if token != end_token]) for pred in predictions]
 
-        # Save predictions
         with open(eval_path / "predictions.txt", 'w') as f:
             for text in pred_texts:
                 f.write(text + "\n")
+        LOGGER.info(f"Saved predictions to {eval_path / 'predictions.txt'}")
         return
 
-    # Training/validation mode: Load config from file or CLI
     config = {}
     if args.config:
         with open(args.config, 'r') as f:
             config = yaml.safe_load(f) or {}
 
-    # Override config with CLI args
     args_dict = vars(args)
     for k, v in args_dict.items():
         if v is not None and k in HParams.__dataclass_fields__:
@@ -333,36 +331,29 @@ def main():
     if args.train_path is None:
         parser.error("--train-path is required for training or validation")
 
-    # Load and parse data
     train_lines = Path(h.train_path).read_text().splitlines()
     valid_lines = Path(h.valid_path).read_text().splitlines()
     train_pairs = [parse_line(l) for l in train_lines]
     valid_pairs = [parse_line(l) for l in valid_lines]
 
-    # Vectorizers
     INPUT_VECT = build_vectorizer(h.vocab_size, h.seq_len)
     OUTPUT_VECT = build_vectorizer(h.vocab_size, h.seq_len + 1)
     INPUT_VECT.adapt([s for s, _ in train_pairs])
     OUTPUT_VECT.adapt([t for _, t in train_pairs])
 
-    # WandB setup
     wandb_config = asdict(h)
     wandb.init(project="tf-transformer", config=wandb_config, save_code=True)
 
-    # Set run-specific out_dir
     run_out_dir = Path(h.out_dir) / wandb.run.project / (wandb.run.sweep_id or "nosweep") / wandb.run.id
     run_out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save config
     config_dict = h.to_dict()
     config_dict['out_dir'] = str(run_out_dir)
     with open(run_out_dir / "config.yaml", 'w') as f:
         yaml.dump(config_dict, f)
 
-    # Update h.out_dir for subsequent operations
     h.out_dir = str(run_out_dir)
 
-    # Save vectorizers
     save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input.keras")
     save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
@@ -370,7 +361,6 @@ def main():
     train_ds = make_ds(train_pairs, h) if args.train else None
     valid_ds = make_ds(valid_pairs, h)
 
-    # Build and compile model
     model = build_model(h)
     model.compile(
         optimizer="adam",
@@ -378,16 +368,13 @@ def main():
         metrics=["sparse_categorical_accuracy"],
     )
 
-    # Explicitly build the model with input shapes
     model.build(input_shape=[
-        (None, None),  # encoder_inputs shape: (batch_size, seq_len)
-        (None, None),  # decoder_inputs shape: (batch_size, seq_len)
+        (None, None),
+        (None, None),
     ])
 
-    # Now summary() works safely
     model.summary()
 
-    # Training
     if args.train:
         callbacks = [
             keras.callbacks.ModelCheckpoint(Path(h.out_dir) / "ckpt.weights.h5", save_weights_only=True, verbose=1),
