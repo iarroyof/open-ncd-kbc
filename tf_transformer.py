@@ -308,6 +308,8 @@ def main():
     run_dir = h.out_dir / run.project / (run.sweep_id or "nosweep") / run.id
     run_dir.mkdir(parents=True, exist_ok=True)
     h.out_dir = run_dir
+    # ensure a vectorizers subdir in run_dir
+    (h.out_dir / "vectorizers").mkdir(parents=True, exist_ok=True)
 
     # Load and parse data
     train_lines = h.train_path.read_text().splitlines()
