@@ -121,6 +121,8 @@ def save_tv(tv: TextVectorization, path: Path) -> None:
         raise
 
 def load_tv(path: Path, custom_objects=None) -> TextVectorization:
+    if custom_objects is None:
+        custom_objects = {"standardize": standardize}
     mdl = keras.models.load_model(path, custom_objects=custom_objects)
     old: TextVectorization = mdl.layers[1]
     cfg, vocab = old.get_config(), old.get_vocabulary()
