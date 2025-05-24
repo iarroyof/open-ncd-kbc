@@ -28,7 +28,7 @@ python tf_transformer.py \
 from __future__ import annotations
 
 # ── standard library ─────────────────────────────────────────────────────────
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 import argparse
 import logging
