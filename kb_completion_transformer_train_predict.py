@@ -288,7 +288,7 @@ def main():
     if args.train and args.train_path is None:
         parser.error("--train-path is required when --train is specified")
 
-    # Evaluation mode: Load config exclusively from eval-dir
+    # Evaluation mode: Load config exclusively from eval-path
     if args.evaluate:
         eval_path = Path(args.eval_path)
         with open(eval_path / "config.yaml", 'r') as f:
@@ -331,12 +331,10 @@ def main():
     if args.config:
         with open(args.config, 'r') as f:
             config = yaml.safe_load(f) or {}
-    paths_str = {}
+
     # Override config with CLI args
     args_dict = vars(args)
     for k, v in args_dict.items():
-        if "path" in k:
-            paths_str[k] = srt(v)
         if v is not None and k in HParams.__dataclass_fields__:
             config[k] = v
 
@@ -373,7 +371,7 @@ def main():
 
     # Save config for later use in evaluation
     with open(h.out_path / "config.yaml", 'w') as f:
-        yaml.dump({paths_str[p] if "path" in p else p for p in h.to_dict()}, f)
+        yaml.dump(h.to_dict(), f)
 
     train_ds = make_ds(train_pairs, h) if args.train else None
     valid_ds = make_ds(valid_pairs, h)
