@@ -386,6 +386,7 @@ def main():
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = Path(args.results_dir) / args.project / args.sweep / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "vectorizers").mkdir(exist_ok=True)  # Ensure vectorizers directory exists
     h.out_dir = run_dir
 
     # Load and parse data
@@ -498,9 +499,10 @@ def main():
     # Evaluation
     if args.evaluate:
         # Load model and vectorizers
+        custom_objects = {"MyLayerNorm": MyLayerNorm, "PosEmbed": PosEmbed, "EncBlock": EncBlock, "DecBlock": DecBlock}
         model.load_weights(h.out_dir / "ckpt.weights.h5")
-        input_vectorizer = load_tv(h.out_dir / "vectorizers" / "input.keras")
-        output_vectorizer = load_tv(h.out_dir / "vectorizers" / "output.keras")
+        input_vectorizer = load_tv(h.out_dir / "vectorizers" / "input.keras", custom_objects=custom_objects)
+        output_vectorizer = load_tv(h.out_dir / "vectorizers" / "output.keras", custom_objects=custom_objects)
 
         # Get source sentences
         if args.eval_file:
