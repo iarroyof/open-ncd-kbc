@@ -111,7 +111,6 @@ def save_tv(tv: TextVectorization, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     model = keras.Sequential([keras.Input(shape=(1,), dtype="string"), tv])
     model.save(path, save_format="keras")
-    # Verify the saved file
     try:
         with zipfile.ZipFile(path, 'r') as zip_ref:
             zip_ref.testzip()
@@ -221,7 +220,7 @@ def build_model(h: HParams) -> keras.Model:
     for _ in range(h.stacks):
         y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(y, enc_out)
     y = layers.Dropout(0.1)(y)
-    out = layers.Dense(h.vocab_size, activation="softmax")
+    out = layers.Dense(h.vocab_size, activation="softmax")(y)
     return keras.Model([enc_in, dec_in], out, name="transformer")
 
 # ════════════════════════════════════════════════════════════════════════════
