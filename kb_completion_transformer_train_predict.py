@@ -44,7 +44,7 @@ class HParams:
     epochs: int = 30
     train_path: Path | None = None
     valid_path: Path | None = None
-    out_dir: Path = Path("results")
+    out_path: Path = Path("results")
     seed: int = 42
 
     def __post_init__(self):
@@ -53,7 +53,7 @@ class HParams:
             self.train_path = Path(str(self.train_path))
         if self.valid_path is not None:
             self.valid_path = Path(str(self.valid_path))
-        self.out_dir = Path(str(self.out_dir))
+        self.out_path = Path(str(self.out_path))
 
         # Compute key_dim if not provided
         if self.key_dim is None:
@@ -67,7 +67,7 @@ class HParams:
     def to_dict(self):
         """Convert HParams to a dictionary with string paths for YAML serialization."""
         config = asdict(self)
-        for key in ['train_path', 'valid_path', 'out_dir']:
+        for key in ['train_path', 'valid_path', 'out_path']:
             if config[key] is not None:
                 config[key] = str(config[key])
         return config
@@ -275,31 +275,31 @@ def main():
     parser.add_argument("--valid-path", type=str, required=True)
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--evaluate", action="store_true")
-    parser.add_argument("--eval-dir", type=str, default=None, help="Directory to load model and vectorizers for evaluation")
+    parser.add_argument("--eval-path", type=str, default=None, help="Directory to load model and vectorizers for evaluation")
     parser.add_argument("--seq-len", type=int, default=None)
     parser.add_argument("--vocab-size", type=int, default=None)
     parser.add_argument("--batch", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--out-dir", default="results")
+    parser.add_argument("--out-path", default="results")
     args = parser.parse_args()
 
-    if args.evaluate and args.eval_dir is None:
-        parser.error("--eval-dir is required when --evaluate is specified")
+    if args.evaluate and args.eval_path is None:
+        parser.error("--eval-path is required when --evaluate is specified")
     if args.train and args.train_path is None:
         parser.error("--train-path is required when --train is specified")
 
     # Evaluation mode: Load config exclusively from eval-dir
     if args.evaluate:
-        eval_dir = Path(args.eval_dir)
-        with open(eval_dir / "config.yaml", 'r') as f:
+        eval_path = Path(args.eval_path)
+        with open(eval_path / "config.yaml", 'r') as f:
             config = yaml.safe_load(f) or {}
         h = HParams(**config)
         
-        INPUT_VECT = load_tv(eval_dir / "vectorizers" / "input.keras")
-        OUTPUT_VECT = load_tv(eval_dir / "vectorizers" / "output.keras")
+        INPUT_VECT = load_tv(eval_path / "vectorizers" / "input.keras")
+        OUTPUT_VECT = load_tv(eval_path / "vectorizers" / "output.keras")
 
         model = build_model(h)
-        model.load_weights(eval_dir / "ckpt.weights.h5")
+        model.load_weights(eval_path / "ckpt.weights.h5")
 
         # Load and parse source data for prediction
         valid_lines = h.valid_path.read_text().splitlines()
@@ -321,7 +321,7 @@ def main():
         pred_texts = [" ".join([vocab[token] for token in pred if token != end_token]) for pred in predictions]
 
         # Save predictions
-        with open(eval_dir / "predictions.txt", 'w') as f:
+        with open(eval_path / "predictions.txt", 'w') as f:
             for text in pred_texts:
                 f.write(text + "\n")
         return
@@ -336,7 +336,7 @@ def main():
     args_dict = vars(args)
     for k, v in args_dict.items():
         if "path" in k:
-            paths_str[k] = v
+            paths_str[k] = srt(v)
         if v is not None and k in HParams.__dataclass_fields__:
             config[k] = v
 
@@ -361,18 +361,18 @@ def main():
     wandb_config = {k: v for k, v in asdict(h).items() if not isinstance(v, Path)}
     wandb.init(project="tf-transformer", config=wandb_config, save_code=True)
 
-    # Set run-specific out_dir
-    run_out_dir = h.out_dir / wandb.run.project / (wandb.run.sweep_id or "nosweep") / wandb.run.id
-    run_out_dir.mkdir(parents=True, exist_ok=True)
-    h.out_dir = run_out_dir
+    # Set run-specific out_path
+    run_out_path = h.out_path / wandb.run.project / (wandb.run.sweep_id or "nosweep") / wandb.run.id
+    run_out_path.mkdir(parents=True, exist_ok=True)
+    h.out_path = run_out_path
 
     # Save vectorizers
-    save_tv(INPUT_VECT, h.out_dir / "vectorizers" / "input.keras")
-    save_tv(OUTPUT_VECT, h.out_dir / "vectorizers" / "output.keras")
+    save_tv(INPUT_VECT, h.out_path / "vectorizers" / "input.keras")
+    save_tv(OUTPUT_VECT, h.out_path / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
     # Save config for later use in evaluation
-    with open(h.out_dir / "config.yaml", 'w') as f:
+    with open(h.out_path / "config.yaml", 'w') as f:
         yaml.dump({paths_str[p] if "path" in p else p for p in h.to_dict()}, f)
 
     train_ds = make_ds(train_pairs, h) if args.train else None
@@ -398,7 +398,7 @@ def main():
     # Training
     if args.train:
         callbacks = [
-            keras.callbacks.ModelCheckpoint(h.out_dir / "ckpt.weights.h5", save_weights_only=True, verbose=1),
+            keras.callbacks.ModelCheckpoint(h.out_path / "ckpt.weights.h5", save_weights_only=True, verbose=1),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
             wandb.keras.WandbCallback(save_model=False),
         ]
@@ -408,7 +408,7 @@ def main():
             epochs=h.epochs,
             callbacks=callbacks,
         )
-        pd.DataFrame(hist.history).to_csv(h.out_dir / "history.csv", index=False)
+        pd.DataFrame(hist.history).to_csv(h.out_path / "history.csv", index=False)
 
 if __name__ == "__main__":
     main()
