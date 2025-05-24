@@ -331,10 +331,12 @@ def main():
     if args.config:
         with open(args.config, 'r') as f:
             config = yaml.safe_load(f) or {}
-
+    paths_str = {}
     # Override config with CLI args
     args_dict = vars(args)
     for k, v in args_dict.items():
+        if "path" in k:
+            paths_str[k] = v
         if v is not None and k in HParams.__dataclass_fields__:
             config[k] = v
 
@@ -371,7 +373,7 @@ def main():
 
     # Save config for later use in evaluation
     with open(h.out_dir / "config.yaml", 'w') as f:
-        yaml.dump({str(p) for p in h.to_dict() if "path" in p}, f)
+        yaml.dump({paths_str[p] if "path" in p else p for p in h.to_dict()}, f)
 
     train_ds = make_ds(train_pairs, h) if args.train else None
     valid_ds = make_ds(valid_pairs, h)
