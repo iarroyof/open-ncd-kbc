@@ -9,8 +9,8 @@ import random
 import re
 import string
 import yaml
-import json
 from typing import List, Tuple
+import zipfile
 
 # ── third-party ───────────────────────────────────────────────────────────────
 import numpy as np
@@ -108,30 +108,27 @@ def build_vectorizer(vocab: int, seq_len: int) -> TextVectorization:
     )
 
 def save_tv(tv: TextVectorization, path: Path) -> None:
-    path = path.with_suffix('')
-    path.mkdir(parents=True, exist_ok=True)
-    config = tv.get_config()
-    with open(path / "config.json", 'w') as f:
-        json.dump(config, f)
-    vocab = tv.get_vocabulary()
-    with open(path / "vocab.txt", 'w') as f:
-        for word in vocab:
-            f.write(f"{word}\n")
-    LOGGER.info(f"Saved config to {path}/config.json and vocab to {path}/vocab.txt")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    model = keras.Sequential([keras.Input(shape=(1,), dtype="string"), tv])
+    model.save(path, save_format="keras")
+    try:
+        with zipfile.ZipFile(path, 'r') as zip_ref:
+            zip_ref.testzip()
+        LOGGER.info(f"Saved and verified {path}")
+    except zipfile.BadZipFile as e:
+        LOGGER.error(f"Failed to save {path}: {e}")
+        raise
 
 def load_tv(path: Path, custom_objects=None) -> TextVectorization:
     if custom_objects is None:
         custom_objects = {"standardize": standardize}
-    path = path.with_suffix('')
-    with open(path / "config.json", 'r') as f:
-        config = json.load(f)
-    tv = TextVectorization.from_config(config)
-    with open(path / "vocab.txt", 'r') as f:
-        vocab = [line.strip() for line in f]
-    tv.adapt(["*init*"])
-    tv.set_vocabulary(vocab)
-    LOGGER.info(f"Loaded TextVectorization from {path}/config.json and {path}/vocab.txt")
-    return tv
+    mdl = keras.models.load_model(path, custom_objects=custom_objects)
+    old: TextVectorization = mdl.layers[1]
+    cfg, vocab = old.get_config(), old.get_vocabulary()
+    new = TextVectorization.from_config(cfg)
+    new.adapt(["*init*"])
+    new.set_vocabulary(vocab)
+    return new
 
 # ════════════════════════════════════════════════════════════════════════════
 # 4. Transformer building blocks
@@ -293,8 +290,8 @@ def main():
             config = yaml.safe_load(f) or {}
         h = HParams(**config)
         
-        INPUT_VECT = load_tv(eval_path / "vectorizers" / "input")
-        OUTPUT_VECT = load_tv(eval_path / "vectorizers" / "output")
+        INPUT_VECT = load_tv(eval_path / "vectorizers" / "input.keras")
+        OUTPUT_VECT = load_tv(eval_path / "vectorizers" / "output.keras")
 
         model = build_model(h)
         model.load_weights(eval_path / "ckpt.weights.h5")
@@ -358,8 +355,8 @@ def main():
 
     h.out_dir = str(run_out_dir)
 
-    save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input")
-    save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output")
+    save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input.keras")
+    save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
     train_ds = make_ds(train_pairs, h) if args.train else None
@@ -383,7 +380,7 @@ def main():
         callbacks = [
             keras.callbacks.ModelCheckpoint(Path(h.out_dir) / "ckpt.weights.h5", save_weights_only=True, verbose=1),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
-            wand.WandaCallback(save_model=False),
+            wandb.keras.WandbCallback(save_model=False),
         ]
         hist = model.fit(
             train_ds,
