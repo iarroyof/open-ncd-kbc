@@ -263,8 +263,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="Train/evaluate Transformer model")
     parser.add_argument("--config", type=str, default=None)
-    parser.add_argument("--train-path", required=True)
-    parser.add_argument("--valid-path", required=True)
+    parser.add_argument("--train-path", type=str, default=None)  # Made optional
+    parser.add_argument("--valid-path", type=str, required=True)
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--evaluate", action="store_true")
     parser.add_argument("--eval-dir", type=str, default=None, help="Directory to load model and vectorizers for evaluation")
@@ -277,6 +277,8 @@ def main():
 
     if args.evaluate and args.eval_dir is None:
         parser.error("--eval-dir is required when --evaluate is specified")
+    if args.train and args.train_path is None:
+        parser.error("--train-path is required when --train is specified")
 
     config = {}
     if args.config:
@@ -292,6 +294,8 @@ def main():
     h = HParams(**config)
 
     if not args.evaluate:
+        if args.train_path is None:
+            parser.error("--train-path is required for training or validation")
         # Load and parse data
         train_lines = h.train_path.read_text().splitlines()
         valid_lines = h.valid_path.read_text().splitlines()
