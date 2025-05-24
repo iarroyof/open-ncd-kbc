@@ -371,7 +371,7 @@ def main():
 
     # Save config for later use in evaluation
     with open(h.out_dir / "config.yaml", 'w') as f:
-        yaml.dump(h.to_dict(), f)
+        yaml.dump({str(p) for p in h.to_dict() if "path" in p}, f)
 
     train_ds = make_ds(train_pairs, h) if args.train else None
     valid_ds = make_ds(valid_pairs, h)
