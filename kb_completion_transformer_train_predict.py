@@ -42,19 +42,12 @@ class HParams:
     key_dim: int | None = None
     batch: int = 64
     epochs: int = 30
-    train_path: Path | None = None
-    valid_path: Path | None = None
-    out_path: Path = Path("results")
+    train_path: str | None = None
+    valid_path: str | None = None
+    out_path: str = "results"
     seed: int = 42
 
     def __post_init__(self):
-        # Convert strings to Path objects
-        if self.train_path is not None:
-            self.train_path = Path(str(self.train_path))
-        if self.valid_path is not None:
-            self.valid_path = Path(str(self.valid_path))
-        self.out_path = Path(str(self.out_path))
-
         # Compute key_dim if not provided
         if self.key_dim is None:
             self.key_dim = self.model_dim // self.heads
@@ -66,11 +59,7 @@ class HParams:
 
     def to_dict(self):
         """Convert HParams to a dictionary with string paths for YAML serialization."""
-        config = asdict(self)
-        for key in ['train_path', 'valid_path', 'out_path']:
-            if config[key] is not None:
-                config[key] = str(config[key])
-        return config
+        return asdict(self)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 2. Data utilities
@@ -302,7 +291,7 @@ def main():
         model.load_weights(eval_path / "ckpt.weights.h5")
 
         # Load and parse source data for prediction
-        valid_lines = h.valid_path.read_text().splitlines()
+        valid_lines = Path(h.valid_path).read_text().splitlines()
         src_list = [parse_src(l) for l in valid_lines]
         src_vect = INPUT_VECT(src_list).numpy()
 
@@ -344,8 +333,8 @@ def main():
         parser.error("--train-path is required for training or validation")
 
     # Load and parse data
-    train_lines = h.train_path.read_text().splitlines()
-    valid_lines = h.valid_path.read_text().splitlines()
+    train_lines = Path(h.train_path).read_text().splitlines()
+    valid_lines = Path(h.valid_path).read_text().splitlines()
     train_pairs = [parse_line(l) for l in train_lines]
     valid_pairs = [parse_line(l) for l in valid_lines]
 
@@ -356,25 +345,25 @@ def main():
     OUTPUT_VECT.adapt([t for _, t in train_pairs])
 
     # WandB setup
-    wandb_config = {k: v for k, v in asdict(h).items() if not isinstance(v, Path)}
+    wandb_config = asdict(h)
     wandb.init(project="tf-transformer", config=wandb_config, save_code=True)
 
     # Set run-specific out_path
-    run_out_path = h.out_path / wandb.run.project / (wandb.run.sweep_id or "nosweep") / wandb.run.id
+    run_out_path = Path(h.out_path) / wandb.run.project / (wandb.run.sweep_id or "nosweep") / wandb.run.id
     run_out_path.mkdir(parents=True, exist_ok=True)
 
-    # Save config with original paths (before updating out_path)
+    # Save config
     config_dict = h.to_dict()
-    config_dict['out_path'] = str(run_out_path)  # Update out_path to run-specific path as string
+    config_dict['out_path'] = str(run_out_path)
     with open(run_out_path / "config.yaml", 'w') as f:
         yaml.dump(config_dict, f)
 
     # Update h.out_path for subsequent operations
-    h.out_path = run_out_path
+    h.out_path = str(run_out_path)
 
     # Save vectorizers
-    save_tv(INPUT_VECT, h.out_path / "vectorizers" / "input.keras")
-    save_tv(OUTPUT_VECT, h.out_path / "vectorizers" / "output.keras")
+    save_tv(INPUT_VECT, Path(h.out_path) / "vectorizers" / "input.keras")
+    save_tv(OUTPUT_VECT, Path(h.out_path) / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
     train_ds = make_ds(train_pairs, h) if args.train else None
@@ -400,7 +389,7 @@ def main():
     # Training
     if args.train:
         callbacks = [
-            keras.callbacks.ModelCheckpoint(h.out_path / "ckpt.weights.h5", save_weights_only=True, verbose=1),
+            keras.callbacks.ModelCheckpoint(Path(h.out_path) / "ckpt.weights.h5", save_weights_only=True, verbose=1),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
             wandb.keras.WandbCallback(save_model=False),
         ]
@@ -410,7 +399,7 @@ def main():
             epochs=h.epochs,
             callbacks=callbacks,
         )
-        pd.DataFrame(hist.history).to_csv(h.out_path / "history.csv", index=False)
+        pd.DataFrame(hist.history).to_csv(Path(h.out_path) / "history.csv", index=False)
 
 if __name__ == "__main__":
     main()
