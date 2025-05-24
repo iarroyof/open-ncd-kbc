@@ -110,19 +110,13 @@ def build_vectorizer(vocab: int, seq_len: int) -> TextVectorization:
 def save_tv(tv: TextVectorization, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     model = keras.Sequential([keras.Input(shape=(1,), dtype="string"), tv])
-    model.save(path, save_format="keras")
-    try:
-        with zipfile.ZipFile(path, 'r') as zip_ref:
-            zip_ref.testzip()
-        LOGGER.info(f"Saved and verified {path}")
-    except zipfile.BadZipFile as e:
-        LOGGER.error(f"Failed to save {path}: {e}")
-        raise
+    model.save(path, save_format="h5")  # Use HDF5 instead of ZIP
+    LOGGER.info(f"Saved {path}")
 
 def load_tv(path: Path, custom_objects=None) -> TextVectorization:
     if custom_objects is None:
         custom_objects = {"standardize": standardize}
-    mdl = keras.models.load_model(path, custom_objects=custom_objects)
+    mdl = keras.models.load_model(path, custom_objects=custom_objects, compile=False)
     old: TextVectorization = mdl.layers[1]
     cfg, vocab = old.get_config(), old.get_vocabulary()
     new = TextVectorization.from_config(cfg)
