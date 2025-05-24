@@ -145,6 +145,9 @@ class MyLayerNorm(layers.Layer):
 class PosEmbed(layers.Layer):
     def __init__(self, max_len: int, vocab: int, dim: int):
         super().__init__()
+        self.max_len = max_len  # Store as instance attribute
+        self.vocab = vocab      # Store as instance attribute
+        self.dim = dim          # Store as instance attribute
         self.tok = layers.Embedding(vocab, dim)
         self.pos = layers.Embedding(max_len, dim)
         self.idx = tf.range(max_len)
@@ -156,6 +159,14 @@ class PosEmbed(layers.Layer):
     def compute_mask(self, x: tf.Tensor, _=None) -> None:
         return None
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "max_len": self.max_len,
+            "vocab": self.vocab,
+            "dim": self.dim
+        })
+        return config
     def get_config(self):
         config = super().get_config()
         config.update({
@@ -335,7 +346,7 @@ def main():
         callbacks = [
             keras.callbacks.ModelCheckpoint(h.out_dir / "ckpt.weights.h5", save_weights_only=True, verbose=1),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
-            wandb.keras.WandbCallback(),
+            wandb.keras.WandbCallback(save_model=False),
         ]
         hist = model.fit(
             train_ds,
