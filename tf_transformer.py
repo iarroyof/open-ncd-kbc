@@ -108,15 +108,16 @@ def build_vectorizer(vocab: int, seq_len: int) -> TextVectorization:
     )
 
 def save_tv(tv: TextVectorization, path: Path) -> None:
+    path = path.with_suffix('.h5')
     path.parent.mkdir(parents=True, exist_ok=True)
     model = keras.Sequential([keras.Input(shape=(1,), dtype="string"), tv])
-    model.save(path, save_format="h5")  # Use HDF5 instead of ZIP
+    model.save(path, save_format="h5")
     LOGGER.info(f"Saved {path}")
 
 def load_tv(path: Path, custom_objects=None) -> TextVectorization:
     if custom_objects is None:
         custom_objects = {"standardize": standardize}
-    mdl = keras.models.load_model(path, custom_objects=custom_objects, compile=False)
+    mdl = keras.models.load_model(path.with_suffix('.h5'), custom_objects=custom_objects)
     old: TextVectorization = mdl.layers[1]
     cfg, vocab = old.get_config(), old.get_vocabulary()
     new = TextVectorization.from_config(cfg)
@@ -284,8 +285,8 @@ def main():
             config = yaml.safe_load(f) or {}
         h = HParams(**config)
         
-        INPUT_VECT = load_tv(eval_path / "vectorizers" / "input.keras")
-        OUTPUT_VECT = load_tv(eval_path / "vectorizers" / "output.keras")
+        INPUT_VECT = load_tv(eval_path / "vectorizers" / "input.h5")
+        OUTPUT_VECT = load_tv(eval_path / "vectorizers" / "output.h5")
 
         model = build_model(h)
         model.load_weights(eval_path / "ckpt.weights.h5")
@@ -349,8 +350,8 @@ def main():
 
     h.out_dir = str(run_out_dir)
 
-    save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input.keras")
-    save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.keras")
+    save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input.h5")
+    save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.h5")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
     train_ds = make_ds(train_pairs, h) if args.train else None
