@@ -292,7 +292,7 @@ def main():
     parser.add_argument("--out-dir", default="results")
     args = parser.parse_args()
 
-    # Build hyper-parameters
+   # Build hyper-parameters and WandB run
     h = HParams(
         seq_len=args.seq_len,
         vocab_size=args.vocab_size,
@@ -302,26 +302,11 @@ def main():
         valid_path=Path(args.valid_path),
         out_dir=Path(args.out_dir),
     )
-    # Initialize Weights & Biases run and setup run-specific output directory
     wandb.init(project="tf-transformer", config=asdict(h), save_code=True)
-    wb_run = wandb.run
-    project_name = wb_run.project
-    sweep_id = wb_run.sweep_id or "nosweep"
-    run_id = wb_run.id
-    # Create directory structure: out_dir/project/sweep/run
-    run_dir = h.out_dir / project_name / sweep_id / run_id
+    run = wandb.run
+    run_dir = h.out_dir / run.project / (run.sweep_id or "nosweep") / run.id
     run_dir.mkdir(parents=True, exist_ok=True)
-    # Override out_dir so subsequent outputs land in run_dir
     h.out_dir = run_dir
-    # Load and parse data
-        seq_len=args.seq_len,
-        vocab_size=args.vocab_size,
-        batch=args.batch,
-        epochs=args.epochs,
-        train_path=Path(args.train_path),
-        valid_path=Path(args.valid_path),
-        out_dir=Path(args.out_dir),
-    )
 
     # Load and parse data
     train_lines = h.train_path.read_text().splitlines()
