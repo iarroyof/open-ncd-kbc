@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 # ── standard library ─────────────────────────────────────────────────────────
@@ -10,6 +11,7 @@ import re
 import string
 import yaml
 from typing import List, Tuple
+from datetime import datetime
 
 # ── third-party ───────────────────────────────────────────────────────────────
 import numpy as np
@@ -19,7 +21,11 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.layers import TextVectorization
 import wandb
-
+from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.meteor_score import meteor_score
+from rouge_score import rouge_scorer
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -125,6 +131,7 @@ def load_tv(path: Path, custom_objects=None) -> TextVectorization:
 class MyLayerNorm(layers.Layer):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
+        self.dim = dim
         self.eps = eps
         self.gamma = self.add_weight('gamma', shape=(dim,), initializer='ones', trainable=True)
         self.beta = self.add_weight('beta', shape=(dim,), initializer='zeros', trainable=True)
@@ -145,9 +152,9 @@ class MyLayerNorm(layers.Layer):
 class PosEmbed(layers.Layer):
     def __init__(self, max_len: int, vocab: int, dim: int):
         super().__init__()
-        self.max_len = max_len  # Store as instance attribute
-        self.vocab = vocab      # Store as instance attribute
-        self.dim = dim          # Store as instance attribute
+        self.max_len = max_len
+        self.vocab = vocab
+        self.dim = dim
         self.tok = layers.Embedding(vocab, dim)
         self.pos = layers.Embedding(max_len, dim)
         self.idx = tf.range(max_len)
@@ -167,18 +174,14 @@ class PosEmbed(layers.Layer):
             "dim": self.dim
         })
         return config
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            "max_len": self.max_len,
-            "vocab": self.vocab,
-            "dim": self.dim
-        })
-        return config
 
 class EncBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
         super().__init__()
+        self.dim = dim
+        self.latent = latent
+        self.heads = heads
+        self.key_dim = key_dim
         self.mha = layers.MultiHeadAttention(heads, key_dim)
         self.ffn = keras.Sequential([
             layers.Dense(latent, activation="relu"),
@@ -188,10 +191,13 @@ class EncBlock(layers.Layer):
         self.norm2 = MyLayerNorm(dim)
 
     def call(self, x: tf.Tensor, mask: tf.Tensor | None = None, training: bool = False) -> tf.Tensor:
-        attn = self.mha(tf.cast(x, tf.float32), tf.cast(x, tf.float32), training=training)
-        x = self.norm1(tf.cast(x, tf.float32) + tf.cast(attn, tf.float32))
+        attn_output, attn_weights = self.mha(
+            tf.cast(x, tf.float32), tf.cast(x, tf.float32), return_attention_scores=True, training=training
+        )
+        x = self.norm1(tf.cast(x, tf.float32) + tf.cast(attn_output, tf.float32))
         ffn_out = self.ffn(tf.cast(x, tf.float32), training=training)
-        return self.norm2(tf.cast(x, tf.float32) + tf.cast(ffn_out, tf.float32))
+        x = self.norm2(tf.cast(x, tf.float32) + tf.cast(ffn_out, tf.float32))
+        return x, attn_weights
 
     def get_config(self):
         config = super().get_config()
@@ -206,6 +212,10 @@ class EncBlock(layers.Layer):
 class DecBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
         super().__init__()
+        self.dim = dim
+        self.latent = latent
+        self.heads = heads
+        self.key_dim = key_dim
         self.self_mha = layers.MultiHeadAttention(heads, key_dim)
         self.cross_mha = layers.MultiHeadAttention(heads, key_dim)
         self.ffn = keras.Sequential([
@@ -217,16 +227,17 @@ class DecBlock(layers.Layer):
         self.norm3 = MyLayerNorm(dim)
 
     def call(self, y: tf.Tensor, enc_out: tf.Tensor, training: bool = False) -> tf.Tensor:
-        y = self.norm1(
-            tf.cast(y, tf.float32) +
-            tf.cast(self.self_mha(tf.cast(y, tf.float32), tf.cast(y, tf.float32), training=training), tf.float32)
+        self_attn_output, self_attn_weights = self.self_mha(
+            tf.cast(y, tf.float32), tf.cast(y, tf.float32), return_attention_scores=True, training=training
         )
-        y = self.norm2(
-            tf.cast(y, tf.float32) +
-            tf.cast(self.cross_mha(tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), training=training), tf.float32)
+        y = self.norm1(tf.cast(y, tf.float32) + tf.cast(self_attn_output, tf.float32))
+        cross_attn_output, cross_attn_weights = self.cross_mha(
+            tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), return_attention_scores=True, training=training
         )
+        y = self.norm2(tf.cast(y, tf.float32) + tf.cast(cross_attn_output, tf.float32))
         ffn_out = self.ffn(tf.cast(y, tf.float32), training=training)
-        return self.norm3(tf.cast(y, tf.float32) + tf.cast(ffn_out, tf.float32))
+        y = self.norm3(tf.cast(y, tf.float32) + tf.cast(ffn_out, tf.float32))
+        return y, self_attn_weights, cross_attn_weights
 
     def get_config(self):
         config = super().get_config()
@@ -245,15 +256,25 @@ def build_model(h: HParams) -> keras.Model:
     enc_in = keras.Input((None,), dtype="int64", name="encoder_inputs")
     dec_in = keras.Input((None,), dtype="int64", name="decoder_inputs")
     x = PosEmbed(h.seq_len, h.vocab_size, h.model_dim)(enc_in)
+    enc_attn_weights = []
     for _ in range(h.stacks):
-        x = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(x)
+        x, attn_weights = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(x)
+        enc_attn_weights.append(attn_weights)
     enc_out = x
     y = PosEmbed(h.seq_len + 1, h.vocab_size, h.model_dim)(dec_in)
+    self_attn_weights = []
+    cross_attn_weights = []
     for _ in range(h.stacks):
-        y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(y, enc_out)
+        y, self_attn, cross_attn = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(y, enc_out)
+        self_attn_weights.append(self_attn)
+        cross_attn_weights.append(cross_attn)
     y = layers.Dropout(0.1)(y)
     out = layers.Dense(h.vocab_size, activation="softmax")(y)
-    return keras.Model([enc_in, dec_in], out, name="transformer")
+    return keras.Model(
+        [enc_in, dec_in],
+        [out] + enc_attn_weights + self_attn_weights + cross_attn_weights,
+        name="transformer"
+    )
 
 # ════════════════════════════════════════════════════════════════════════════
 # 6. Dataset pipeline
@@ -272,20 +293,80 @@ def make_ds(pairs: List[Tuple[str, str]], h: HParams) -> tf.data.Dataset:
     return ds.batch(h.batch).map(_fmt).prefetch(tf.data.AUTOTUNE)
 
 # ════════════════════════════════════════════════════════════════════════════
-# 7. Main execution
+# 7. Helper functions for attention and metrics
+# ════════════════════════════════════════════════════════════════════════════
+def indices_to_tokens(indices: np.ndarray, vectorizer: TextVectorization) -> List[str]:
+    """Convert token indices to tokens, excluding padding and special tokens."""
+    vocab = vectorizer.get_vocabulary()
+    tokens = [vocab[idx] for idx in indices if idx > 0 and vocab[idx] not in [START, END, '[PAD]']]
+    return tokens
+
+def log_attention_heatmap(attn_weights: np.ndarray, src_tokens: List[str], tgt_tokens: List[str], name: str, epoch: int):
+    """Log attention matrix as a heatmap to W&B."""
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(attn_weights, xticklabels=tgt_tokens, yticklabels=src_tokens, cmap="viridis")
+    plt.title(f"{name} Attention (Epoch {epoch})")
+    wandb.log({f"attention/{name}_epoch_{epoch}": wandb.Image(plt)})
+    plt.close()
+
+def compute_metrics(pred_texts: List[str], ref_texts: List[str]) -> dict:
+    """Compute ROUGE, BLEU, and METEOR scores."""
+    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+    rouge_scores = {'rouge1': 0.0, 'rouge2': 0.0, 'rougeL': 0.0}
+    bleu_scores = []
+    meteor_scores = []
+    
+    for pred, ref in zip(pred_texts, ref_texts):
+        # ROUGE
+        scores = scorer.score(ref, pred)
+        for key in rouge_scores:
+            rouge_scores[key] += scores[key].fmeasure
+        # BLEU
+        bleu_scores.append(sentence_bleu([ref.split()], pred.split()))
+        # METEOR
+        meteor_scores.append(meteor_score([ref.split()], pred.split()))
+    
+    n = len(pred_texts)
+    return {
+        'rouge1': rouge_scores['rouge1'] / n,
+        'rouge2': rouge_scores['rouge2'] / n,
+        'rougeL': rouge_scores['rougeL'] / n,
+        'bleu': np.mean(bleu_scores),
+        'meteor': np.mean(meteor_scores)
+    }
+
+def decode_sequence(model, src: np.ndarray, h: HParams, output_vectorizer: TextVectorization) -> str:
+    """Decode a single source sequence to predicted target."""
+    src = src[np.newaxis, :]  # Add batch dimension
+    dec_input = output_vectorizer([[START]])[:, :-1]
+    for _ in range(h.seq_len):
+        predictions = model.predict([src, dec_input], verbose=0)
+        next_token = np.argmax(predictions[0][0, -1])
+        if output_vectorizer.get_vocabulary()[next_token] == END:
+            break
+        dec_input = np.concatenate([dec_input, [[next_token]]], axis=-1)
+    tokens = indices_to_tokens(dec_input[0], output_vectorizer)
+    return " ".join(tokens)
+
+# ════════════════════════════════════════════════════════════════════════════
+# 8. Main execution
 # ════════════════════════════════════════════════════════════════════════════
 def main():
     parser = argparse.ArgumentParser(description="Train/evaluate Transformer model")
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--train-path", required=True)
     parser.add_argument("--valid-path", required=True)
+    parser.add_argument("--results-dir", default="results")
+    parser.add_argument("--project", default="tf-transformer")
+    parser.add_argument("--sweep", default="default")
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--evaluate", action="store_true")
     parser.add_argument("--seq-len", type=int, default=None)
     parser.add_argument("--vocab-size", type=int, default=None)
     parser.add_argument("--batch", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--out-dir", default="results")
+    parser.add_argument("--eval-samples", type=int, default=5, help="Number of random validation samples to evaluate")
+    parser.add_argument("--eval-file", type=str, default=None, help="Text file with source sentences for evaluation")
     args = parser.parse_args()
 
     config = {}
@@ -301,9 +382,15 @@ def main():
 
     h = HParams(**config)
 
+    # Set up run directory
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = Path(args.results_dir) / args.project / args.sweep / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    h.out_dir = run_dir
+
     # Load and parse data
-    train_lines = h.train_path.read_text().splitlines()
-    valid_lines = h.valid_path.read_text().splitlines()
+    train_lines = Path(args.train_path).read_text().splitlines()
+    valid_lines = Path(args.valid_path).read_text().splitlines()
     train_pairs = [parse_line(l) for l in train_lines]
     valid_pairs = [parse_line(l) for l in valid_lines]
 
@@ -319,7 +406,7 @@ def main():
 
     train_ds = make_ds(train_pairs, h) if args.train else None
     valid_ds = make_ds(valid_pairs, h)
-    
+
     # Build and compile model
     model = build_model(h)
     model.compile(
@@ -333,35 +420,109 @@ def main():
         (None, None),  # encoder_inputs shape: (batch_size, seq_len)
         (None, None),  # decoder_inputs shape: (batch_size, seq_len)
     ])
-
-    # Now summary() works safely
     model.summary()
 
     # WandB setup
     wandb_config = {k: v for k, v in asdict(h).items() if not isinstance(v, Path)}
-    wandb.init(project="tf-transformer", config=wandb_config, save_code=True)
+    wandb_config.update({"run_dir": str(run_dir)})
+    wandb.init(project=args.project, config=wandb_config, save_code=True)
 
     # Training
     if args.train:
+        checkpoint_path = h.out_dir / "ckpt.weights.h5"
+        if checkpoint_path.exists():
+            checkpoint_path.unlink()
+            LOGGER.info(f"Deleted existing checkpoint file: {checkpoint_path}")
+
+        class AttentionAndMetricsCallback(keras.callbacks.Callback):
+            def __init__(self, valid_pairs, input_vectorizer, output_vectorizer, h):
+                super().__init__()
+                self.valid_pairs = valid_pairs
+                self.input_vectorizer = input_vectorizer
+                self.output_vectorizer = output_vectorizer
+                self.h = h
+
+            def on_epoch_end(self, epoch, logs=None):
+                # Sample one validation example for attention
+                src, tgt = random.choice(self.valid_pairs)
+                src_tok = self.input_vectorizer([[src]])
+                dec_input = self.output_vectorizer([[START]])[:, :-1]
+                outputs = self.model.predict([src_tok, dec_input], verbose=0)
+                pred_probs = outputs[0]
+                attn_weights = outputs[1:]  # Encoder, self-attention, cross-attention weights
+
+                # Convert indices to tokens
+                src_tokens = indices_to_tokens(src_tok[0].numpy(), self.input_vectorizer)
+                pred_indices = np.argmax(pred_probs[0], axis=-1)
+                pred_tokens = indices_to_tokens(pred_indices, self.output_vectorizer)
+
+                # Log attention matrices
+                for i, weights in enumerate(attn_weights):
+                    if i < self.h.stacks:
+                        log_attention_heatmap(weights[0, 0], src_tokens, src_tokens, f"enc_block_{i+1}", epoch + 1)
+                    elif i < 2 * self.h.stacks:
+                        log_attention_heatmap(weights[0, 0], pred_tokens, pred_tokens, f"dec_self_block_{i-self.h.stacks+1}", epoch + 1)
+                    else:
+                        log_attention_heatmap(weights[0, 0], src_tokens, pred_tokens, f"dec_cross_block_{i-2*self.h.stacks+1}", epoch + 1)
+
+                # Compute metrics
+                pred_texts = []
+                ref_texts = [t.replace(START, "").replace(END, "").strip() for _, t in self.valid_pairs]
+                for src, _ in self.valid_pairs:
+                    pred = decode_sequence(self.model, self.input_vectorizer([[src]])[0], self.h, self.output_vectorizer)
+                    pred_texts.append(pred)
+                metrics = compute_metrics(pred_texts, ref_texts)
+                wandb.log({f"val/{k}": v for k, v in metrics.items()}, step=epoch + 1)
+
         callbacks = [
-            keras.callbacks.ModelCheckpoint(h.out_dir / "ckpt.weights.h5", save_weights_only=True, verbose=1),
+            keras.callbacks.ModelCheckpoint(
+                checkpoint_path,
+                save_weights_only=True,
+                overwrite=True,
+                verbose=1
+            ),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
             wandb.keras.WandbCallback(save_model=False),
+            AttentionAndMetricsCallback(valid_pairs, INPUT_VECT, OUTPUT_VECT, h),
         ]
+        LOGGER.info("Starting model.fit with checkpoint path: %s", checkpoint_path)
         hist = model.fit(
             train_ds,
             validation_data=valid_ds,
             epochs=h.epochs,
             callbacks=callbacks,
         )
+        LOGGER.info("Training completed successfully")
         pd.DataFrame(hist.history).to_csv(h.out_dir / "history.csv", index=False)
 
     # Evaluation
     if args.evaluate:
-        loss, acc = model.evaluate(valid_ds, verbose=0)
-        LOGGER.info("Validation loss=%.4f accuracy=%.4f", loss, acc)
-        metrics_path = h.out_dir / "metrics.txt"
-        metrics_path.write_text(f"loss\t{loss}\nacc\t{acc}\n")
+        # Load model and vectorizers
+        model.load_weights(h.out_dir / "ckpt.weights.h5")
+        input_vectorizer = load_tv(h.out_dir / "vectorizers" / "input.keras")
+        output_vectorizer = load_tv(h.out_dir / "vectorizers" / "output.keras")
+
+        # Get source sentences
+        if args.eval_file:
+            with open(args.eval_file, 'r') as f:
+                sources = [line.strip() for line in f if line.strip()]
+            pairs = [(src, None) for src in sources]
+        else:
+            pairs = random.sample(valid_pairs, min(args.eval_samples, len(valid_pairs)))
+
+        # Generate predictions
+        print("src\tpred_trg\ttrg")
+        for src, tgt in pairs:
+            pred = decode_sequence(model, input_vectorizer([[src]])[0], h, output_vectorizer)
+            trg = tgt.replace(START, "").replace(END, "").strip() if tgt else ""
+            print(f"{src}\t{pred}\t{trg}")
+
+        # Log metrics to W&B
+        if not args.eval_file:  # Only compute metrics for validation data
+            pred_texts = [decode_sequence(model, input_vectorizer([[src]])[0], h, output_vectorizer) for src, _ in valid_pairs]
+            ref_texts = [t.replace(START, "").replace(END, "").strip() for _, t in valid_pairs]
+            metrics = compute_metrics(pred_texts, ref_texts)
+            wandb.log({f"eval/{k}": v for k, v in metrics.items()})
 
 if __name__ == "__main__":
     main()
