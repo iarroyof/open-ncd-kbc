@@ -109,7 +109,7 @@ def build_vectorizer(vocab: int, seq_len: int) -> TextVectorization:
 
 def save_tv(tv: TextVectorization, path: Path) -> None:
     path = path.with_suffix('')
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.mkdir(parents=True, exist_ok=True)
     config = tv.get_config()
     with open(path / "config.json", 'w') as f:
         json.dump(config, f)
@@ -383,7 +383,7 @@ def main():
         callbacks = [
             keras.callbacks.ModelCheckpoint(Path(h.out_dir) / "ckpt.weights.h5", save_weights_only=True, verbose=1),
             keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
-            wandb.keras.WandbCallback(save_model=False),
+            wand WandaCallback(save_model=False),
         ]
         hist = model.fit(
             train_ds,
