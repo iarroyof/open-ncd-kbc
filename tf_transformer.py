@@ -119,17 +119,6 @@ def save_tv(tv: TextVectorization, path: Path) -> None:
         LOGGER.error(f"Failed to save {path}: {e}")
         raise
 
-def load_tv(path: Path, custom_objects=None) -> TextVectorization:
-    if custom_objects is None:
-        custom_objects = {"standardize": standardize}
-    mdl = keras.models.load_model(path, custom_objects=custom_objects)
-    old: TextVectorization = mdl.layers[1]
-    cfg, vocab = old.get_config(), old.get_vocabulary()
-    new = TextVectorization.from_config(cfg)
-    new.adapt(["*init*"])
-    new.set_vocabulary(vocab)
-    return new
-
 # ════════════════════════════════════════════════════════════════════════════
 # 4. Transformer building blocks
 # ════════════════════════════════════════════════════════════════════════════
@@ -265,13 +254,14 @@ def main():
     global INPUT_VECT, OUTPUT_VECT
     LOGGER.info("Starting tf_transformer.py")
 
-    parser = argparse.ArgumentParser(description="Train/evaluate Transformer model")
+    parser = argparse.ArgumentParser(description="Train Transformer model with optional immediate evaluation and weight saving")
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--train-path", type=str, default=None)
     parser.add_argument("--valid-path", type=str, required=True)
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--evaluate", action="store_true")
-    parser.add_argument("--eval-path", type=str, default=None, help="Directory to load model and vectorizers for evaluation")
+    parser.add_argument("--save-weights", action="store_true", help="Save model weights to ckpt.weights.h5")
+    parser.add_argument("--eval-path", type=str, default=None, help="Not used; kept for compatibility")
     parser.add_argument("--seq-len", type=int, default=None)
     parser.add_argument("--vocab-size", type=int, default=None)
     parser.add_argument("--batch", type=int, default=None)
@@ -279,43 +269,8 @@ def main():
     parser.add_argument("--out-dir", default="results")
     args = parser.parse_args()
 
-    if args.evaluate and args.eval_path is None:
-        parser.error("--eval-path is required when --evaluate is specified")
     if args.train and args.train_path is None:
         parser.error("--train-path is required when --train is specified")
-
-    if args.evaluate:
-        eval_path = Path(args.eval_path)
-        with open(eval_path / "config.yaml", 'r') as f:
-            config = yaml.safe_load(f) or {}
-        h = HParams(**config)
-        
-        INPUT_VECT = load_tv(eval_path / "vectorizers" / "input.keras")
-        OUTPUT_VECT = load_tv(eval_path / "vectorizers" / "output.keras")
-
-        model = build_model(h)
-        model.load_weights(eval_path / "ckpt.weights.h5")
-
-        valid_lines = Path(h.valid_path).read_text().splitlines()
-        src_list = [parse_src(l) for l in valid_lines]
-        src_vect = INPUT_VECT(src_list).numpy()
-
-        start_token = OUTPUT_VECT([START])[0, 0].numpy()
-        end_token = OUTPUT_VECT([END])[0, 0].numpy()
-
-        predictions = []
-        for src in src_vect:
-            pred = predict(model, src, h.seq_len, start_token, end_token)
-            predictions.append(pred)
-
-        vocab = OUTPUT_VECT.get_vocabulary()
-        pred_texts = [" ".join([vocab[token] for token in pred if token != end_token]) for pred in predictions]
-
-        with open(eval_path / "predictions.txt", 'w') as f:
-            for text in pred_texts:
-                f.write(text + "\n")
-        LOGGER.info(f"Saved predictions to {eval_path / 'predictions.txt'}")
-        return
 
     config = {}
     if args.config:
@@ -329,8 +284,9 @@ def main():
 
     h = HParams(**config)
 
-    if args.train_path is None:
-        parser.error("--train-path is required for training or validation")
+    if not args.train:
+        LOGGER.info("No action specified; use --train to train the model")
+        return
 
     train_lines = Path(h.train_path).read_text().splitlines()
     valid_lines = Path(h.valid_path).read_text().splitlines()
@@ -359,7 +315,7 @@ def main():
     save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
-    train_ds = make_ds(train_pairs, h) if args.train else None
+    train_ds = make_ds(train_pairs, h)
     valid_ds = make_ds(valid_pairs, h)
 
     model = build_model(h)
@@ -369,26 +325,46 @@ def main():
         metrics=["sparse_categorical_accuracy"],
     )
 
-    model.build(input_shape=[
-        (None, None),
-        (None, None),
-    ])
-
+    model.build(input_shape=[(None, None), (None, None)])
     model.summary()
 
-    if args.train:
-        callbacks = [
-            keras.callbacks.ModelCheckpoint(Path(h.out_dir) / "ckpt.weights.h5", save_weights_only=True, verbose=1),
-            keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
-            wandb.keras.WandbCallback(save_model=False),
-        ]
-        hist = model.fit(
-            train_ds,
-            validation_data=valid_ds,
-            epochs=h.epochs,
-            callbacks=callbacks,
-        )
-        pd.DataFrame(hist.history).to_csv(Path(h.out_dir) / "history.csv", index=False)
+    callbacks = [
+        keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
+        wandb.keras.WandbCallback(save_model=False),
+    ]
+    if args.save_weights:
+        callbacks.append(keras.callbacks.ModelCheckpoint(
+            Path(h.out_dir) / "ckpt.weights.h5", save_weights_only=True, verbose=1
+        ))
+
+    hist = model.fit(
+        train_ds,
+        validation_data=valid_ds,
+        epochs=h.epochs,
+        callbacks=callbacks,
+    )
+    pd.DataFrame(hist.history).to_csv(Path(h.out_dir) / "history.csv", index=False)
+
+    if args.evaluate:
+        valid_lines = Path(h.valid_path).read_text().splitlines()
+        src_list = [parse_src(l) for l in valid_lines]
+        src_vect = INPUT_VECT(src_list).numpy()
+
+        start_token = OUTPUT_VECT([START])[0, 0].numpy()
+        end_token = OUTPUT_VECT([END])[0, 0].numpy()
+
+        predictions = []
+        for src in src_vect:
+            pred = predict(model, src, h.seq_len, start_token, end_token)
+            predictions.append(pred)
+
+        vocab = OUTPUT_VECT.get_vocabulary()
+        pred_texts = [" ".join([vocab[token] for token in pred if token != end_token]) for pred in predictions]
+
+        with open(run_out_dir / "predictions.txt", 'w') as f:
+            for text in pred_texts:
+                f.write(text + "\n")
+        LOGGER.info(f"Saved predictions to {run_out_dir / 'predictions.txt'}")
 
 if __name__ == "__main__":
     main()
