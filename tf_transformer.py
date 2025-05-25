@@ -167,7 +167,7 @@ class EncBlock(layers.Layer):
         self.mha = layers.MultiHeadAttention(heads, key_dim)
         self.ffn = keras.Sequential([
             layers.Dense(latent, activation="relu"),
-            layers.Dense(dim),
+            lines.Dense(dim),
         ])
         self.norm1 = MyLayerNorm(dim)
         self.norm2 = MyLayerNorm(dim)
@@ -308,6 +308,7 @@ def compute_metrics(predictions: List[str], references: List[str]) -> dict:
         # Clean up the texts (remove [start] and [end] tokens)
         pred = pred.replace('[start]', '').replace('[end]', '').strip()
         ref = ref.replace('[start]', '').replace('[end]', '').strip()
+        LOGGER.info(f"Pred: {pred}, Ref: {ref}")
 
         # ROUGE
         scores = rouge.score(ref, pred)
@@ -423,12 +424,12 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         dec_in = keras.Input((None,), dtype="int64", name="decoder_inputs")
         x = PosEmbed(self.h.seq_len, self.h.vocab_size, self.h.model_dim)(enc_in)
         for _ in range(self.h.stacks):
-            x = EncBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.key_dim)(x)
+            x = EncBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)(x)
         enc_out = x
         y = PosEmbed(self.h.seq_len + 1, self.h.vocab_size, self.h.model_dim)(dec_in)
         cross_attn_outputs = []
         for _ in range(self.h.stacks):
-            dec_block = DecBlock(self.h.model_dim, self.h.latent_dim, self.heads, self.key_dim)
+            dec_block = DecBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)
             y = dec_block(y, enc_out)
             _, cross_attn = dec_block.cross_mha(
                 tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), return_attention_scores=True
