@@ -289,20 +289,47 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         self.input_vect = input_vect
         self.output_vect = output_vect
         self.log_samples = log_samples
+        self.start_token_id = self.output_vect([START])[0, 0].numpy()
         self.end_token_id = self.output_vect([END])[0, 0].numpy()
 
     def on_epoch_end(self, epoch, logs=None):
         # Select samples
         if self.h.attn_sample_indices:
-            # Filter valid indices
             indices = [i for i in self.h.attn_sample_indices if 0 <= i < len(self.valid_pairs)]
             samples = [self.valid_pairs[i] for i in indices]
         else:
             samples = random.sample(self.valid_pairs, min(self.log_samples, len(self.valid_pairs)))
+            indices = ["random"] * len(samples)
         
-        src_texts, tgt_texts = zip(*samples)
+        src_texts, _ = zip(*samples)
         enc_inputs = self.input_vect(src_texts).numpy()
-        dec_inputs = self.output_vect([tgt[:-len(END)] for tgt in tgt_texts]).numpy()[:, :-1]
+
+        # Build temporary model for predictions (without attention scores for efficiency)
+        model = build_model(self.h)
+        model.set_weights(self.model.get_weights())
+
+        # Generate predictions
+        batch_size = len(src_texts)
+        enc_inputs_tensor = tf.convert_to_tensor(enc_inputs, dtype=tf.int64)
+        dec_inputs = tf.fill([batch_size, 1], tf.cast(self.start_token_id, tf.int64))
+        predictions = [[] for _ in range(batch_size)]
+        finished = tf.zeros(batch_size, dtype=tf.bool)
+        
+        for step in range(self.h.seq_len):
+            preds = model.predict([enc_inputs_tensor, dec_inputs], verbose=0)
+            next_tokens = tf.argmax(preds[:, -1, :], axis=-1, output_type=tf.int64)
+            
+            for j in range(batch_size):
+                if not finished[j]:
+                    token = next_tokens[j].numpy()
+                    predictions[j].append(token)
+                    if token == self.end_token_id:
+                        finished = tf.tensor_scatter_nd_update(finished, [[j]], [True])
+            
+            if tf.reduce_all(finished):
+                break
+                
+            dec_inputs = tf.concat([dec_inputs, tf.expand_dims(next_tokens, -1)], axis=1)
 
         # Build temporary model to output cross-attention scores
         enc_in = keras.Input((None,), dtype="int64", name="encoder_inputs")
@@ -323,35 +350,40 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         y = layers.Dropout(0.1)(y)
         out = layers.Dense(self.h.vocab_size, activation="softmax")(y)
         attn_model = keras.Model([enc_in, dec_in], [out] + cross_attn_outputs)
-
-        # Copy weights from training model
         attn_model.set_weights(self.model.get_weights())
 
-        # Run inference
-        outputs = attn_model.predict([enc_inputs, dec_inputs], verbose=0)
-        attn_scores = outputs[1:]  # Skip output logits, take attention scores
-
-        # Log heatmaps
+        # Log heatmaps for each sample
         for sample_idx in range(len(src_texts)):
             # Trim source to non-padding tokens
             src_valid = np.where(enc_inputs[sample_idx] != 0)[0]
             src_end = src_valid[-1] + 1 if src_valid.size > 0 else 1
             src_tokens = [self.input_vect.get_vocabulary()[int(token)] for token in enc_inputs[sample_idx][:src_end]]
 
-            # Trim target to [end] token
-            tgt_valid = np.where(dec_inputs[sample_idx] == self.end_token_id)[0]
-            tgt_end = (tgt_valid[0] + 1) if tgt_valid.size > 0 else len(dec_inputs[sample_idx])
-            tgt_tokens = [self.output_vect.get_vocabulary()[int(token)] for token in dec_inputs[sample_idx][:tgt_end]]
+            # Trim predicted sequence to [end] token
+            pred_tokens = predictions[sample_idx]
+            tgt_end = len(pred_tokens)
+            for i, token in enumerate(pred_tokens):
+                if token == self.end_token_id:
+                    tgt_end = i + 1
+                    break
+            pred_inputs = np.array(pred_tokens[:tgt_end], dtype=np.int64).reshape(1, -1)
+            tgt_tokens = [self.output_vect.get_vocabulary()[token] for token in pred_tokens[:tgt_end]]
 
+            # Compute attention scores for the predicted sequence
+            enc_input_single = enc_inputs[sample_idx:sample_idx+1]
+            outputs = attn_model.predict([enc_input_single, pred_inputs], verbose=0)
+            attn_scores = outputs[1:]  # Skip output logits, take attention scores
+
+            # Log heatmaps for each layer
             for layer_idx, scores in enumerate(attn_scores):
-                attn_matrix = scores[sample_idx, 0][:tgt_end, :src_end]  # Trim to valid spans
+                attn_matrix = scores[0, 0][:tgt_end, :src_end]  # Trim to valid spans
                 fig, ax = plt.subplots(figsize=(8, 6))
                 im = ax.imshow(attn_matrix, cmap='viridis')
                 ax.set_xticks(range(len(src_tokens)))
                 ax.set_yticks(range(len(tgt_tokens)))
                 ax.set_xticklabels(src_tokens, rotation=90)
                 ax.set_yticklabels(tgt_tokens)
-                ax.set_title(f"Epoch {epoch} Layer {layer_idx} Head 0 Sample {sample_idx} (Index {indices[sample_idx] if self.h.attn_sample_indices else 'random'})")
+                ax.set_title(f"Epoch {epoch} Layer {layer_idx} Head 0 Sample {sample_idx} (Index {indices[sample_idx]})")
                 plt.colorbar(im)
                 wandb.log({f"attention/epoch_{epoch}_layer_{layer_idx}_sample_{sample_idx}": wandb.Image(fig)})
                 plt.close(fig)
