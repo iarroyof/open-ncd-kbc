@@ -233,18 +233,37 @@ def make_ds(pairs: List[Tuple[str, str]], h: HParams) -> tf.data.Dataset:
 # 7. Prediction function
 # ════════════════════════════════════════════════════════════════════════════
 
-def predict(model, src_seq, max_len, start_token, end_token):
-    enc_input = tf.expand_dims(src_seq, 0)
-    dec_input = tf.expand_dims([start_token], 0)
-    output = []
-    for _ in range(max_len):
-        predictions = model([enc_input, dec_input], training=False)
-        last_token = tf.argmax(predictions[:, -1, :], axis=-1).numpy()[0]
-        output.append(last_token)
-        if last_token == end_token:
-            break
-        dec_input = tf.concat([dec_input, tf.expand_dims([last_token], 0)], axis=1)
-    return output
+def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=32):
+    batch_size = min(batch_size, len(src_vect))
+    predictions = []
+    for i in range(0, len(src_vect), batch_size):
+        batch_src = src_vect[i:i + batch_size]
+        batch_size_actual = len(batch_src)
+        enc_inputs = tf.convert_to_tensor(batch_src, dtype=tf.int64)
+        dec_inputs = tf.fill([batch_size_actual, 1], start_token)
+        output = [[] for _ in range(batch_size_actual)]
+        finished = tf.zeros(batch_size_actual, dtype=tf.bool)
+        
+        for _ in range(max_len):
+            preds = model.predict([enc_inputs, dec_inputs], verbose=0)
+            next_tokens = tf.argmax(preds[:, -1, :], axis=-1, output_type=tf.int64)
+            
+            for j in range(batch_size_actual):
+                if not finished[j]:
+                    output[j].append(next_tokens[j].numpy())
+                    if next_tokens[j] == end_token:
+                        finished = tf.tensor_scatter_nd_update(
+                            finished, [[j]], [True]
+                        )
+            
+            if tf.reduce_all(finished):
+                break
+                
+            dec_inputs = tf.concat([dec_inputs, tf.expand_dims(next_tokens, -1)], axis=1)
+        
+        predictions.extend(output)
+    
+    return predictions
 
 # ════════════════════════════════════════════════════════════════════════════
 # 8. Main execution
@@ -353,10 +372,7 @@ def main():
         start_token = OUTPUT_VECT([START])[0, 0].numpy()
         end_token = OUTPUT_VECT([END])[0, 0].numpy()
 
-        predictions = []
-        for src in src_vect:
-            pred = predict(model, src, h.seq_len, start_token, end_token)
-            predictions.append(pred)
+        predictions = batch_predict(model, src_vect, h.seq_len, start_token, end_token)
 
         vocab = OUTPUT_VECT.get_vocabulary()
         pred_texts = [" ".join([vocab[token] for token in pred if token != end_token]) for pred in predictions]
