@@ -499,7 +499,11 @@ class TextMetricsCallback(keras.callbacks.Callback):
             [h.split() for h in hyps],
             smoothing_function=self.smooth,
         )
-        meteor = float(np.mean([meteor_score([r], h) for h, r in zip(hyps, refs)]))
+        meteor = float(np.mean([
+            meteor_score([r.split()], h.split())  # pass token lists
+                for h, r in zip(hyps, refs)
+        ]))
+
 
         # add to Keras logs and W&B
         logs = logs or {}
