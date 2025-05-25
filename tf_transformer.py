@@ -236,27 +236,38 @@ def make_ds(pairs: List[Tuple[str, str]], h: HParams) -> tf.data.Dataset:
 def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=32):
     batch_size = min(batch_size, len(src_vect))
     predictions = []
+    vocab = OUTPUT_VECT.get_vocabulary()  # For debugging
+    
     for i in range(0, len(src_vect), batch_size):
         batch_src = src_vect[i:i + batch_size]
         batch_size_actual = len(batch_src)
         enc_inputs = tf.convert_to_tensor(batch_src, dtype=tf.int64)
-        dec_inputs = tf.fill([batch_size_actual, 1], start_token)
+        dec_inputs = tf.fill([batch_size_actual, 1], tf.cast(start_token, tf.int64))
         output = [[] for _ in range(batch_size_actual)]
         finished = tf.zeros(batch_size_actual, dtype=tf.bool)
         
-        for _ in range(max_len):
+        LOGGER.info(f"Processing batch {i//batch_size + 1}, size: {batch_size_actual}")
+        
+        for step in range(max_len):
             preds = model.predict([enc_inputs, dec_inputs], verbose=0)
+            if step == 0:  # Debug first step
+                top_probs = tf.sort(preds[0, -1, :], direction='DESCENDING')[:5]
+                top_ids = tf.argsort(preds[0, -1, :], direction='DESCENDING')[:5]
+                LOGGER.info(f"Step {step}, Sample probs: {top_probs.numpy()}, Tokens: {[vocab[id] for id in top_ids.numpy()]}")
+            
             next_tokens = tf.argmax(preds[:, -1, :], axis=-1, output_type=tf.int64)
             
             for j in range(batch_size_actual):
                 if not finished[j]:
-                    output[j].append(next_tokens[j].numpy())
-                    if next_tokens[j] == end_token:
-                        finished = tf.tensor_scatter_nd_update(
-                            finished, [[j]], [True]
-                        )
+                    token = next_tokens[j].numpy()
+                    output[j].append(token)
+                    if step == 0:  # Debug first token
+                        LOGGER.info(f"Sequence {i+j}, Step {step}, Token: {token}, Word: {vocab[token]}")
+                    if token == end_token:
+                        finished = tf.tensor_scatter_nd_update(finished, [[j]], [True])
             
             if tf.reduce_all(finished):
+                LOGGER.info(f"Batch {i//batch_size + 1} finished early at step {step + 1}")
                 break
                 
             dec_inputs = tf.concat([dec_inputs, tf.expand_dims(next_tokens, -1)], axis=1)
@@ -317,6 +328,10 @@ def main():
     INPUT_VECT.adapt([s for s, _ in train_pairs])
     OUTPUT_VECT.adapt([t for _, t in train_pairs])
 
+    # Debug vocabulary
+    LOGGER.info(f"Output vocabulary size: {len(OUTPUT_VECT.get_vocabulary())}")
+    LOGGER.info(f"Output vocabulary sample: {OUTPUT_VECT.get_vocabulary()[:20]}")
+
     wandb_config = asdict(h)
     wandb.init(project="tf-transformer", config=wandb_config, save_code=True)
 
@@ -371,6 +386,7 @@ def main():
 
         start_token = OUTPUT_VECT([START])[0, 0].numpy()
         end_token = OUTPUT_VECT([END])[0, 0].numpy()
+        LOGGER.info(f"Start token: {start_token}, End token: {end_token}")
 
         predictions = batch_predict(model, src_vect, h.seq_len, start_token, end_token)
 
