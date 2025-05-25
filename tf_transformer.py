@@ -234,7 +234,7 @@ def make_ds(pairs: List[Tuple[str, str]], h: HParams) -> tf.data.Dataset:
 # 7. Prediction function
 # ════════════════════════════════════════════════════════════════════════════
 
-def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=32):
+def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=32, temperature=0.7):
     batch_size = min(batch_size, len(src_vect))
     predictions = []
     vocab = OUTPUT_VECT.get_vocabulary()
@@ -251,12 +251,14 @@ def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=3
         
         for step in range(max_len):
             preds = model.predict([enc_inputs, dec_inputs], verbose=0)
+            logits = preds[:, -1, :] / temperature
+            next_tokens = tf.random.categorical(logits, num_samples=1, dtype=tf.int64)
+            next_tokens = tf.squeeze(next_tokens, axis=-1)
+            
             if step == 0:
                 top_probs = tf.sort(preds[0, -1, :], direction='DESCENDING')[:5]
                 top_ids = tf.argsort(preds[0, -1, :], direction='DESCENDING')[:5]
                 LOGGER.info(f"Step {step}, Sample probs: {top_probs.numpy()}, Tokens: {[vocab[id] for id in top_ids.numpy()]}")
-            
-            next_tokens = tf.argmax(preds[:, -1, :], axis=-1, output_type=tf.int64)
             
             for j in range(batch_size_actual):
                 if not finished[j]:
@@ -304,16 +306,26 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         src_texts, _ = zip(*samples)
         enc_inputs = self.input_vect(src_texts).numpy()
 
-        # Generate predictions
+        # Generate predictions with temperature sampling
         batch_size = len(src_texts)
         enc_inputs_tensor = tf.convert_to_tensor(enc_inputs, dtype=tf.int64)
         dec_inputs = tf.fill([batch_size, 1], tf.cast(self.start_token_id, tf.int64))
         predictions = [[] for _ in range(batch_size)]
         finished = tf.zeros(batch_size, dtype=tf.bool)
+        temperature = 0.7
         
         for step in range(self.h.seq_len):
             preds = self.model.predict([enc_inputs_tensor, dec_inputs], verbose=0)
-            next_tokens = tf.argmax(preds[:, -1, :], axis=-1, output_type=tf.int64)
+            logits = preds[:, -1, :] / temperature
+            next_tokens = tf.random.categorical(logits, num_samples=1, dtype=tf.int64)
+            next_tokens = tf.squeeze(next_tokens, axis=-1)
+            
+            # Debug top probabilities
+            if step < 3:  # Log for first 3 steps
+                top_probs = tf.sort(preds[0, -1, :], direction='DESCENDING')[:5]
+                top_ids = tf.argsort(preds[0, -1, :], direction='DESCENDING')[:5]
+                vocab = self.output_vect.get_vocabulary()
+                LOGGER.info(f"Sample 0, Step {step}, Top probs: {top_probs.numpy()}, Tokens: {[vocab[id] for id in top_ids.numpy()]}")
             
             for j in range(batch_size):
                 if not finished[j]:
@@ -484,7 +496,7 @@ def main():
     optimizer = mixed_precision.LossScaleOptimizer(optimizer)
     model.compile(
         optimizer=optimizer,
-        loss="sparse_categorical_crossentropy",
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(label_smoothing=0.1),
         metrics=["sparse_categorical_accuracy"],
     )
 
