@@ -49,10 +49,13 @@ class HParams:
     valid_path: str | None = None
     out_dir: str = "results"
     seed: int = 42
+    attn_sample_indices: List[int] | None = None  # New field for attention logging
 
     def __post_init__(self):
         if self.key_dim is None:
             self.key_dim = self.model_dim // self.heads
+        if self.attn_sample_indices is None:
+            self.attn_sample_indices = []
         random.seed(self.seed)
         np.random.seed(self.seed)
         tf.random.set_seed(self.seed)
@@ -286,10 +289,17 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         self.input_vect = input_vect
         self.output_vect = output_vect
         self.log_samples = log_samples
+        self.end_token_id = self.output_vect([END])[0, 0].numpy()
 
     def on_epoch_end(self, epoch, logs=None):
-        # Select random validation samples
-        samples = random.sample(self.valid_pairs, min(self.log_samples, len(self.valid_pairs)))
+        # Select samples
+        if self.h.attn_sample_indices:
+            # Filter valid indices
+            indices = [i for i in self.h.attn_sample_indices if 0 <= i < len(self.valid_pairs)]
+            samples = [self.valid_pairs[i] for i in indices]
+        else:
+            samples = random.sample(self.valid_pairs, min(self.log_samples, len(self.valid_pairs)))
+        
         src_texts, tgt_texts = zip(*samples)
         enc_inputs = self.input_vect(src_texts).numpy()
         dec_inputs = self.output_vect([tgt[:-len(END)] for tgt in tgt_texts]).numpy()[:, :-1]
@@ -306,7 +316,6 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         for _ in range(self.h.stacks):
             dec_block = DecBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)
             y = dec_block(y, enc_out)
-            # Extract cross-attention scores directly from the block
             _, cross_attn = dec_block.cross_mha(
                 tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), return_attention_scores=True
             )
@@ -324,21 +333,30 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
 
         # Log heatmaps
         for sample_idx in range(len(src_texts)):
-            src_tokens = [self.input_vect.get_vocabulary()[int(token)] for token in enc_inputs[sample_idx] if token != 0]
-            tgt_tokens = [self.output_vect.get_vocabulary()[int(token)] for token in dec_inputs[sample_idx] if token != 0]
+            # Trim source to non-padding tokens
+            src_valid = np.where(enc_inputs[sample_idx] != 0)[0]
+            src_end = src_valid[-1] + 1 if src_valid.size > 0 else 1
+            src_tokens = [self.input_vect.get_vocabulary()[int(token)] for token in enc_inputs[sample_idx][:src_end]]
+
+            # Trim target to [end] token
+            tgt_valid = np.where(dec_inputs[sample_idx] == self.end_token_id)[0]
+            tgt_end = (tgt_valid[0] + 1) if tgt_valid.size > 0 else len(dec_inputs[sample_idx])
+            tgt_tokens = [self.output_vect.get_vocabulary()[int(token)] for token in dec_inputs[sample_idx][:tgt_end]]
+
             for layer_idx, scores in enumerate(attn_scores):
-                attn_matrix = scores[sample_idx, 0]  # First head, already a NumPy array
+                attn_matrix = scores[sample_idx, 0][:tgt_end, :src_end]  # Trim to valid spans
                 fig, ax = plt.subplots(figsize=(8, 6))
                 im = ax.imshow(attn_matrix, cmap='viridis')
                 ax.set_xticks(range(len(src_tokens)))
                 ax.set_yticks(range(len(tgt_tokens)))
                 ax.set_xticklabels(src_tokens, rotation=90)
                 ax.set_yticklabels(tgt_tokens)
-                ax.set_title(f"Epoch {epoch} Layer {layer_idx} Head 0 Sample {sample_idx}")
+                ax.set_title(f"Epoch {epoch} Layer {layer_idx} Head 0 Sample {sample_idx} (Index {indices[sample_idx] if self.h.attn_sample_indices else 'random'})")
                 plt.colorbar(im)
                 wandb.log({f"attention/epoch_{epoch}_layer_{layer_idx}_sample_{sample_idx}": wandb.Image(fig)})
                 plt.close(fig)
         LOGGER.info(f"Logged attention matrices for epoch {epoch}")
+
 # ════════════════════════════════════════════════════════════════════════════
 # 9. Main execution
 # ════════════════════════════════════════════════════════════════════════════
@@ -366,6 +384,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=30, help="Number of training epochs")
     parser.add_argument("--out-dir", type=str, default="results", help="Output directory")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--attn-sample-indices", type=int, nargs="*", default=None, help="Validation sample indices for attention logging")
     args = parser.parse_args()
     
     if args.train and args.train_path is None:
