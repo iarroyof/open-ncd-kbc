@@ -305,11 +305,12 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         cross_attn_outputs = []
         for _ in range(self.h.stacks):
             dec_block = DecBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)
-            y, cross_attn = dec_block.cross_mha(
+            y = dec_block(y, enc_out)
+            # Extract cross-attention scores directly from the block
+            _, cross_attn = dec_block.cross_mha(
                 tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), return_attention_scores=True
             )
             cross_attn_outputs.append(cross_attn)
-            y = dec_block(y, enc_out)
         y = layers.Dropout(0.1)(y)
         out = layers.Dense(self.h.vocab_size, activation="softmax")(y)
         attn_model = keras.Model([enc_in, dec_in], [out] + cross_attn_outputs)
@@ -326,7 +327,7 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
             src_tokens = [self.input_vect.get_vocabulary()[int(token)] for token in enc_inputs[sample_idx] if token != 0]
             tgt_tokens = [self.output_vect.get_vocabulary()[int(token)] for token in dec_inputs[sample_idx] if token != 0]
             for layer_idx, scores in enumerate(attn_scores):
-                attn_matrix = scores[sample_idx, 0].numpy()  # First head
+                attn_matrix = scores[sample_idx, 0]  # First head, already a NumPy array
                 fig, ax = plt.subplots(figsize=(8, 6))
                 im = ax.imshow(attn_matrix, cmap='viridis')
                 ax.set_xticks(range(len(src_tokens)))
@@ -338,7 +339,6 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
                 wandb.log({f"attention/epoch_{epoch}_layer_{layer_idx}_sample_{sample_idx}": wandb.Image(fig)})
                 plt.close(fig)
         LOGGER.info(f"Logged attention matrices for epoch {epoch}")
-
 # ════════════════════════════════════════════════════════════════════════════
 # 9. Main execution
 # ════════════════════════════════════════════════════════════════════════════
