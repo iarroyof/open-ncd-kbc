@@ -406,7 +406,19 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         LOGGER.info(f"Logged attention matrices for epoch {epoch}")
 
 # ════════════════════════════════════════════════════════════════════════════
-# 9. Main execution
+# 9. Custom Loss with Label Smoothing
+# ════════════════════════════════════════════════════════════════════════════
+
+def sparse_categorical_crossentropy_with_smoothing(y_true, y_pred, label_smoothing=0.1):
+    # Convert y_true to one-hot encoding
+    y_true = tf.one_hot(tf.cast(y_true, tf.int32), depth=tf.shape(y_pred)[-1])
+    # Apply label smoothing: reduce confidence in true labels and distribute to other classes
+    y_true = y_true * (1 - label_smoothing) + (label_smoothing / tf.cast(tf.shape(y_pred)[-1], tf.float32))
+    # Compute categorical crossentropy
+    return tf.keras.losses.categorical_crossentropy(y_true, y_pred, from_logits=False)
+
+# ════════════════════════════════════════════════════════════════════════════
+# 10. Main execution
 # ════════════════════════════════════════════════════════════════════════════
 
 def main():
@@ -496,7 +508,7 @@ def main():
     optimizer = mixed_precision.LossScaleOptimizer(optimizer)
     model.compile(
         optimizer=optimizer,
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(label_smoothing=0.1),
+        loss=sparse_categorical_crossentropy_with_smoothing,
         metrics=["sparse_categorical_accuracy"],
     )
 
