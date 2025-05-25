@@ -360,7 +360,7 @@ def main():
     save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
-    train_ds = make_ds(h, h)
+    train_ds = make_ds(train_pairs, h)
     valid_ds = make_ds(valid_pairs, h)
 
     model = build_model(h)
@@ -377,47 +377,39 @@ def main():
 
     callbacks = [
         keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
-        wandb.keras.callbacks.WandbCallback(save_model=False),
+        wandb.keras.WandbCallback(save_model=False),
     ]
     if args.save_weights:
-        callbacks.append(
-            keras.callbacks.ModelCheckpoint(
-                Path(h.out_dir) / "ckpt.weights.h5",
-                save_weights_only=True,
-                verbose=1
-            )
-        )
+        callbacks.append(keras.callbacks.ModelCheckpoint(
+            Path(h.out_dir) / "ckpt.weights.h5", save_weights_only=True, verbose=1
+        ))
 
     hist = model.fit(
         train_ds,
         validation_data=valid_ds,
-        epochs=args.epochs,
+        epochs=h.epochs,
         callbacks=callbacks,
     )
-    pd.DataFrame(hist.history).to_csv(Path(h.out_dir) / "history.csv")
+    pd.DataFrame(hist.history).to_csv(Path(h.out_dir) / "history.csv", index=False)
 
     if args.evaluate:
         valid_lines = Path(h.valid_path).read_text().splitlines()
         src_list = [parse_src(l) for l in valid_lines]
         src_vect = INPUT_VECT(src_list).numpy()
 
-        start_token_id = OUTPUT_VECT([START])[0, 0].numpy()
-        end_token_id = OUTPUT_VECT([END])[0].numpy()
-        LOGGER.info(f"Start token ID: {start_token_id}, End token ID: {end_token_id}}")
+        start_token = OUTPUT_VECT([START])[0, 0].numpy()
+        end_token = OUTPUT_VECT([END])[0, 0].numpy()
+        LOGGER.info(f"Start token: {start_token}, End token: {end_token}")
 
-        predictions = batch_predict(
-            model, src_vect, h.seq_len, start_token_id, end_token_id, batch_size=32
-        )
+        predictions = batch_predict(model, src_vect, h.seq_len, start_token, end_token)
 
-        vocab = OUTPUT_VECT.get_vocabulary())
-        pred_texts = [
-            " ".join([vocab[t] for t in tokens if t != end_token_id]) for tokens in predictions
-        ]
+        vocab = OUTPUT_VECT.get_vocabulary()
+        pred_texts = [" ".join([vocab[token] for token in pred if token != end_token]) for pred in predictions]
 
-        with open(run_out_dir) / "predictions.txt", 'w') as f:
+        with open(run_out_dir / "predictions.txt", 'w') as f:
             for text in pred_texts:
                 f.write(text + "\n")
-        LOGGER.info(f"Saved predictions to: {run_out_dir / 'predictions.txt'}}")
+        LOGGER.info(f"Saved predictions to: {run_out_dir / 'predictions.txt'}")
 
 if __name__ == "__main__":
     main()
