@@ -304,10 +304,6 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         src_texts, _ = zip(*samples)
         enc_inputs = self.input_vect(src_texts).numpy()
 
-        # Build temporary model for predictions (without attention scores for efficiency)
-        model = build_model(self.h)
-        model.set_weights(self.model.get_weights())
-
         # Generate predictions
         batch_size = len(src_texts)
         enc_inputs_tensor = tf.convert_to_tensor(enc_inputs, dtype=tf.int64)
@@ -316,7 +312,7 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         finished = tf.zeros(batch_size, dtype=tf.bool)
         
         for step in range(self.h.seq_len):
-            preds = model.predict([enc_inputs_tensor, dec_inputs], verbose=0)
+            preds = self.model.predict([enc_inputs_tensor, dec_inputs], verbose=0)
             next_tokens = tf.argmax(preds[:, -1, :], axis=-1, output_type=tf.int64)
             
             for j in range(batch_size):
@@ -330,6 +326,10 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
                 break
                 
             dec_inputs = tf.concat([dec_inputs, tf.expand_dims(next_tokens, -1)], axis=1)
+
+        # Convert predictions to numpy arrays for attention model
+        pred_inputs = [np.array(pred[:self.h.seq_len], dtype=np.int64) for pred in predictions]
+        pred_inputs = tf.keras.preprocessing.sequence.pad_sequences(pred_inputs, maxlen=self.h.seq_len + 1, padding='post', value=0)
 
         # Build temporary model to output cross-attention scores
         enc_in = keras.Input((None,), dtype="int64", name="encoder_inputs")
@@ -366,13 +366,17 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
                 if token == self.end_token_id:
                     tgt_end = i + 1
                     break
-            pred_inputs = np.array(pred_tokens[:tgt_end], dtype=np.int64).reshape(1, -1)
             tgt_tokens = [self.output_vect.get_vocabulary()[token] for token in pred_tokens[:tgt_end]]
 
             # Compute attention scores for the predicted sequence
             enc_input_single = enc_inputs[sample_idx:sample_idx+1]
-            outputs = attn_model.predict([enc_input_single, pred_inputs], verbose=0)
+            dec_input_single = pred_inputs[sample_idx:sample_idx+1]
+            outputs = attn_model.predict([enc_input_single, dec_input_single], verbose=0)
             attn_scores = outputs[1:]  # Skip output logits, take attention scores
+
+            # Log full predicted sequence for debugging
+            pred_text = " ".join([self.output_vect.get_vocabulary()[token] for token in pred_tokens[:tgt_end]])
+            LOGGER.info(f"Sample {sample_idx} (Index {indices[sample_idx]}): Predicted sequence: {pred_text}")
 
             # Log heatmaps for each layer
             for layer_idx, scores in enumerate(attn_scores):
