@@ -22,6 +22,10 @@ from tensorflow.keras.layers import TextVectorization
 from tensorflow.keras import mixed_precision
 import wandb
 import matplotlib.pyplot as plt
+# ── sequence-level metrics ───────────────────────────────────────────────────
+from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
+from nltk.translate.meteor_score import meteor_score
+from rouge_score import rouge_scorer
 
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -418,6 +422,97 @@ def sparse_categorical_crossentropy_with_smoothing(y_true, y_pred, label_smoothi
     return tf.keras.losses.categorical_crossentropy(y_true, y_pred, from_logits=False)
 
 # ════════════════════════════════════════════════════════════════════════════
+# Padding-aware accuracy  &  id→text helper
+# ════════════════════════════════════════════════════════════════════════════
+
+def masked_accuracy(y_true, y_pred):
+    """
+    Token-level accuracy that ignores padding (token id 0).
+    """
+    mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)           # (B,T)
+    pred_ids = tf.argmax(y_pred, axis=-1, output_type=tf.int64)   # (B,T)
+    matches = tf.cast(tf.equal(tf.cast(y_true, tf.int64), pred_ids), tf.float32)
+    return tf.reduce_sum(matches * mask) / tf.reduce_sum(mask)
+
+
+def _ids_to_text(id_seqs, vocab, end_id):
+    """Convert lists of ids → space-separated strings, stopping at <end>."""
+    texts = []
+    for seq in id_seqs:
+        words = []
+        for tok in seq:
+            if tok == end_id:
+                break
+            words.append(vocab[tok])
+        texts.append(" ".join(words))
+    return texts
+
+# ════════════════════════════════════════════════════════════════════════════
+# Callback to compute sequence-level metrics on the validation set
+# ════════════════════════════════════════════════════════════════════════════
+
+class TextMetricsCallback(keras.callbacks.Callback):
+    """
+    At the end of every epoch, generate the full prediction for each
+    validation sample (greedy decoding) and log ROUGE-L, BLEU-4, METEOR.
+    """
+    def __init__(self, hparams, valid_pairs, input_vect, output_vect, batch_size=32):
+        super().__init__()
+        self.h = hparams
+        self.valid_pairs = valid_pairs
+        self.input_vect = input_vect
+        self.output_vect = output_vect
+        self.batch_size = batch_size
+
+        self.start_id = output_vect([START])[0, 0].numpy()
+        self.end_id   = output_vect([END ])[0, 0].numpy()
+        self.vocab = output_vect.get_vocabulary()
+
+        self.rouge = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
+        self.smooth = SmoothingFunction().method4  # BLEU smoothing
+
+    # ------------------------------------------------------------------ #
+    def _predict_all(self):
+        src_texts, ref_texts = zip(*self.valid_pairs)
+        src_vec = self.input_vect(src_texts).numpy()
+        preds = batch_predict(
+            self.model,
+            src_vec,
+            self.h.seq_len,
+            self.start_id,
+            self.end_id,
+            batch_size=self.batch_size,
+            temperature=0.0,  # greedy decoding
+        )
+        hyp = _ids_to_text(preds, self.vocab, self.end_id)
+        return list(hyp), list(ref_texts)
+
+    # ------------------------------------------------------------------ #
+    def on_epoch_end(self, epoch, logs=None):
+        hyps, refs = self._predict_all()
+
+        rougeL = float(np.mean(
+            [self.rouge.score(r, h)["rougeL"].fmeasure for h, r in zip(hyps, refs)]
+        ))
+        bleu4 = corpus_bleu(
+            [[r.split()] for r in refs],
+            [h.split() for h in hyps],
+            smoothing_function=self.smooth,
+        )
+        meteor = float(np.mean([meteor_score([r], h) for h, r in zip(hyps, refs)]))
+
+        # add to Keras logs and W&B
+        logs = logs or {}
+        logs.update({"val_rougeL": rougeL, "val_bleu4": bleu4, "val_meteor": meteor})
+        wandb.log({"epoch": epoch,
+                   "val/rougeL": rougeL,
+                   "val/bleu4": bleu4,
+                   "val/meteor": meteor},
+                  step=epoch)
+        LOGGER.info(f"[epoch {epoch}] ROUGE-L={rougeL:.4f} | "
+                    f"BLEU-4={bleu4:.4f} | METEOR={meteor:.4f}")
+
+# ════════════════════════════════════════════════════════════════════════════
 # 10. Main execution
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -509,7 +604,7 @@ def main():
     model.compile(
         optimizer=optimizer,
         loss=sparse_categorical_crossentropy_with_smoothing,
-        metrics=["sparse_categorical_accuracy"],
+        metrics= [masked_accuracy], #["sparse_categorical_accuracy"],
     )
 
     model.build(input_shape=[(None, None), (None, None)])
@@ -519,6 +614,7 @@ def main():
         keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
         wandb.keras.WandbCallback(save_model=False),
         AttentionLoggerCallback(h, valid_pairs, INPUT_VECT, OUTPUT_VECT, log_samples=5),
+        TextMetricsCallback(h, valid_pairs, INPUT_VECT, OUTPUT_VECT, batch_size=h.batch),
     ]
     if args.save_weights:
         callbacks.append(keras.callbacks.ModelCheckpoint(
@@ -546,6 +642,27 @@ def main():
 
         vocab = OUTPUT_VECT.get_vocabulary()
         pred_texts = [" ".join([vocab[token] for token in pred if token != end_token]) for pred in predictions]
+        # ---------- Sequence-level metrics on evaluation split ----------
+        refs = [parse_line(l)[1] for l in valid_lines]
+        rouge_eval = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
+        rougeL = np.mean([
+            rouge_eval.score(r, h)["rougeL"].fmeasure
+            for h, r in zip(pred_texts, refs)
+        ])
+        bleu4 = corpus_bleu(
+            [[r.split()] for r in refs],
+            [h.split() for h in pred_texts],
+            smoothing_function=SmoothingFunction().method4,
+        )
+        meteor = np.mean([meteor_score([r], h) for h, r in zip(pred_texts, refs)])
+
+        LOGGER.info(f"Evaluation metrics  |  ROUGE-L={rougeL:.4f}  "
+                    f"BLEU-4={bleu4:.4f}  METEOR={meteor:.4f}")
+
+        with open(run_out_dir / "eval_metrics.yaml", "w") as f:
+            yaml.dump({"rougeL": float(rougeL),
+                       "bleu4":  float(bleu4),
+                       "meteor": float(meteor)}, f)
 
         with open(run_out_dir / "predictions.txt", 'w') as f:
             for text in pred_texts:
