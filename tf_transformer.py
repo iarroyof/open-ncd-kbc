@@ -509,9 +509,9 @@ class TextMetricsCallback(keras.callbacks.Callback):
         logs = logs or {}
         logs.update({"val_rougeL": rougeL, "val_bleu4": bleu4, "val_meteor": meteor})
         wandb.log({"epoch": epoch,
-                   "val/rougeL": rougeL,
-                   "val/bleu4": bleu4,
-                   "val/meteor": meteor},
+                   "val_rougeL": rougeL,
+                   "val_bleu4": bleu4,
+                   "val_meteor": meteor},
                   step=epoch)
         LOGGER.info(f"[epoch {epoch}] ROUGE-L={rougeL:.4f} | "
                     f"BLEU-4={bleu4:.4f} | METEOR={meteor:.4f}")
@@ -616,9 +616,9 @@ def main():
 
     callbacks = [
         keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
-        wandb.keras.WandbCallback(save_model=False),
         AttentionLoggerCallback(h, valid_pairs, INPUT_VECT, OUTPUT_VECT, log_samples=5),
         TextMetricsCallback(h, valid_pairs, INPUT_VECT, OUTPUT_VECT, batch_size=h.batch),
+        wandb.keras.WandbCallback(save_model=False),
     ]
     if args.save_weights:
         callbacks.append(keras.callbacks.ModelCheckpoint(
