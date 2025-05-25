@@ -22,10 +22,6 @@ from tensorflow.keras.layers import TextVectorization
 from tensorflow.keras import mixed_precision
 import wandb
 import matplotlib.pyplot as plt
-from rouge_score import rouge_scorer
-import nltk
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from nltk.translate.meteor_score import meteor_score
 
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -284,59 +280,7 @@ def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=3
     return predictions
 
 # ════════════════════════════════════════════════════════════════════════════
-# 8. Metrics Computation
-# ════════════════════════════════════════════════════════════════════════════
-
-def compute_metrics(predictions: List[str], references: List[str]) -> dict:
-    """
-    Compute ROUGE, BLEU, and METEOR scores for a list of predicted and reference texts.
-    Args:
-        predictions: List of predicted texts.
-        references: List of reference texts.
-    Returns:
-        Dictionary with average ROUGE, BLEU, and METEOR scores.
-    """
-    # Initialize scorers
-    rouge = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-    smoothing = SmoothingFunction().method1  # Smoothing for BLEU
-
-    rouge1_f, rouge2_f, rougeL_f = [], [], []
-    bleu_scores = []
-    meteor_scores = []
-
-    for pred, ref in zip(predictions, references):
-        # Clean up the texts (remove [start] and [end] tokens)
-        pred = pred.replace('[start]', '').replace('[end]', '').strip()
-        ref = ref.replace('[start]', '').replace('[end]', '').strip()
-
-        # ROUGE
-        scores = rouge.score(ref, pred)
-        rouge1_f.append(scores['rouge1'].fmeasure)
-        rouge2_f.append(scores['rouge2'].fmeasure)
-        rougeL_f.append(scores['rougeL'].fmeasure)
-
-        # BLEU
-        ref_tokens = nltk.word_tokenize(ref)
-        pred_tokens = nltk.word_tokenize(pred)
-        bleu = sentence_bleu([ref_tokens], pred_tokens, weights=(0.25, 0.25, 0.25, 0.25), smoothing_function=smoothing)
-        bleu_scores.append(bleu)
-
-        # METEOR (using NLTK)
-        meteor = meteor_score([ref_tokens], pred_tokens)
-        meteor_scores.append(meteor)
-
-    # Compute averages
-    metrics = {
-        'rouge1_f': np.mean(rouge1_f) if rouge1_f else 0.0,
-        'rouge2_f': np.mean(rouge2_f) if rouge2_f else 0.0,
-        'rougeL_f': np.mean(rougeL_f) if rougeL_f else 0.0,
-        'bleu': np.mean(bleu_scores) if bleu_scores else 0.0,
-        'meteor': np.mean(meteor_scores) if meteor_scores else 0.0,
-    }
-    return metrics
-
-# ════════════════════════════════════════════════════════════════════════════
-# 9. Attention logging callback with metrics
+# 8. Attention logging callback
 # ════════════════════════════════════════════════════════════════════════════
 
 class AttentionLoggerCallback(keras.callbacks.Callback):
@@ -359,7 +303,7 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
             samples = random.sample(self.valid_pairs, min(self.log_samples, len(self.valid_pairs)))
             indices = ["random"] * len(samples)
         
-        src_texts, tgt_texts = zip(*samples)
+        src_texts, _ = zip(*samples)
         enc_inputs = self.input_vect(src_texts).numpy()
 
         # Generate predictions with temperature sampling
@@ -395,25 +339,6 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
                 
             dec_inputs = tf.concat([dec_inputs, tf.expand_dims(next_tokens, -1)], axis=1)
 
-        # Convert predictions to text
-        vocab = self.output_vect.get_vocabulary()
-        pred_texts = []
-        for pred in predictions:
-            end_idx = len(pred)
-            for i, token in enumerate(pred):
-                if token == self.end_token_id:
-                    end_idx = i + 1
-                    break
-            pred_text = " ".join([vocab[token] for token in pred[:end_idx]])
-            pred_texts.append(pred_text)
-
-        # Compute ROUGE, BLEU, METEOR for the samples
-        metrics = compute_metrics(pred_texts, tgt_texts)
-        LOGGER.info(f"Validation Metrics at Epoch {epoch}: {metrics}")
-        wandb.log({f"val/rouge1_f": metrics['rouge1_f'], f"val/rouge2_f": metrics['rouge2_f'],
-                   f"val/rougeL_f": metrics['rougeL_f'], f"val/bleu": metrics['bleu'],
-                   f"val/meteor": metrics['meteor'], "epoch": epoch})
-
         # Convert predictions to numpy arrays for attention model
         pred_inputs = [np.array(pred[:self.h.seq_len], dtype=np.int64) for pred in predictions]
         pred_inputs = tf.keras.preprocessing.sequence.pad_sequences(pred_inputs, maxlen=self.h.seq_len + 1, padding='post', value=0)
@@ -423,12 +348,12 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         dec_in = keras.Input((None,), dtype="int64", name="decoder_inputs")
         x = PosEmbed(self.h.seq_len, self.h.vocab_size, self.h.model_dim)(enc_in)
         for _ in range(self.h.stacks):
-            x = EncBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.key_dim)(x)
+            x = EncBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)(x)
         enc_out = x
         y = PosEmbed(self.h.seq_len + 1, self.h.vocab_size, self.h.model_dim)(dec_in)
         cross_attn_outputs = []
         for _ in range(self.h.stacks):
-            dec_block = DecBlock(self.h.model_dim, self.h.latent_dim, self.heads, self.key_dim)
+            dec_block = DecBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)
             y = dec_block(y, enc_out)
             _, cross_attn = dec_block.cross_mha(
                 tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), return_attention_scores=True
@@ -481,7 +406,7 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         LOGGER.info(f"Logged attention matrices for epoch {epoch}")
 
 # ════════════════════════════════════════════════════════════════════════════
-# 10. Custom Loss with Label Smoothing
+# 9. Custom Loss with Label Smoothing
 # ════════════════════════════════════════════════════════════════════════════
 
 def sparse_categorical_crossentropy_with_smoothing(y_true, y_pred, label_smoothing=0.1):
@@ -493,7 +418,7 @@ def sparse_categorical_crossentropy_with_smoothing(y_true, y_pred, label_smoothi
     return tf.keras.losses.categorical_crossentropy(y_true, y_pred, from_logits=False)
 
 # ════════════════════════════════════════════════════════════════════════════
-# 11. Main execution
+# 10. Main execution
 # ════════════════════════════════════════════════════════════════════════════
 
 def main():
@@ -609,45 +534,19 @@ def main():
     pd.DataFrame(hist.history).to_csv(Path(h.out_dir) / "history.csv", index=False)
 
     if args.evaluate:
-        # Prepare validation data for evaluation
         valid_lines = Path(h.valid_path).read_text().splitlines()
         src_list = [parse_src(l) for l in valid_lines]
-        tgt_list = [parse_line(l)[1] for l in valid_lines]  # Extract target texts
         src_vect = INPUT_VECT(src_list).numpy()
 
         start_token = OUTPUT_VECT([START])[0, 0].numpy()
         end_token = OUTPUT_VECT([END])[0, 0].numpy()
         LOGGER.info(f"Start token: {start_token}, End token: {end_token}")
 
-        # Generate predictions
         predictions = batch_predict(model, src_vect, h.seq_len, start_token, end_token)
 
-        # Convert predictions to text
         vocab = OUTPUT_VECT.get_vocabulary()
         pred_texts = [" ".join([vocab[token] for token in pred if token != end_token]) for pred in predictions]
 
-        # Compute ROUGE, BLEU, METEOR
-        metrics = compute_metrics(pred_texts, tgt_list)
-        LOGGER.info(f"Evaluation Metrics: {metrics}")
-        wandb.log({
-            "eval/rouge1_f": metrics['rouge1_f'],
-            "eval/rouge2_f": metrics['rouge2_f'],
-            "eval/rougeL_f": metrics['rougeL_f'],
-            "eval/bleu": metrics['bleu'],
-            "eval/meteor": metrics['meteor'],
-        })
-
-        # Compute loss and accuracy on validation dataset
-        eval_results = model.evaluate(valid_ds, return_dict=True, verbose=1)
-        eval_loss = eval_results['loss']
-        eval_accuracy = eval_results['sparse_categorical_accuracy']
-        LOGGER.info(f"Evaluation Loss: {eval_loss}, Accuracy: {eval_accuracy}")
-        wandb.log({
-            "eval/loss": eval_loss,
-            "eval/accuracy": eval_accuracy,
-        })
-
-        # Save predictions
         with open(run_out_dir / "predictions.txt", 'w') as f:
             for text in pred_texts:
                 f.write(text + "\n")
