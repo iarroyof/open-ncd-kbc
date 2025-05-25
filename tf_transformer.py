@@ -19,8 +19,9 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.layers import TextVectorization
-from tensorflow.keras import mixed_precision  # Added for mixed precision
+from tensorflow.keras import mixed_precision
 import wandb
+import matplotlib.pyplot as plt
 
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -184,14 +185,10 @@ class DecBlock(layers.Layer):
         self.norm3 = MyLayerNorm(dim)
 
     def call(self, y: tf.Tensor, enc_out: tf.Tensor, training: bool = False) -> tf.Tensor:
-        y = self.norm1(
-            tf.cast(y, tf.float32) +
-            tf.cast(self.self_mha(tf.cast(y, tf.float32), tf.cast(y, tf.float32), training=training), tf.float32)
-        )
-        y = self.norm2(
-            tf.cast(y, tf.float32) +
-            tf.cast(self.cross_mha(tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), training=training), tf.float32)
-        )
+        self_attn = self.self_mha(tf.cast(y, tf.float32), tf.cast(y, tf.float32), training=training)
+        y = self.norm1(tf.cast(y, tf.float32) + tf.cast(self_attn, tf.float32))
+        cross_attn = self.cross_mha(tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), training=training)
+        y = self.norm2(tf.cast(y, tf.float32) + tf.cast(cross_attn, tf.float32))
         ffn_out = self.ffn(tf.cast(y, tf.float32), training=training)
         return self.norm3(tf.cast(y, tf.float32) + tf.cast(ffn_out, tf.float32))
 
@@ -237,7 +234,7 @@ def make_ds(pairs: List[Tuple[str, str]], h: HParams) -> tf.data.Dataset:
 def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=32):
     batch_size = min(batch_size, len(src_vect))
     predictions = []
-    vocab = OUTPUT_VECT.get_vocabulary()  # For debugging
+    vocab = OUTPUT_VECT.get_vocabulary()
     
     for i in range(0, len(src_vect), batch_size):
         batch_src = src_vect[i:i + batch_size]
@@ -251,7 +248,7 @@ def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=3
         
         for step in range(max_len):
             preds = model.predict([enc_inputs, dec_inputs], verbose=0)
-            if step == 0:  # Debug first step
+            if step == 0:
                 top_probs = tf.sort(preds[0, -1, :], direction='DESCENDING')[:5]
                 top_ids = tf.argsort(preds[0, -1, :], direction='DESCENDING')[:5]
                 LOGGER.info(f"Step {step}, Sample probs: {top_probs.numpy()}, Tokens: {[vocab[id] for id in top_ids.numpy()]}")
@@ -262,7 +259,7 @@ def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=3
                 if not finished[j]:
                     token = next_tokens[j].numpy()
                     output[j].append(token)
-                    if step == 0:  # Debug first token
+                    if step == 0:
                         LOGGER.info(f"Sequence {i+j}, Step {step}, Token: {token}, Word: {vocab[token]}")
                     if token == end_token:
                         finished = tf.tensor_scatter_nd_update(finished, [[j]], [True])
@@ -278,7 +275,72 @@ def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=3
     return predictions
 
 # ════════════════════════════════════════════════════════════════════════════
-# 8. Main execution
+# 8. Attention logging callback
+# ════════════════════════════════════════════════════════════════════════════
+
+class AttentionLoggerCallback(keras.callbacks.Callback):
+    def __init__(self, h, valid_pairs, input_vect, output_vect, log_samples=5):
+        super().__init__()
+        self.h = h
+        self.valid_pairs = valid_pairs
+        self.input_vect = input_vect
+        self.output_vect = output_vect
+        self.log_samples = log_samples
+
+    def on_epoch_end(self, epoch, logs=None):
+        # Select random validation samples
+        samples = random.sample(self.valid_pairs, min(self.log_samples, len(self.valid_pairs)))
+        src_texts, tgt_texts = zip(*samples)
+        enc_inputs = self.input_vect(src_texts).numpy()
+        dec_inputs = self.output_vect([tgt[:-len(END)] for tgt in tgt_texts]).numpy()[:, :-1]
+
+        # Build temporary model to output cross-attention scores
+        enc_in = keras.Input((None,), dtype="int64", name="encoder_inputs")
+        dec_in = keras.Input((None,), dtype="int64", name="decoder_inputs")
+        x = PosEmbed(self.h.seq_len, self.h.vocab_size, self.h.model_dim)(enc_in)
+        for _ in range(self.h.stacks):
+            x = EncBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)(x)
+        enc_out = x
+        y = PosEmbed(self.h.seq_len + 1, self.h.vocab_size, self.h.model_dim)(dec_in)
+        cross_attn_outputs = []
+        for _ in range(self.h.stacks):
+            dec_block = DecBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)
+            y, cross_attn = dec_block.cross_mha(
+                tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), return_attention_scores=True
+            )
+            cross_attn_outputs.append(cross_attn)
+            y = dec_block(y, enc_out)
+        y = layers.Dropout(0.1)(y)
+        out = layers.Dense(self.h.vocab_size, activation="softmax")(y)
+        attn_model = keras.Model([enc_in, dec_in], [out] + cross_attn_outputs)
+
+        # Copy weights from training model
+        attn_model.set_weights(self.model.get_weights())
+
+        # Run inference
+        outputs = attn_model.predict([enc_inputs, dec_inputs], verbose=0)
+        attn_scores = outputs[1:]  # Skip output logits, take attention scores
+
+        # Log heatmaps
+        for sample_idx in range(len(src_texts)):
+            src_tokens = [self.input_vect.get_vocabulary()[int(token)] for token in enc_inputs[sample_idx] if token != 0]
+            tgt_tokens = [self.output_vect.get_vocabulary()[int(token)] for token in dec_inputs[sample_idx] if token != 0]
+            for layer_idx, scores in enumerate(attn_scores):
+                attn_matrix = scores[sample_idx, 0].numpy()  # First head
+                fig, ax = plt.subplots(figsize=(8, 6))
+                im = ax.imshow(attn_matrix, cmap='viridis')
+                ax.set_xticks(range(len(src_tokens)))
+                ax.set_yticks(range(len(tgt_tokens)))
+                ax.set_xticklabels(src_tokens, rotation=90)
+                ax.set_yticklabels(tgt_tokens)
+                ax.set_title(f"Epoch {epoch} Layer {layer_idx} Head 0 Sample {sample_idx}")
+                plt.colorbar(im)
+                wandb.log({f"attention/epoch_{epoch}_layer_{layer_idx}_sample_{sample_idx}": wandb.Image(fig)})
+                plt.close(fig)
+        LOGGER.info(f"Logged attention matrices for epoch {epoch}")
+
+# ════════════════════════════════════════════════════════════════════════════
+# 9. Main execution
 # ════════════════════════════════════════════════════════════════════════════
 
 def main():
@@ -339,7 +401,6 @@ def main():
     INPUT_VECT.adapt([s for s, _ in train_pairs])
     OUTPUT_VECT.adapt([t for _, t in train_pairs])
 
-    # Debug vocabulary
     LOGGER.info(f"Output vocabulary size: {len(OUTPUT_VECT.get_vocabulary())}")
     LOGGER.info(f"Output vocabulary sample: {OUTPUT_VECT.get_vocabulary()[:20]}")
 
@@ -378,6 +439,7 @@ def main():
     callbacks = [
         keras.callbacks.EarlyStopping(patience=5, min_delta=0.001, restore_best_weights=True, verbose=1),
         wandb.keras.WandbCallback(save_model=False),
+        AttentionLoggerCallback(h, valid_pairs, INPUT_VECT, OUTPUT_VECT, log_samples=5),
     ]
     if args.save_weights:
         callbacks.append(keras.callbacks.ModelCheckpoint(
