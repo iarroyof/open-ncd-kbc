@@ -642,6 +642,18 @@ def main():
     INPUT_VECT.adapt([s for s, _ in train_pairs])
     OUTPUT_VECT.adapt([t for _, t in train_pairs])
 
+    # after adapting OUTPUT_VECT
+    vec = OUTPUT_VECT([START + " foo bar " + END])[0]  # sanity check
+    end_id = int(vec[-1].numpy())                      # ID of [end]
+    
+    def eos_kept(tgt):
+        ids = OUTPUT_VECT([tgt])[0]
+        return ids[-1] == end_id                       # last slot is EOS?
+    
+    ratio = np.mean([eos_kept(t) for _, t in train_pairs])
+    print("Fraction of training targets where [end] survives:", ratio)
+    
+
     LOGGER.info(f"Output vocabulary size: {len(OUTPUT_VECT.get_vocabulary())}")
     LOGGER.info(f"Output vocabulary sample: {OUTPUT_VECT.get_vocabulary()[:20]}")
 
