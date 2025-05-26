@@ -238,33 +238,36 @@ class Decoder(tf.keras.layers.Layer):
         self.Wc = layers.Dense(dec_units, activation=tf.math.tanh, use_bias=False)
         self.fc = layers.Dense(output_vocab_size)
     def call(self, inputs, state=None):
-        """
-        inputs = (new_tokens, enc_output, mask)  — three tensors
-        state = None or list of tuples [(h1, c1), (h2, c2), ..., (hN, cN)]
-        """
+        # Unpack the inputs tuple
         new_tokens, enc_output, mask = inputs
+        
+        # Handle the state argument
         if state is not None:
-            if not isinstance(state[0], (list, tuple)):
+            # Ensure state is a list of tuples (e.g., [(h1, c1), (h2, c2)] for LSTM)
+            if not all(isinstance(s, tuple) and len(s) == 2 for s in state):
+                # If state is a flat list, convert to list of tuples
                 state = [(state[2*i], state[2*i+1]) for i in range(self.num_layers)]
-        else:
-            state = None
+        
+        # Embed the input tokens
         vectors = self.embedding(new_tokens)
+        
+        # Process through the RNN with the initial state
         outputs_and_states = self.rnn(vectors, initial_state=state)
-        rnn_output, *dec_state = outputs_and_states
-        #dec_state = [(dec_state[2*i], dec_state[2*i+1]) for i in range(self.num_layers)]
-        dec_state = enc_state
+        rnn_output, *dec_state_flat = outputs_and_states
+        
+        # Convert flat state list to list of tuples
+        dec_state = [(dec_state_flat[2*i], dec_state_flat[2*i+1]) for i in range(self.num_layers)]
+        
+        # Compute attention
         context_vector, attention_weights = self.attention(rnn_output, enc_output, mask)
-        rnn_step = rnn_output[:, -1, :]
-        context_step = context_vector[:, -1, :]
-        concat = tf.concat([context_step, rnn_step], axis=-1)
-        attention_vector = self.Wc(concat)
-        attention_vector = tf.expand_dims(attention_vector, 1)
-        logits = self.fc(attention_vector)
-        class DecoderOutput:
-            def __init__(self, logits, attention_weights):
-                self.logits = logits
-                self.attention_weights = attention_weights
-        return DecoderOutput(logits, attention_weights), dec_state
+        
+        # Compute logits (assuming further layers exist)
+        # Replace with your actual logic
+        logits = self.output_layer(context_vector)  # Example
+        
+        # Return the output and new state
+        return DecoderOutput(logits=logits, attention_weights=attention_weights), dec_state
+    
     def get_config(self):
         config = super().get_config()
         config.update({
