@@ -831,7 +831,6 @@ def main():
     output_vectorizer.adapt(train_out_texts)
     
     # Create directory if it doesn't exist
-    #vectorizer_path = f"{results_path}results{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}"
     vectorizer_path = os.path.join(run_root, "vectorizer") + os.sep
     os.makedirs(vectorizer_path, exist_ok=True)
     save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model.keras")
@@ -840,17 +839,10 @@ def main():
     max_features = max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary()))
 
     # Setup model and training
-    #checkpoint_path = (
-    #    f"results{os.sep}attentionGRU_{dataset_name}_epochs-{n_epochs}_seqlen-{sequence_length}_"
-    #    f"maxfeat-{max_features}_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}{os.sep}cp.weights.h5"
-    #)
-    #checkpoint_dir = os.path.dirname(checkpoint_path)
     checkpoint_dir  = os.path.join(run_root, "checkpoints")
     checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
     # Create checkpoint directory if it doesn't exist
     os.makedirs(checkpoint_dir, exist_ok=True)
-    
-    #out_dir = results_path + os.sep.join(checkpoint_path.split(os.sep)[:2]) + os.sep
     out_dir = run_root
     # Create output directory if it doesn't exist
     os.makedirs(out_dir, exist_ok=True)
@@ -892,10 +884,11 @@ def main():
     rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
     plt.savefig(f"{out_dir}history_plot.pdf")
 
-    # Perform inference
+    # Perform inferences n_demo = 0 for doing so for the full validation data.
     if n_demo >= 0:
         random.shuffle(val_pairs)
-        val_pairs = val_pairs[:n_demo]
+        if n_demo > 0:
+            val_pairs = val_pairs[:n_demo]
         inp_, targ_ = zip(*val_pairs)
         results = []
         logging.info("Performing inferences using the trained model...")
