@@ -551,22 +551,22 @@ class Translator(tf.Module):
 
 
     def translate(self, input_text, *, max_length=50, temperature=1.0):
-    input_tokens = self.input_text_processor(input_text)
-    enc_output = self.encoder(input_tokens, training=False)
-    
-    batch_size = tf.shape(input_text)[0]
-    result_tokens = tf.fill([batch_size, 1], self.start_token)
-    
-    for _ in range(max_length):
-        dec_logits = self.decoder(result_tokens, enc_output, training=False)
-        last_logits = dec_logits[:, -1, :]
-        new_tokens = self.sample(last_logits, temperature)
-        result_tokens = tf.concat([result_tokens, new_tokens], axis=1)
+        input_tokens = self.input_text_processor(input_text)
+        enc_output = self.encoder(input_tokens, training=False)
         
-        if tf.reduce_all(tf.equal(new_tokens, self.end_token)):
-            break
+        batch_size = tf.shape(input_text)[0]
+        result_tokens = tf.fill([batch_size, 1], self.start_token)
+        
+        for _ in range(max_length):
+            dec_logits = self.decoder(result_tokens, enc_output, training=False)
+            last_logits = dec_logits[:, -1, :]
+            new_tokens = self.sample(last_logits, temperature)
+            result_tokens = tf.concat([result_tokens, new_tokens], axis=1)
             
-    return {'text': self.tokens_to_text(result_tokens)}
+            if tf.reduce_all(tf.equal(new_tokens, self.end_token)):
+                break
+                
+        return {'text': self.tokens_to_text(result_tokens)}
 
     @tf.function(input_signature=[tf.TensorSpec(dtype=tf.string, shape=[None])])
     def tf_translate(self, input_text):
