@@ -244,15 +244,26 @@ class Decoder(tf.keras.layers.Layer):
 
         # Flatten state if provided (convert [(h1, c1)] to [h1, c1])
         if state is not None:
-            state = [tensor for layer_state in state for tensor in layer_state]
+            if isinstance(state, (list, tuple)) and state and isinstance(state[0], (list, tuple)):
+                state = [tensor for layer_state in state for tensor in layer_state]
+            else:
+                # Handle case where state is already flat or unexpected format
+                state = state if isinstance(state, list) else [state]
 
         # Embed the input tokens
         vectors = self.embedding(new_tokens)
 
         # Process through the RNN with the initial state
-        outputs_and_states = self.rnn(vectors, initial_state=state)
+        outputs_and_states = self.rnn(vectors, initial_state=state if state else None)
         rnn_output = outputs_and_states[0]
         dec_state_flat = outputs_and_states[1:]
+
+        # Validate state output
+        expected_state_len = 2 * self.num_layers
+        if len(dec_state_flat) != expected_state_len:
+            raise ValueError(
+                f"Expected {expected_state_len} state tensors from RNN, got {len(dec_state_flat)}"
+            )
 
         # Convert flat state list to list of tuples
         dec_state = [(dec_state_flat[2*i], dec_state_flat[2*i+1]) for i in range(self.num_layers)]
