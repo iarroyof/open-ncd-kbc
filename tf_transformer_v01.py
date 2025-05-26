@@ -272,14 +272,23 @@ class BahdanauAttention(tf.keras.layers.Layer):
 class PositionalEncoding(layers.Layer):
     def __init__(self, d_model, max_len=512):
         super().__init__()
-        position = tf.range(max_len, dtype=tf.float32)[:, tf.newaxis]
-        div_term = tf.exp(tf.range(0, d_model, 2, dtype=tf.float32) * -(math.log(10000.0) / d_model))
-        pe = tf.zeros((max_len, d_model))
-        pe = pe + tf.sin(position * div_term)[None, :, :]
-        pe = pe + tf.cos(position * div_term)[None, :, :]
-        self.pe = tf.constant(pe)
+        position = tf.range(max_len, dtype=tf.float32)[:, tf.newaxis]  # (max_len, 1)
+        div_term = tf.exp(tf.range(0, d_model, 2, dtype=tf.float32) * -(math.log(10000.0) / d_model))  # (d_model//2,)
+        div_term = tf.repeat(div_term, 2)  # (d_model,) to alternate sine/cosine
+
+        angles = position * div_term  # (max_len, d_model)
+
+        # Apply sine to even indices and cosine to odd indices in the embedding dimension
+        positional_encoding = tf.where(
+            tf.range(d_model) % 2 == 0,
+            tf.sin(angles),
+            tf.cos(angles)
+        )
+
+        self.pe = tf.constant(positional_encoding[None, :, :], dtype=tf.float32)  # (1, max_len, d_model)
 
     def call(self, inputs):
+        # inputs: (batch_size, seq_len, d_model)
         return inputs + self.pe[:, :tf.shape(inputs)[1]]
 
 class TransformerEncoderLayer(layers.Layer):
