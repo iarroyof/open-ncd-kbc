@@ -311,16 +311,18 @@ class Encoder(tf.keras.layers.Layer):
 
     def call(self, tokens, state=None, training=False):             # state ignored
         x = self.embed(tokens)                      # (B, S, d)
-        padding_mask = tf.cast(tokens != 0, tf.int32)[:, None, None, :]
-        padding_mask = (1 - padding_mask) * -1e9    # -> large -inf where pads
+        padding_mask = tf.cast(tokens != 0, tf.float32)[:, None, None, :]
+        padding_mask = (1.0 - padding_mask) * -1e9      # float32 → additive mask
 
         for layer in self.enc_layers:
             # unpack explicit blocks for clarity
             attn, drop1, norm1, ffn1, ffn2, drop2, norm2 = layer.layers
-            attn_out = attn(x, x, attention_mask=padding_mask, training=self.training)
-            x = norm1(x + drop1(attn_out, training=self.training))
+            attn_out = attn(x, x,
+                            attention_mask=padding_mask,
+                            training=training)
+            x = norm1(x + drop1(attn_out, training=training))
             ffn_out = ffn2(ffn1(x))
-            x = norm2(x + drop2(ffn_out, training=self.training))
+            x = norm2(x + drop2(ffn_out, training=training))
 
         return x, None                              # maintain 2-tuple
 
@@ -395,10 +397,10 @@ class Decoder(tf.keras.layers.Layer):
         # --- masks -----------------------------------------------------
         look_ahead = 1 - tf.linalg.band_part(tf.ones((seq_len, seq_len)), -1, 0)
         look_ahead = look_ahead[None, None, :, :] * -1e9      # (1,1,T,T)
-        dec_padding = tf.cast(tokens != 0, tf.int32)[:, None, None, :]
-        dec_padding = (1 - dec_padding) * -1e9
+        dec_padding = tf.cast(tokens != 0, tf.float32)[:, None, None, :]
+        dec_padding = (1.0 - dec_padding) * -1e9
         combined_mask = tf.maximum(look_ahead, dec_padding)
-        enc_mask = tf.cast(enc_mask, tf.int32)[:, None, None, :] * -1e9
+        enc_mask = tf.cast(enc_mask, tf.float32)[:, None, None, :] * -1e9
 
         # --- N identical layers ---------------------------------------
         for layer in self.dec_layers:
@@ -406,13 +408,13 @@ class Decoder(tf.keras.layers.Layer):
             ffn1, ffn2, drop3, norm3 = layer.layers
 
             sa_out = self_attn(x, x, attention_mask=combined_mask,
-                               training=self.training)
-            x = norm1(x + drop1(sa_out, training=self.training))
+                               training=training)
+            x = norm1(x + drop1(sa_out, training=training))
 
             ca_out = cross_attn(x, enc_out,
                                 attention_mask=enc_mask,
-                                training=self.training)
-            x = norm2(x + drop2(ca_out, training=self.training))
+                                training=training)
+            x = norm2(x + drop2(ca_out, training=training))
 
             ffn_out = ffn2(ffn1(x))
             x = norm3(x + drop3(ffn_out, training=self.training))
