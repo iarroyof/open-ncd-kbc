@@ -745,7 +745,22 @@ def main():
     )
     # keep a short alias
     cfg = run.config
-    
+    # ────────────────────────────────────────────────────────────────
+    #  NEW: derive “run root” = results_path/project[/sweep]/run
+    # ────────────────────────────────────────────────────────────────
+    project_name = run.project or "wandb_project"
+    sweep_id     = run.sweep_id            # None if not in a sweep
+    run_id       = run.id                  # always present
+
+    run_parts = [project_name]
+    if sweep_id is not None:
+        run_parts.append(sweep_id)
+    run_parts.append(run_id)
+
+    run_root = os.path.join(
+        os.path.normpath(getattr(cfg, "resPath", args.resPath)),
+        *run_parts) + os.sep           # final “/” for convenience
+    os.makedirs(run_root, exist_ok=True)    
     # replace *all* reads of argparse fields with cfg.*
 # ── hyper‑parameters (prefer sweep‑supplied values, else CLI defaults) ─────────
     sequence_length = getattr(cfg, "seqLen",       args.seqLen)
@@ -816,7 +831,8 @@ def main():
     output_vectorizer.adapt(train_out_texts)
     
     # Create directory if it doesn't exist
-    vectorizer_path = f"{results_path}results{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}"
+    #vectorizer_path = f"{results_path}results{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}"
+    vectorizer_path = os.path.join(run_root, "vectorizer") + os.sep
     os.makedirs(vectorizer_path, exist_ok=True)
     save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model.keras")
     save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model.keras")
@@ -824,15 +840,18 @@ def main():
     max_features = max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary()))
 
     # Setup model and training
-    checkpoint_path = (
-        f"results{os.sep}attentionGRU_{dataset_name}_epochs-{n_epochs}_seqlen-{sequence_length}_"
-        f"maxfeat-{max_features}_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}{os.sep}cp.weights.h5"
-    )
-    checkpoint_dir = os.path.dirname(checkpoint_path)
+    #checkpoint_path = (
+    #    f"results{os.sep}attentionGRU_{dataset_name}_epochs-{n_epochs}_seqlen-{sequence_length}_"
+    #    f"maxfeat-{max_features}_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}{os.sep}cp.weights.h5"
+    #)
+    #checkpoint_dir = os.path.dirname(checkpoint_path)
+    checkpoint_dir  = os.path.join(run_root, "checkpoints")
+    checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
     # Create checkpoint directory if it doesn't exist
     os.makedirs(checkpoint_dir, exist_ok=True)
     
-    out_dir = results_path + os.sep.join(checkpoint_path.split(os.sep)[:2]) + os.sep
+    #out_dir = results_path + os.sep.join(checkpoint_path.split(os.sep)[:2]) + os.sep
+    out_dir = run_root
     # Create output directory if it doesn't exist
     os.makedirs(out_dir, exist_ok=True)
     
@@ -864,25 +883,6 @@ def main():
                                    callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
     logging.info("Training completed successfully")
     # ── store one‑number‑per‑run so sweeps can plot them ───────────
-    #best_val_loss = float(np.min(history.history["val_loss"]))
-    #best_val_acc  = float(np.max(history.history["val_accuracy"]))
-    
-    #run.summary["best_val_loss"] = best_val_loss
-    #run.summary["best_val_acc"]  = best_val_acc
-    
-    # log the swept hyper‑parameters explicitly (they are also in run.config,
-    # but putting them in summary makes life easier for plot scripts)
-    #run.summary["embedding_dim"] = embedding_dim
-    #run.summary["units"]         = units
-    #run.summary["num_layers"]    = num_layers
-    #run.summary["dropout"]       = dropout_rate
-    #tbl = wandb.Table(columns=["embedding_dim", "units",
-    #                           "num_layers", "dropout",
-    #                           "best_val_loss", "best_val_acc"])
-    #tbl.add_data(embedding_dim, units, num_layers, dropout_rate,
-    #             best_val_loss, best_val_acc)
-    #wandb.log({"sensitivity_row": tbl})      # one‑row “append” table
-
     # Save training history
     logging.info("Saving evaluation results...")
     rdf = pd.DataFrame(history.history)
