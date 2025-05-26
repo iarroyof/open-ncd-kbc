@@ -131,41 +131,27 @@ def prepare_data(line, start_token='[start] ', end_token=' [end]', pmid=True,
                  include_labels=False, include_sent=False, all_start_end=False):
     """
     Process a TSV line into input and output phrases for training.
-    
-    Args:
-        line (str): Input TSV line.
-        start_token (str): Token to prepend to output phrases.
-        end_token (str): Token to append to output phrases.
-        pmid (bool): Whether to remove the first column (e.g., PMID).
-        include_labels (bool): Include the label in the output.
-        include_sent (bool): Include the sentence in the input.
-        all_start_end (bool): Add start/end tokens to input as well.
-    
-    Returns:
-        tuple: (input_phrase, output_phrase)
+    (Identical to original script)
     """
     line = line.split('\t')
     if pmid:
         line.pop(0)  # Remove PMID column
-    # Extract predicate and clean it
     pred = ' '.join(re.findall('[A-Z][a-z]*', line[1])).lower() or line[1]
-    # Handle cases where the fifth column isn't a digit
     if not line[4].strip().isdigit() and not re.match(r'^-?\d+(?:\.\d+)$', line[4].strip()):
         complements = []
         i = 4
-        while not line[i].isdigit():
+        while not line[i].isdigit(): # Check if index i is valid
+            if i >= len(line): # break if i is out of bounds
+                break
             complements.append(line[i])
             line.pop(i)
         line[3] = " ".join([line[3]] + complements)
-    # Construct sample
     sample = [line[0], pred, line[2], f"{start_token}{line[3]}{end_token}", float(line[4].strip())]
-    # Adjust output based on flags
     if not include_labels:
         del sample[-1]
         sample_o = sample[-1]
     else:
         sample_o = tuple(sample[-2:])
-    # Adjust input based on flags
     if not include_sent:
         del sample[0]
         sample_i = ' '.join([sample[1], sample[0]])
@@ -185,17 +171,12 @@ def sort_cols(columns):
 def load_vectorizer(from_file):
     """
     Load a saved TextVectorization layer from disk.
-    Ensure loading uses the new .keras filenames:
-    # When loading vectorizers, use:
-    input_vectorizer = load_vectorizer(f"{vectorizer_path}in_vect_model.keras")
-    output_vectorizer = load_vectorizer(f"{vectorizer_path}out_vect_model.keras")
+    (Identical to original script)
     """
-    model = tf.keras.models.load_model(from_file)
+    model = tf.keras.models.load_model(from_file, custom_objects={"custom_standardization": custom_standardization})
     vocab = model.layers[0].get_vocabulary()
     config = model.layers[0].get_config()
-    # In TF 2.10+, no need to delete output_mode
     vectorizer = TextVectorization.from_config(config)
-    # Initialize vocabulary
     vectorizer.adapt(['Initializing vectorizer'])
     vectorizer.set_vocabulary(vocab)
     return vectorizer
@@ -207,7 +188,7 @@ def save_vectorizer(vectorizer, to_file):
         tf.keras.Input(shape=(1,), dtype=tf.string),
         vectorizer
     ])
-    model.compile()
+    model.compile() # Compile before saving a Sequential model containing only a layer
     model.save(to_file)
 
 
@@ -217,323 +198,355 @@ def parse_dataset_name(training_data):
     names_dic = {"NCD": 'ncd' in training_data, "GP": 'gp' in training_data, "CN": 'conceptnet' in training_data}
     return '-'.join(k for k, v in names_dic.items() if v)
 
+# --- Transformer Model Architecture ---
 
-class MaskedLoss(tf.keras.losses.Loss):
-    """Custom loss function that masks padding tokens."""
-    def __init__(self):
-        super().__init__(name='masked_loss')
-        self.loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')
+def create_padding_mask(seq):
+    """Creates a padding mask for sequences.
+    Args:
+        seq: A tensor of shape (batch_size, seq_len) containing token IDs.
+             0 is assumed to be the padding token.
+    Returns:
+        A tensor of shape (batch_size, 1, 1, seq_len) for multi-head attention.
+    """
+    seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
+    return seq[:, tf.newaxis, tf.newaxis, :]  # (batch_size, 1, 1, seq_len)
 
-    def __call__(self, y_true, y_pred):
-        # 1. Up‑cast logits to float32—recommended for stability when the
-        #    model runs in mixed‑precision (policy "mixed_float16").
-        y_pred = tf.cast(y_pred, tf.float32)
+def create_look_ahead_mask(size):
+    """Creates a look-ahead mask for the decoder's self-attention.
+    Args:
+        size: The length of the target sequence.
+    Returns:
+        A tensor of shape (size, size) that masks future tokens.
+    """
+    mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
+    return mask  # (seq_len, seq_len)
 
-        # 2. Compute per‑token cross‑entropy.
-        loss = self.loss(y_true, y_pred)                # (B, T) float32
+class PositionalEncoding(tf.keras.layers.Layer):
+    def __init__(self, position, d_model, **kwargs):
+        super(PositionalEncoding, self).__init__(**kwargs)
+        self.position = position
+        self.d_model = d_model
+        self.pos_encoding = self._positional_encoding(position, d_model)
 
-        # 3. Create mask **in the same dtype** as `loss` to avoid the
-        #    “type float32 vs float16” multiply error.
-        mask = tf.cast(y_true != 0, loss.dtype)         # float32
+    def _get_angles(self, pos, i, d_model):
+        angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
+        return pos * angle_rates
 
-        return tf.reduce_sum(loss * mask)
+    def _positional_encoding(self, position, d_model):
+        angle_rads = self._get_angles(np.arange(position)[:, np.newaxis],
+                                     np.arange(d_model)[np.newaxis, :],
+                                     d_model)
+        angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
+        angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
+        pos_encoding = angle_rads[np.newaxis, ...]
+        return tf.cast(pos_encoding, dtype=tf.float32)
 
-# --- Model Architecture ---
+    def call(self, inputs): # inputs: (batch_size, seq_len, d_model)
+        seq_len = tf.shape(inputs)[1]
+        return inputs + self.pos_encoding[:, :seq_len, :]
 
-class BahdanauAttention(tf.keras.layers.Layer):
-    """Bahdanau attention mechanism for sequence-to-sequence models."""
-    def __init__(self, units):
-        super().__init__()
-        self.W1 = layers.Dense(units, use_bias=False)
-        self.W2 = layers.Dense(units, use_bias=False)
-        self.attention = layers.AdditiveAttention()
-
-    def call(self, query, value, mask):
-        shape_checker = ShapeChecker()
-        shape_checker(query, ('batch', 't', 'query_units'))
-        shape_checker(value, ('batch', 's', 'value_units'))
-        shape_checker(mask, ('batch', 's'))
-        w1_query = self.W1(query)
-        w2_key = self.W2(value)
-        context_vector, attention_weights = self.attention(
-            inputs=[w1_query, value, w2_key],
-            mask=[tf.ones(tf.shape(query)[:-1], dtype=bool), mask],
-            return_attention_scores=True
-        )
-        shape_checker(context_vector, ('batch', 't', 'value_units'))
-        shape_checker(attention_weights, ('batch', 't', 's'))
-        return context_vector, attention_weights
-    
-    # Add get_config method for serialization compatibility
     def get_config(self):
         config = super().get_config()
+        config.update({
+            "position": self.position,
+            "d_model": self.d_model,
+        })
         return config
 
-class PositionalEncoding(layers.Layer):
-    def __init__(self, d_model, max_len=512):
-        super().__init__()
-        position = tf.range(max_len, dtype=tf.float32)[:, tf.newaxis]  # shape: (max_len, 1)
-        div_term = tf.exp(tf.range(0, d_model, 2, dtype=tf.float32) * -(math.log(10000.0) / d_model))
-        div_term = tf.repeat(div_term, 2)  # (d_model,) to alternate sine/cosine
-
-        angles = position * div_term  # (max_len, d_model)
-
-        positional_encoding = tf.where(
-            tf.range(d_model) % 2 == 0,
-            tf.sin(angles),
-            tf.cos(angles)
-        )
-
-        self.pe = tf.constant(positional_encoding[None, :, :], dtype=tf.float32)  # (1, max_len, d_model)
-
-    def call(self, inputs):
-        print(f"Input dtype: {inputs.dtype}, PE dtype: {self.pe.dtype}")
-        pe_slice = self.pe[:, :tf.shape(inputs)[1]]
-        pe_cast = tf.cast(pe_slice, dtype=inputs.dtype)  # Match input dtype (float16 or float32)
-        return inputs + pe_cast
-
-class TransformerEncoderLayer(layers.Layer):
-    def __init__(self, d_model, num_heads, ffn_units, dropout_rate=0.1):
-        super().__init__()
-        self.mha = layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model)
-        self.ffn = tf.keras.Sequential([
-            layers.Dense(ffn_units, activation='relu'),
-            layers.Dense(d_model)
-        ])
-        self.layernorm1 = layers.LayerNormalization()
-        self.layernorm2 = layers.LayerNormalization()
-        self.dropout1 = layers.Dropout(dropout_rate)
-        self.dropout2 = layers.Dropout(dropout_rate)
-
-    def call(self, inputs, training=False, mask=None):
-        attn_output = self.mha(query=inputs, value=inputs, key=inputs, attention_mask=mask)
-        attn_output = self.dropout1(attn_output, training=training)  # Use `training` param
-        out1 = self.layernorm1(inputs + attn_output)
-        
-        ffn_output = self.ffn(out1)
-        ffn_output = self.dropout2(ffn_output, training=training)  # Use `training` param
-        return self.layernorm2(out1 + ffn_output)
-
-class TransformerEncoder(layers.Layer):
-    def __init__(self, num_layers, d_model, num_heads, ffn_units, input_vocab_size, dropout_rate=0.1, max_len=512):
-        super().__init__()
+class EncoderLayer(tf.keras.layers.Layer):
+    def __init__(self, d_model, num_heads, dff, rate=0.1, **kwargs):
+        super(EncoderLayer, self).__init__(**kwargs)
         self.d_model = d_model
-        self.embedding = layers.Embedding(input_vocab_size, d_model)
-        self.pos_encoding = PositionalEncoding(d_model, max_len)
-        self.enc_layers = [TransformerEncoderLayer(d_model, num_heads, ffn_units, dropout_rate) for _ in range(num_layers)]
-        self.dropout = layers.Dropout(dropout_rate)
+        self.num_heads = num_heads
+        self.dff = dff
+        self.rate = rate
 
-    def call(self, inputs, training=False):
-        seq_len = tf.shape(inputs)[1]
-        mask = tf.math.not_equal(inputs, 0)[:, tf.newaxis, tf.newaxis, :]
-        x = self.embedding(inputs)
-        x = self.pos_encoding(x)
-        x = self.dropout(x, training=training)
-        for layer in self.enc_layers:
-            x = layer(x, training=training, mask=mask)
-        return x
-
-class TransformerDecoderLayer(layers.Layer):
-    def __init__(self, d_model, num_heads, ffn_units, dropout_rate=0.1):
-        super().__init__()
-        self.mha1 = layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model)
-        self.mha2 = layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model)
+        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+        self.mha = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads)
         self.ffn = tf.keras.Sequential([
-            layers.Dense(ffn_units, activation='relu'),
-            layers.Dense(d_model)
+            tf.keras.layers.Dense(dff, activation='relu'),
+            tf.keras.layers.Dense(d_model)
         ])
-        self.layernorm1 = layers.LayerNormalization()
-        self.layernorm2 = layers.LayerNormalization()
-        self.layernorm3 = layers.LayerNormalization()
-        self.dropout1 = layers.Dropout(dropout_rate)
-        self.dropout2 = layers.Dropout(dropout_rate)
-        self.dropout3 = layers.Dropout(dropout_rate)
+        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.dropout1 = tf.keras.layers.Dropout(rate)
+        self.dropout2 = tf.keras.layers.Dropout(rate)
 
-    def call(self, inputs, enc_output, training=False):
-        tar_seq_len = tf.shape(inputs)[1]
+    def call(self, x, training, mask):
+        attn_output, _ = self.mha(query=x, value=x, key=x, attention_mask=mask, training=training, return_attention_scores=False)
+        attn_output = self.dropout1(attn_output, training=training)
+        out1 = self.layernorm1(x + attn_output)
 
-        # Self-attention mask: Combine padding + look-ahead
-        dec_mask = tf.math.not_equal(inputs, 0)  # (B, T)
-        dec_mask = dec_mask[:, tf.newaxis, tf.newaxis, :]  # (B, 1, 1, T)
+        ffn_output = self.ffn(out1, training=training)
+        ffn_output = self.dropout2(ffn_output, training=training)
+        out2 = self.layernorm2(out1 + ffn_output)
+        return out2
 
-        look_ahead_mask = tf.linalg.band_part(
-            tf.ones((tar_seq_len, tar_seq_len)), -1, 0
-        )  # (T, T)
-        look_ahead_mask = tf.cast(look_ahead_mask, tf.bool)
-        look_ahead_mask = look_ahead_mask[tf.newaxis, tf.newaxis, :, :]  # (1, 1, T, T)
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "d_model": self.d_model,
+            "num_heads": self.num_heads,
+            "dff": self.dff,
+            "rate": self.rate
+        })
+        return config
 
-        self_attention_mask = tf.logical_and(dec_mask, look_ahead_mask)  # (B, 1, T, T)
+class DecoderLayer(tf.keras.layers.Layer):
+    def __init__(self, d_model, num_heads, dff, rate=0.1, **kwargs):
+        super(DecoderLayer, self).__init__(**kwargs)
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dff = dff
+        self.rate = rate
 
-        # Self-attention block
-        attn1 = self.mha1(
-            query=inputs,
-            value=inputs,
-            key=inputs,
-            attention_mask=self_attention_mask  # (B, 1, T, T) → broadcast to (B, 8, T, T)
-        )
+        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+        self.mha1 = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads) # Causal self-attention
+        self.mha2 = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads) # Encoder-decoder attention
+
+        self.ffn = tf.keras.Sequential([
+            tf.keras.layers.Dense(dff, activation='relu'),
+            tf.keras.layers.Dense(d_model)
+        ])
+        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.layernorm3 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.dropout1 = tf.keras.layers.Dropout(rate)
+        self.dropout2 = tf.keras.layers.Dropout(rate)
+        self.dropout3 = tf.keras.layers.Dropout(rate)
+
+    def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
+        attn1, attn_weights_block1 = self.mha1(query=x, value=x, key=x, attention_mask=look_ahead_mask, training=training, return_attention_scores=True)
         attn1 = self.dropout1(attn1, training=training)
-        out1 = self.layernorm1(inputs + attn1)
+        out1 = self.layernorm1(x + attn1)
 
-        # Cross-attention block
-        enc_padding_mask = tf.math.not_equal(enc_output, 0)  # (B, S)
-        enc_padding_mask = enc_padding_mask[:, tf.newaxis, tf.newaxis, :]  # (B, 1, 1, S)
-
-        attn2 = self.mha2(
-            query=out1,
-            value=enc_output,
-            key=enc_output,
-            attention_mask=enc_padding_mask  # (B, 1, 1, S) → broadcast to (B, 8, T, S)
-        )
+        attn2, attn_weights_block2 = self.mha2(query=out1, value=enc_output, key=enc_output, attention_mask=padding_mask, training=training, return_attention_scores=True)
         attn2 = self.dropout2(attn2, training=training)
         out2 = self.layernorm2(out1 + attn2)
 
-        # Feed-forward network
-        ffn_out = self.ffn(out2)
-        ffn_out = self.dropout3(ffn_out, training=training)
-        return self.layernorm3(out2 + ffn_out)
+        ffn_output = self.ffn(out2, training=training)
+        ffn_output = self.dropout3(ffn_output, training=training)
+        out3 = self.layernorm3(out2 + ffn_output)
+        return out3, attn_weights_block1, attn_weights_block2
 
-class TransformerDecoder(layers.Layer):
-    def __init__(self, num_layers, d_model, num_heads, ffn_units, target_vocab_size, dropout_rate=0.1, max_len=512):
-        super().__init__()
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "d_model": self.d_model,
+            "num_heads": self.num_heads,
+            "dff": self.dff,
+            "rate": self.rate
+        })
+        return config
+
+class Encoder(tf.keras.layers.Layer):
+    def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size,
+                 maximum_position_encoding, rate=0.1, **kwargs):
+        super(Encoder, self).__init__(**kwargs)
         self.d_model = d_model
-        self.embedding = layers.Embedding(target_vocab_size, d_model)
-        self.pos_encoding = PositionalEncoding(d_model, max_len)
-        self.dec_layers = [TransformerDecoderLayer(d_model, num_heads, ffn_units, dropout_rate) for _ in range(num_layers)]
-        self.dropout = layers.Dropout(dropout_rate)
-        self.final_layer = layers.Dense(target_vocab_size)
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.dff = dff
+        self.input_vocab_size = input_vocab_size
+        self.maximum_position_encoding = maximum_position_encoding
+        self.rate = rate
 
-    def call(self, inputs, enc_output, training=False):
-        tar_seq_len = tf.shape(inputs)[1]
-        x = self.embedding(inputs)
+        self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model)
+        self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
+        self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
+        self.dropout = tf.keras.layers.Dropout(rate)
+
+    def call(self, x, training, mask):
+        x = self.embedding(x)
+        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
         x = self.pos_encoding(x)
         x = self.dropout(x, training=training)
-        for layer in self.dec_layers:
-            x = layer(x, enc_output, training=training)
-        return self.final_layer(x)
+        for i in range(self.num_layers):
+            x = self.enc_layers[i](x, training, mask)
+        return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "num_layers": self.num_layers, "d_model": self.d_model,
+            "num_heads": self.num_heads, "dff": self.dff,
+            "input_vocab_size": self.input_vocab_size,
+            "maximum_position_encoding": self.maximum_position_encoding,
+            "rate": self.rate
+        })
+        return config
+
+class Decoder(tf.keras.layers.Layer):
+    def __init__(self, num_layers, d_model, num_heads, dff, target_vocab_size,
+                 maximum_position_encoding, rate=0.1, **kwargs):
+        super(Decoder, self).__init__(**kwargs)
+        self.d_model = d_model
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+        self.dff = dff
+        self.target_vocab_size = target_vocab_size
+        self.maximum_position_encoding = maximum_position_encoding
+        self.rate = rate
+
+        self.embedding = tf.keras.layers.Embedding(target_vocab_size, d_model)
+        self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
+        self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
+        self.dropout = tf.keras.layers.Dropout(rate)
+        self.final_layer = tf.keras.layers.Dense(target_vocab_size)
+
+    def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
+        attention_weights = {}
+        x = self.embedding(x)
+        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        x = self.pos_encoding(x)
+        x = self.dropout(x, training=training)
+
+        for i in range(self.num_layers):
+            x, block1, block2 = self.dec_layers[i](x, enc_output, training, look_ahead_mask, padding_mask)
+            attention_weights[f'decoder_layer{i+1}_block1_self_attn'] = block1
+            attention_weights[f'decoder_layer{i+1}_block2_enc_dec_attn'] = block2
+        
+        logits = self.final_layer(x)
+        
+        class TransformerDecoderOutput: # Simple container
+            def __init__(self, logits_val, attention_weights_val):
+                self.logits = logits_val
+                self.attention_weights = attention_weights_val
+        return TransformerDecoderOutput(logits, attention_weights)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "num_layers": self.num_layers, "d_model": self.d_model,
+            "num_heads": self.num_heads, "dff": self.dff,
+            "target_vocab_size": self.target_vocab_size,
+            "maximum_position_encoding": self.maximum_position_encoding,
+            "rate": self.rate
+        })
+        return config
+
+class MaskedLoss(tf.keras.losses.Loss):
+    def __init__(self):
+        super().__init__(name='masked_loss')
+        self.loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+            from_logits=True, reduction='none')
+
+    def __call__(self, real, pred):
+        pred = tf.cast(pred, tf.float32) # Ensure float32 for stability
+        loss_ = self.loss_object(real, pred)
+        mask = tf.cast(tf.math.not_equal(real, 0), loss_.dtype)
+        loss_ *= mask
+        return tf.reduce_sum(loss_) / tf.reduce_sum(mask) # Average over non-padded tokens
+
+# --- Training and Translation Classes ---
 
 class TrainTranslator(tf.keras.Model):
-    def __init__(self, embedding_dim, units, input_text_processor, output_text_processor, num_layers=1, dropout=0.0):
+    def __init__(self, d_model: int, num_heads: int, dff: int, num_layers: int,
+                 input_text_processor, output_text_processor,
+                 maximum_position_encoding: int, dropout: float = 0.1):
         super().__init__()
-        self.encoder = TransformerEncoder(
-            num_layers=num_layers,
-            d_model=embedding_dim,
-            num_heads=8,
-            ffn_units=4 * embedding_dim,
-            input_vocab_size=input_text_processor.vocabulary_size(),
-            dropout_rate=dropout
-        )
-        self.decoder = TransformerDecoder(
-            num_layers=num_layers,
-            d_model=embedding_dim,
-            num_heads=8,
-            ffn_units=4 * embedding_dim,
-            target_vocab_size=output_text_processor.vocabulary_size(),
-            dropout_rate=dropout
-        )
+        
+        self.input_vocab_size = input_text_processor.vocabulary_size()
+        self.output_vocab_size = output_text_processor.vocabulary_size()
+
+        self.encoder = Encoder(num_layers, d_model, num_heads, dff,
+                               self.input_vocab_size, maximum_position_encoding, dropout)
+        self.decoder = Decoder(num_layers, d_model, num_heads, dff,
+                               self.output_vocab_size, maximum_position_encoding, dropout)
+
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
-        self.shape_checker = ShapeChecker()
-        self.train_metric = keras.metrics.SparseCategoricalAccuracy()
-        self.test_metric = keras.metrics.SparseCategoricalAccuracy()
+        
+        self.train_accuracy_metric = keras.metrics.SparseCategoricalAccuracy(name="train_accuracy")
+        self.val_accuracy_metric = keras.metrics.SparseCategoricalAccuracy(name="val_accuracy")
 
-    def _preprocess(self, input_text, target_text):
-        self.shape_checker(input_text, ('batch',))
-        self.shape_checker(target_text, ('batch',))
-        input_tokens = self.input_text_processor(input_text)
-        target_tokens = self.output_text_processor(target_text)
-        input_mask = input_tokens != 0
-        target_mask = target_tokens != 0
-        return input_tokens, input_mask, target_tokens, target_mask
+    def _create_masks(self, inp, tar):
+        enc_padding_mask = create_padding_mask(inp)
+        dec_padding_mask = create_padding_mask(inp) # For encoder output in decoder's MHA2
+        
+        look_ahead_mask = create_look_ahead_mask(tf.shape(tar)[1])
+        dec_target_padding_mask = create_padding_mask(tar)
+        combined_mask = tf.maximum(dec_target_padding_mask, look_ahead_mask)
+        return enc_padding_mask, combined_mask, dec_padding_mask
 
-    def _loop_step(self, new_tokens, input_mask, enc_output):
-        input_token, target_token = new_tokens[:, 0:1], new_tokens[:, 1:2]
-        decoder_input = input_token
-        dec_logits = self.decoder(decoder_input, enc_output)
-        return target_token, dec_logits
-
-    def _train_step(self, inputs):
-        input_text, target_text = inputs
-        (input_tokens, input_mask,
-         target_tokens, target_mask) = self._preprocess(input_text, target_text)
-        max_t = tf.shape(target_tokens)[1]
-        with tf.GradientTape() as tape:
-            enc_output = self.encoder(input_tokens)
-            total_loss = tf.constant(0.0, tf.float32)
-            for t in tf.range(max_t - 1):
-                new_tokens = target_tokens[:, t:t + 2]
-                y_true, y_pred = self._loop_step(new_tokens, input_mask, enc_output)
-                y_pred = tf.cast(y_pred, tf.float32)
-                total_loss += self.loss(y_true, y_pred)
-                mask = tf.cast(tf.squeeze(y_true, 1) != 0, tf.float32)
-                self.train_metric.update_state(
-                    tf.squeeze(y_true, 1),
-                    tf.squeeze(y_pred, 1),
-                    sample_weight=mask
-                )
-            average_loss = total_loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
-            scaled_loss = self.optimizer.get_scaled_loss(average_loss)
-        scaled_grads = tape.gradient(scaled_loss, self.trainable_variables)
-        grads = self.optimizer.get_unscaled_gradients(scaled_grads)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        return {'loss': average_loss, 'accuracy': self.train_metric.result()}
-
-    def _test_step(self, inputs):
-        input_text, target_text = inputs
-        (input_tokens, input_mask,
-         target_tokens, target_mask) = self._preprocess(input_text, target_text)
-        max_t = tf.shape(target_tokens)[1]
-        enc_output = self.encoder(input_tokens)
-        total_loss = tf.constant(0.0, tf.float32)
-        for t in tf.range(max_t - 1):
-            new_tokens = target_tokens[:, t:t + 2]
-            y_true, y_pred = self._loop_step(new_tokens, input_mask, enc_output)
-            y_pred = tf.cast(y_pred, tf.float32)
-            total_loss += self.loss(y_true, y_pred)
-            self.test_metric.update_state(
-                tf.squeeze(y_true, 1),
-                tf.squeeze(y_pred, 1),
-                sample_weight=tf.cast(tf.squeeze(y_true, 1) != 0, tf.float32)
-            )
-        average_loss = total_loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
-        return {'loss': average_loss, 'accuracy': self.test_metric.result()}
-
-    @tf.function(
-        input_signature=(
-            tf.TensorSpec(shape=(None,), dtype=tf.string),
-            tf.TensorSpec(shape=(None,), dtype=tf.string)
+    def _call_logic(self, input_tokens, target_tokens_input, training):
+        enc_padding_mask, combined_lookahead_mask, dec_padding_mask = self._create_masks(
+            input_tokens, target_tokens_input
         )
-    )
-    def _tf_train_step(self, input_batch, target_batch):
-        return self._train_step((input_batch, target_batch))
-
-    @tf.function(
-        input_signature=(
-            tf.TensorSpec(shape=(None,), dtype=tf.string),
-            tf.TensorSpec(shape=(None,), dtype=tf.string)
+        enc_output = self.encoder(input_tokens, training=training, mask=enc_padding_mask)
+        decoder_output_obj = self.decoder(
+            target_tokens_input, enc_output, training=training,
+            look_ahead_mask=combined_lookahead_mask,
+            padding_mask=dec_padding_mask
         )
-    )
-    def _tf_test_step(self, input_batch, target_batch):
-        return self._test_step((input_batch, target_batch))
+        return decoder_output_obj.logits
 
     def train_step(self, data):
-        input_batch, target_batch = data
-        return self._tf_train_step(input_batch, target_batch)
+        input_text, target_text = data
+        input_tokens = self.input_text_processor(input_text)
+        target_tokens = self.output_text_processor(target_text)
+
+        tar_inp = target_tokens[:, :-1]
+        tar_real = target_tokens[:, 1:]
+
+        with tf.GradientTape() as tape:
+            predictions = self._call_logic(input_tokens, tar_inp, training=True)
+            loss = self.compiled_loss(tar_real, predictions) # Uses MaskedLoss via compile()
+
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        
+        self.train_accuracy_metric.update_state(tar_real, predictions, sample_weight=tf.cast(tar_real != 0, tf.float32))
+        # Return a dict mapping metric names to current value
+        results = {'loss': loss, 'accuracy': self.train_accuracy_metric.result()}
+        # Include other metrics from compile()
+        for metric in self.metrics:
+            if metric.name not in ['loss', 'accuracy']: # Exclude already handled loss and this model's custom accuracy
+                 results[metric.name] = metric.result()
+        return results
+
 
     def test_step(self, data):
-        input_batch, target_batch = data
-        return self._tf_test_step(input_batch, target_batch)
+        input_text, target_text = data
+        input_tokens = self.input_text_processor(input_text)
+        target_tokens = self.output_text_processor(target_text)
+
+        tar_inp = target_tokens[:, :-1]
+        tar_real = target_tokens[:, 1:]
+        
+        predictions = self._call_logic(input_tokens, tar_inp, training=False)
+        loss = self.compiled_loss(tar_real, predictions)
+
+        self.val_accuracy_metric.update_state(tar_real, predictions, sample_weight=tf.cast(tar_real != 0, tf.float32))
+        results = {'loss': loss, 'accuracy': self.val_accuracy_metric.result()}
+        for metric in self.metrics: # Include other metrics from compile()
+            if metric.name not in ['loss', 'accuracy']:
+                 results[metric.name] = metric.result()
+        return results
+    
+    @property
+    def metrics(self):
+        # We need to list all metrics here for Keras to manage them,
+        # including the ones added in `compile()`.
+        # `compiled_loss` and `compiled_metrics` are set by `compile`.
+        # The accuracy metrics are manually managed here for train/val.
+        base_metrics = [self.train_accuracy_metric, self.val_accuracy_metric]
+        if self._is_compiled: # if compiled
+             base_metrics.extend(self.compiled_metrics.metrics) # compiled_metrics includes AUC
+        return base_metrics
+
 
     def get_config(self):
         return {
-            "embedding_dim": self.encoder.d_model,
-            "units": self.encoder.d_model,
+            "d_model": self.encoder.d_model,
+            "num_heads": self.encoder.num_heads,
+            "dff": self.encoder.dff,
             "num_layers": self.encoder.num_layers,
-            "dropout": self.encoder.dropout_rate,
+            "dropout_rate": self.encoder.rate,
+            "maximum_position_encoding": self.encoder.maximum_position_encoding
         }
 
-
 class Translator(tf.Module):
-    """Inference class for translating input sequences using a trained model."""
     def __init__(self, encoder, decoder, input_text_processor, output_text_processor):
         super().__init__()
         self.encoder = encoder
@@ -541,352 +554,386 @@ class Translator(tf.Module):
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
         
-        # Updated StringLookup usage for TF 2.10+
         self.output_token_string_from_index = tf.keras.layers.StringLookup(
             vocabulary=output_text_processor.get_vocabulary(), mask_token='', invert=True)
         index_from_string = tf.keras.layers.StringLookup(
             vocabulary=output_text_processor.get_vocabulary(), mask_token='')
         
-        token_mask_ids = index_from_string(['', '[UNK]', '[start]']).numpy()
+        token_mask_ids = index_from_string(['', '[UNK]', '[start]']).numpy() # Don't predict [start] after first step
         self.token_mask = np.zeros(index_from_string.vocabulary_size(), dtype=bool)
         self.token_mask[token_mask_ids] = True
         self.start_token = index_from_string(tf.constant('[start]'))
         self.end_token = index_from_string(tf.constant('[end]'))
 
     def tokens_to_text(self, result_tokens):
-        shape_checker = ShapeChecker()
-        shape_checker(result_tokens, ('batch', 't'))
         result_text_tokens = self.output_token_string_from_index(result_tokens)
         result_text = tf.strings.reduce_join(result_text_tokens, axis=1, separator=' ')
-        return tf.strings.strip(result_text)
+        result_text = tf.strings.regex_replace(result_text, '^ *(\\[start\\])+ *', '')
+        result_text = tf.strings.regex_replace(result_text, ' *(\\[end\\])+ *$', '')
+        result_text = tf.strings.strip(result_text)
+        return result_text
 
     def sample(self, logits, temperature):
-        """
-        Apply the vocabulary mask and (optionally) temperature sampling.
-        The logits are up‑cast to float32 for numerical stability.
-        Returns int64 ids shaped (B, 1).
-        """
-        # ── make dtypes consistent ────────────────────────────────────
-        logits = tf.cast(logits, tf.float32)             # (B,1,V) fp32
-        mask   = self.token_mask[tf.newaxis, tf.newaxis, :]  # (1,1,V) bool
-        logits = tf.where(mask,
-                          tf.constant(-np.inf, dtype=tf.float32),
-                          logits)
+        logits = tf.cast(logits, tf.float32)
+        mask = self.token_mask[tf.newaxis, tf.newaxis, :]
+        logits = tf.where(mask, tf.constant(-np.inf, dtype=tf.float32), logits)
+        if temperature == 0.0:
+            return tf.argmax(logits, axis=-1, output_type=tf.int64)
+        logits = tf.squeeze(logits, axis=1)
+        return tf.random.categorical(logits / temperature, num_samples=1, dtype=tf.int64)
 
-        if temperature == 0.0:                           # greedy
-            return tf.argmax(logits, axis=-1,
-                             output_type=tf.int64)       # (B,1)
-
-        # categorical requires 2‑D [batch, classes]
-        logits = tf.squeeze(logits, axis=1)              # (B,V)
-        return tf.random.categorical(logits / temperature,
-                                     num_samples=1,
-                                     dtype=tf.int64)     # (B,1)
-
-
-    def translate(self, input_text, *, max_length=50, temperature=1.0):
-        input_tokens = self.input_text_processor(input_text)
-        enc_output = self.encoder(input_tokens, training=False)
-        
+    def translate(self, input_text, *, max_length=50, return_attention=True, temperature=1.0):
         batch_size = tf.shape(input_text)[0]
-        result_tokens = tf.fill([batch_size, 1], self.start_token)
+        input_tokens = self.input_text_processor(input_text)
+        enc_padding_mask = create_padding_mask(input_tokens)
+        enc_output = self.encoder(input_tokens, training=False, mask=enc_padding_mask)
+
+        output_array = tf.TensorArray(dtype=tf.int64, size=0, dynamic_size=True)
+        output_array = output_array.write(0, tf.cast(tf.fill([batch_size], self.start_token), dtype=tf.int64))
         
-        for _ in range(max_length):
-            dec_logits = self.decoder(result_tokens, enc_output, training=False)
-            last_logits = dec_logits[:, -1, :]
-            new_tokens = self.sample(last_logits, temperature)
-            result_tokens = tf.concat([result_tokens, new_tokens], axis=1)
+        attention_step_history = [] # To store attention from each decoding step for one head
+
+        for i in tf.range(max_length):
+            output_so_far = tf.transpose(output_array.stack()) # (batch, current_dec_seq_len)
             
-            if tf.reduce_all(tf.equal(new_tokens, self.end_token)):
+            look_ahead_mask_for_step = create_look_ahead_mask(tf.shape(output_so_far)[1])
+            # dec_padding_mask for MHA2 (masking encoder output) is enc_padding_mask
+            
+            dec_output_obj = self.decoder(output_so_far, enc_output, training=False,
+                                          look_ahead_mask=look_ahead_mask_for_step,
+                                          padding_mask=enc_padding_mask)
+            
+            predictions_for_last_token = dec_output_obj.logits[:, -1:, :] # (batch, 1, vocab_size)
+            
+            if return_attention:
+                # Store enc-dec attention for the *last predicted token* over all encoder tokens.
+                # Attention dict: key like f'decoder_layer{N}_block2_enc_dec_attn'
+                # Shape: (batch, num_heads, current_dec_seq_len, enc_seq_len)
+                last_layer_key = f'decoder_layer{self.decoder.num_layers}_block2_enc_dec_attn'
+                current_step_attention = dec_output_obj.attention_weights[last_layer_key] # (B, H, T_dec, T_enc)
+                # Attention for the last decoder token (the one whose logits we are using)
+                attention_for_new_token = current_step_attention[:, :, -1, :] # (B, H, T_enc)
+                # Average over heads for simplicity in AttentionLogger
+                avg_head_attention = tf.reduce_mean(attention_for_new_token, axis=1) # (B, T_enc)
+                attention_step_history.append(avg_head_attention[:, tf.newaxis, :]) # (B, 1, T_enc)
+
+            predicted_id = self.sample(predictions_for_last_token, temperature) # (batch, 1)
+            predicted_id = tf.squeeze(predicted_id, axis=1) # (batch,)
+            output_array = output_array.write(i + 1, predicted_id)
+
+            if tf.reduce_all(tf.math.logical_or(predicted_id == self.end_token, predicted_id == 0)): # Also stop on padding
                 break
-                
-        return {'text': self.tokens_to_text(result_tokens)}
+        
+        result_tokens = tf.transpose(output_array.stack())
+        result_tokens = result_tokens[:, 1:] # Exclude the initial start_token
 
-    @tf.function(input_signature=[tf.TensorSpec(dtype=tf.string, shape=[None])])
-    def tf_translate(self, input_text):
-        return self.translate(input_text)
+        result_text = self.tokens_to_text(result_tokens)
+        
+        output_dict = {'text': result_text}
+        if return_attention:
+            if attention_step_history:
+                final_attention_tensor = tf.concat(attention_step_history, axis=1) # (B, final_dec_T, T_enc)
+            else:
+                enc_seq_len = tf.shape(input_tokens)[1]
+                final_attention_tensor = tf.zeros((batch_size, 0, enc_seq_len), dtype=tf.float32)
+            output_dict['attention'] = final_attention_tensor
+            output_dict['result_tokens'] = result_tokens # For AttentionLogger
+            
+        return output_dict
 
+    @tf.function(input_signature=[
+        tf.TensorSpec(dtype=tf.string, shape=[None]), # input_text
+        tf.TensorSpec(dtype=tf.int32, shape=[]),      # max_length
+        tf.TensorSpec(dtype=tf.bool, shape=[]),       # return_attention
+        tf.TensorSpec(dtype=tf.float32, shape=[])     # temperature
+    ])
+    def tf_translate(self, input_text, max_length, return_attention, temperature):
+        return self.translate(input_text, max_length=max_length, 
+                               return_attention=return_attention, temperature=temperature)
 
 class BatchLogs(tf.keras.callbacks.Callback):
-    """Callback to log batch metrics during training."""
     def __init__(self, key):
         super().__init__()
         self.key = key
         self.logs = []
-
     def on_train_batch_end(self, n, logs):
         self.logs.append(logs[self.key])
 
-# ──────────────────────────────────────────────────────────────────────────────
-#  Callback: log one attention heat‑map per epoch
-# ──────────────────────────────────────────────────────────────────────────────
 class AttentionLogger(keras.callbacks.Callback):
-    """
-    Logs a heat‑map of the attention matrix for one fixed validation sample,
-    *without* padded columns / rows and with the **real words** on the axes.
-    """
     def __init__(self, translator, sample_sentence: str):
-        """
-        translator : instance of the `Translator` class above  
-        sample_sentence : the source sentence that will be fed every epoch
-        """
         super().__init__()
         self.translator = translator
-        self.sample     = tf.constant([sample_sentence])
-
-        # 1⃣  build two inverse look‑ups once – cheap & re‑usable
+        self.sample_sentence = tf.constant([sample_sentence])
         self.src_lookup = tf.keras.layers.StringLookup(
             vocabulary=translator.input_text_processor.get_vocabulary(),
             mask_token='', invert=True)
-
         self.tgt_lookup = tf.keras.layers.StringLookup(
             vocabulary=translator.output_text_processor.get_vocabulary(),
             mask_token='', invert=True)
 
-    # ------------------------------------------------------------------  
     def on_epoch_end(self, epoch, logs=None):
-        """
-        • runs the model  
-        • trims pads  
-        • converts token ids → strings  
-        • logs a single W&B image
-        """
-        out   = self.translator.translate(self.sample, return_attention=True)
-        attn  = tf.squeeze(out['attention'], 0)          # (dec_T, enc_T)
+        out = self.translator.translate(self.sample_sentence, max_length=50, return_attention=True, temperature=0.0) # Greedy
+        
+        attn_tensor = out.get('attention')
+        result_tokens_tensor = out.get('result_tokens')
 
-        # ---------- original token ids ---------------------------------
-        src_ids = self.translator.input_text_processor(self.sample)[0].numpy()
-        tgt_ids = self.translator.output_text_processor(out['text'])[0].numpy()
+        if attn_tensor is None or result_tokens_tensor is None:
+            logging.warning("AttentionLogger: Attention or result_tokens not found in translator output. Skipping plot.")
+            return
 
-        # ---------- trim padding ---------------------------------------
+        attn = tf.squeeze(attn_tensor, 0) # (dec_T, enc_T)
+        
+        if tf.rank(attn) != 2 or attn.shape[0] == 0: # Allow enc_T to be 0 if input is empty for some reason
+            # If dec_T is 0, means no output was generated beyond start (which is stripped).
+            # If enc_T is 0 (from attn.shape[1]), then source was empty.
+            logging.warning(f"AttentionLogger: Attention matrix for plot is empty or has unexpected rank. Shape: {attn.shape}. Skipping plot.")
+            return
+
+        src_ids = self.translator.input_text_processor(self.sample_sentence)[0].numpy()
+        tgt_ids_np = result_tokens_tensor[0].numpy()
+
         enc_len = int((src_ids != 0).sum())
-        dec_len = int((tgt_ids != 0).sum())
-        attn    = attn[:dec_len, :enc_len]
-        src_ids = src_ids[:enc_len]
-        tgt_ids = tgt_ids[:dec_len]
+        dec_len = int((tgt_ids_np != 0).sum()) 
 
-        # ---------- ids ➜ strings --------------------------------------
-        src_words = self.src_lookup(src_ids).numpy().astype(str)
-        tgt_words = self.tgt_lookup(tgt_ids).numpy().astype(str)
+        if dec_len == 0 or enc_len == 0 : # If either is zero, plot is meaningless
+            logging.info(f"AttentionLogger: enc_len ({enc_len}) or dec_len ({dec_len}) is zero. Skipping plot.")
+            return
 
-        # ---------- plot -----------------------------------------------
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(enc_len * .4 + 1, dec_len * .4 + 1))
-        im = ax.imshow(attn.numpy(), aspect='auto', cmap='viridis')
+        final_attn = attn.numpy()[:dec_len, :enc_len] # Slice attention to actual lengths
+        final_src_ids = src_ids[:enc_len]
+        final_tgt_ids = tgt_ids_np[:dec_len]
+        
+        if final_attn.shape[0] == 0 or final_attn.shape[1] == 0:
+             logging.warning(f"AttentionLogger: Attention matrix became empty after trimming. dec_len={dec_len}, enc_len={enc_len}. Skipping plot.")
+             return
 
-        ax.set_xticks(range(enc_len)); ax.set_xticklabels(src_words,
-                                                          rotation=90,
-                                                          fontsize=8)
-        ax.set_yticks(range(dec_len)); ax.set_yticklabels(tgt_words,
-                                                          fontsize=8)
-        ax.set_xlabel("Encoder tokens"); ax.set_ylabel("Decoder tokens")
-        fig.colorbar(im, ax=ax, fraction=.046)
+        src_words = self.src_lookup(final_src_ids).numpy().astype(str)
+        tgt_words = self.tgt_lookup(final_tgt_ids).numpy().astype(str)
+        
+        fig, ax = plt.subplots(figsize=(max(6, enc_len * .4 + 1.5), max(6, dec_len * .4 + 1.5))) # Adjusted fig size
+        im = ax.imshow(final_attn, aspect='auto', cmap='viridis')
+        ax.set_xticks(np.arange(enc_len)) # Use np.arange for explicit tick positions
+        ax.set_xticklabels(src_words, rotation=90, fontsize=8)
+        ax.set_yticks(np.arange(dec_len))
+        ax.set_yticklabels(tgt_words, fontsize=8)
+        ax.set_xlabel("Encoder tokens")
+        ax.set_ylabel("Decoder tokens")
+        fig.colorbar(im, ax=ax, fraction=.046, pad=0.04)
         fig.tight_layout()
-
-        # ---------- log to W&B -----------------------------------------
-        step = int(self.model.optimizer.iterations.numpy())   # plain int
-        wandb.log({"attention_matrix": wandb.Image(fig)}, step=step)
+        
+        step = self.model.optimizer.iterations.numpy()
+        wandb.log({"attention_matrix": wandb.Image(fig)}, step=int(step))
         plt.close(fig)
 
-
-
 # --- Main Execution ---
-
 def main():
-    parser = argparse.ArgumentParser(description="Train a sequence-to-sequence model with attention.")
+    parser = argparse.ArgumentParser(description="Train a Transformer sequence-to-sequence model.")
     parser.add_argument("-s", "--seqLen", type=int, default=50, help="Per-sample sequence length")
-    parser.add_argument("-u", "--nSteps", type=int, default=1024, help="Number of hidden recurrent steps (units)")
+    # nSteps is now d_model for Transformer
+    parser.add_argument("-u", "--nSteps", type=int, default=256, help="Model dimensionality (d_model)") # Adjusted default for typical Transformer
     parser.add_argument("-f", "--nFeatures", type=int, default=15000, help="Maximum vocabulary size")
     parser.add_argument("-b", "--batchSize", type=int, default=64, help="Batch size")
     parser.add_argument("-e", "--nEpochs", type=int, default=40, help="Number of training epochs")
-    parser.add_argument("-d", "--embeddingDim", type=int, default=1024, help="Word embedding dimensionality")
-    parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked GRU layers")
-    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for GRU layers")
-    parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of test samples to predict. default is 0, so predict on the full validation data.")
+    # embeddingDim is d_model for Transformer. Should be same as nSteps.
+    parser.add_argument("-d", "--embeddingDim", type=int, default=256, help="Word embedding dimensionality (should match d_model)")
+    parser.add_argument("-l", "--numLayers", type=int, default=4, help="Number of stacked Encoder/Decoder layers (N)") # Adjusted default
+    parser.add_argument("--dropout", type=float, default=0.1, help="Dropout probability")
+    parser.add_argument("--numHeads", type=int, default=8, help="Number of attention heads")
+    parser.add_argument("--dff", type=int, default=1024, help="Dimension of feed-forward network (e.g., d_model * 4)") # d_model * 4 = 256 * 4 = 1024
+
+    parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of test samples to predict. 0 for full validation.")
     parser.add_argument("-T", "--trainData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_train.tsv", help="Training data TSV")
     parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Test data TSV")
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
     args = parser.parse_args()
 
-    # ----------  W&B init  --------------------------------
-    #   • uses argparse values as the initial config
-    #   • allows sweep overrides automatically
-    run = wandb.init(
-            project="ncd_reasoning_tf_GRU",               # change to your project
-            config=vars(args),                     # makes each flag a wandb.config key
-        
-    )
-    # keep a short alias
+    run = wandb.init(project="ncd_reasoning_tf_Transformer", config=vars(args)) # Updated project name
     cfg = run.config
-    # ────────────────────────────────────────────────────────────────
-    #  NEW: derive “run root” = results_path/project[/sweep]/run
-    # ────────────────────────────────────────────────────────────────
+    
     project_name = run.project or "wandb_project"
-    sweep_id     = run.sweep_id            # None if not in a sweep
-    run_id       = run.id                  # always present
-
+    sweep_id     = run.sweep_id
+    run_id       = run.id
     run_parts = [project_name]
-    if sweep_id is not None:
-        run_parts.append(sweep_id)
-    run_parts.append(run_id)
-
-    run_root = os.path.join(
-        os.path.normpath(getattr(cfg, "resPath", args.resPath)),
-        *run_parts) + os.sep           # final “/” for convenience
+    if sweep_id is not None: run_parts.append(f"sweep-{sweep_id}") # Clarify sweep folder
+    run_parts.append(f"run-{run_id}")
+    run_root = os.path.join(os.path.normpath(getattr(cfg, "resPath", args.resPath)), *run_parts) + os.sep
     os.makedirs(run_root, exist_ok=True)    
-    # replace *all* reads of argparse fields with cfg.*
-# ── hyper‑parameters (prefer sweep‑supplied values, else CLI defaults) ─────────
-    sequence_length = getattr(cfg, "seqLen",       args.seqLen)
-    max_features    = getattr(cfg, "nFeatures",    args.nFeatures)
-    batch_size      = getattr(cfg, "batchSize",    args.batchSize)
-    n_epochs        = getattr(cfg, "nEpochs",      args.nEpochs)
-    embedding_dim   = getattr(cfg, "embeddingDim", args.embeddingDim)
-    units           = getattr(cfg, "nSteps",       args.nSteps)
-    num_layers      = getattr(cfg, "numLayers",    args.numLayers)
-    dropout_rate    = getattr(cfg, "dropout",      args.dropout)
+
+    sequence_length = getattr(cfg, "seqLen", args.seqLen)
+    max_features    = getattr(cfg, "nFeatures", args.nFeatures)
+    batch_size      = getattr(cfg, "batchSize", args.batchSize)
+    n_epochs        = getattr(cfg, "nEpochs", args.nEpochs)
+    
+    d_model         = getattr(cfg, "nSteps", args.nSteps) # nSteps is d_model
+    if getattr(cfg, "embeddingDim", args.embeddingDim) != d_model:
+        logging.warning(f"embeddingDim ({getattr(cfg, 'embeddingDim', args.embeddingDim)}) " \
+                        f"is different from d_model (nSteps: {d_model}). Using d_model for embedding.")
+    # For Transformer, embeddingDim must be d_model.
+
+    num_layers      = getattr(cfg, "numLayers", args.numLayers)
+    dropout_rate    = getattr(cfg, "dropout", args.dropout)
+    num_heads       = getattr(cfg, "numHeads", args.numHeads)
+    dff             = getattr(cfg, "dff", args.dff)
+    maximum_position_encoding = 5000 # Fixed large value for positional encoding table
+
     training_data = getattr(cfg, "trainData", args.trainData)
     testing_data  = getattr(cfg, "testData",  args.testData)
-    results_path  = os.path.normpath(
-                   getattr(cfg, "resPath",  args.resPath)) + os.sep
-    n_demo = args.nDemo
-    # --- GPU runtime init ---------------------------------------------
+    n_demo = args.nDemo # Use args.nDemo directly as it's not a typical hyperparameter for sweep
+
     gpus = tf.config.list_physical_devices('GPU')
-    for dev in gpus:                                 # make TF allocate as‑needed
-        tf.config.experimental.set_memory_growth(dev, True)
-    mixed_precision.set_global_policy("mixed_float16")   # enable Tensor‑Cores
+    for dev in gpus: tf.config.experimental.set_memory_growth(dev, True)
+    if gpus: mixed_precision.set_global_policy("mixed_float16")
+    else: mixed_precision.set_global_policy("float32") # No mixed precision on CPU
 
-    dataset_name = parse_dataset_name(training_data)
-
-    # Load and prepare data
     logging.info("Preparing train and test data")
-    with open(training_data) as f:
-        train_text = f.readlines()
-    with open(testing_data) as f:
-        val_text = f.readlines()
+    with open(training_data, 'r', encoding='utf-8') as f: train_text = f.readlines()
+    with open(testing_data, 'r', encoding='utf-8') as f: val_text = f.readlines()
     train_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), train_text))
     val_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text))
 
-    # Create datasets
-    train_in, train_out = zip(*train_pairs)
-    test_in, test_out = zip(*val_pairs)
-    # force both lists to be plain strings
-    train_in  = [str(s) for s in train_in]
-    train_out = [str(s) for s in train_out]
-    dataset = (
-        tf.data.Dataset.from_tensor_slices((train_in, train_out))
-          .shuffle(len(train_in))
-          .batch(batch_size, drop_remainder=True)        # better for GPU :contentReference[oaicite:2]{index=2}
-          .prefetch(tf.data.AUTOTUNE)                    # overlap I/O‑compute :contentReference[oaicite:3]{index=3}
-    )
-    test_in  = [str(s) for s in test_in]
-    test_out = [str(s) for s in test_out]
+    train_in, train_out = zip(*train_pairs) if train_pairs else ([], [])
+    test_in, test_out = zip(*val_pairs) if val_pairs else ([], [])
+    train_in  = [str(s) for s in train_in]; train_out = [str(s) for s in train_out]
+    test_in   = [str(s) for s in test_in];  test_out  = [str(s) for s in test_out]
 
-    test_dataset = (
-        tf.data.Dataset.from_tensor_slices((test_in, test_out))
-          .shuffle(len(test_in))
-          .batch(batch_size, drop_remainder=True)
-          .prefetch(tf.data.AUTOTUNE)
-    )
-    # Initialize and train vectorizers
-    # Updated TextVectorization usage for TF 2.10+
+    dataset = (tf.data.Dataset.from_tensor_slices((train_in, train_out))
+               .shuffle(len(train_in), reshuffle_each_iteration=True) # Reshuffle each epoch
+               .batch(batch_size, drop_remainder=True)
+               .prefetch(tf.data.AUTOTUNE))
+    test_dataset = (tf.data.Dataset.from_tensor_slices((test_in, test_out))
+                    .batch(batch_size, drop_remainder=True) # No shuffle for validation usually
+                    .prefetch(tf.data.AUTOTUNE))
+
     input_vectorizer = TextVectorization(
         output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length,
         standardize=custom_standardization)
     output_vectorizer = TextVectorization(
-        output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length + 1,
+        output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length + 1, # For [start]/[end]
         standardize=custom_standardization)
     
-    train_in_texts = [pair[0] for pair in train_pairs]
-    train_out_texts = [pair[1][0] if CS_LABELS else pair[1] for pair in train_pairs]
-    logging.info("Training input text vectorizer")
-    input_vectorizer.adapt(train_in_texts)
-    logging.info("Training output text vectorizer")
-    output_vectorizer.adapt(train_out_texts)
+    # Adapt with all available text to build comprehensive vocabularies
+    all_input_texts = [pair[0] for pair in train_pairs + val_pairs if pair]
+    all_output_texts = [pair[1] for pair in train_pairs + val_pairs if pair] # Assuming pair[1] is string
+                                                                                # If CS_LABELS, pair[1] is tuple (text, label)
+    if CS_LABELS: # Handle tuple if CS_LABELS is True
+        all_output_texts_actual = [item[0] for item in all_output_texts if isinstance(item, tuple)]
+    else:
+        all_output_texts_actual = all_output_texts
+
+    if not all_input_texts : all_input_texts.append("") # Ensure not empty for adapt
+    if not all_output_texts_actual : all_output_texts_actual.append("")
+
+    logging.info("Adapting input text vectorizer")
+    input_vectorizer.adapt(all_input_texts)
+    logging.info("Adapting output text vectorizer")
+    output_vectorizer.adapt(all_output_texts_actual)
     
-    # Create directory if it doesn't exist
     vectorizer_path = os.path.join(run_root, "vectorizer") + os.sep
     os.makedirs(vectorizer_path, exist_ok=True)
     save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model.keras")
     save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model.keras")
     logging.info(f"Saved text vectorizers to {vectorizer_path}")
-    max_features = max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary()))
-
-    # Setup model and training
-    checkpoint_dir  = os.path.join(run_root, "checkpoints")
-    checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
-    # Create checkpoint directory if it doesn't exist
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    out_dir = run_root
-    # Create output directory if it doesn't exist
-    os.makedirs(out_dir, exist_ok=True)
     
-    cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
-    # default W&B callback logs loss/accuracy per step+epoch,
-    # system metrics, configurable plots, … :contentReference[oaicite:3]{index=3}
-    wandb_cb    = wandb.keras.WandbCallback(
-        save_model       = False,          # we already use ModelCheckpoint
-        log_weights      = False,
-        log_gradients    = False,
-        monitor          = "val_loss")    
-    train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
+    # Check vocab size after adapting
+    actual_input_vocab_size = input_vectorizer.vocabulary_size()
+    actual_output_vocab_size = output_vectorizer.vocabulary_size()
+    logging.info(f"Actual input vocab size: {actual_input_vocab_size}, output: {actual_output_vocab_size}")
 
-    transformer_config = {
-        'num_layers': num_layers,
-        'd_model': embedding_dim,
-        'num_heads': 8,
-        'ffn_units': 4 * embedding_dim,
-        'dropout_rate': dropout_rate
-    }
-    
-    # Initialize encoder/decoder with Transformer config
-    train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
-    # Using Adam with default learning rate for TF 2.10+ compatibility
-    train_translator.compile(
-        optimizer=tf.keras.optimizers.Adam(),
-        loss=MaskedLoss(), 
-        metrics=[keras.metrics.AUC(from_logits=True, name="auroc")]
+
+    train_translator = TrainTranslator(
+        d_model=d_model, num_heads=num_heads, dff=dff, num_layers=num_layers,
+        input_text_processor=input_vectorizer,
+        output_text_processor=output_vectorizer,
+        maximum_position_encoding=maximum_position_encoding,
+        dropout=dropout_rate
     )
     
-    logging.info("Training neural reasoning model...")
-    translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-    # fixed example = first validation sentence
-    sample_sentence = val_pairs[0][0] if val_pairs else train_pairs[0][0]
-    attn_cb = AttentionLogger(translator, sample_sentence)
+    # Optimizer with a learning rate schedule is common for Transformers
+    # For simplicity, using Adam with default LR as in original script.
+    # Consider tf.keras.optimizers.schedules.LearningRateSchedule for advanced use.
+    train_translator.compile(
+        optimizer=tf.keras.optimizers.Adam(), # Add learning_rate=... if using schedule
+        loss=MaskedLoss(), 
+        metrics=[keras.metrics.AUC(name="auroc")] # Keras will also track 'accuracy' from train/test_step
+    )
+    
+    checkpoint_dir  = os.path.join(run_root, "checkpoints")
+    checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5") # .weights.h5 for save_weights_only
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1, monitor="val_loss", save_best_only=True)
+    wandb_cb    = wandb.keras.WandbCallback(save_model=False, log_weights=False, log_gradients=False, monitor="val_loss")    
+    # BatchLogs were for custom loop. Keras handles batch metrics for progress bar.
+    # If specific batch logging to W&B is needed, it can be re-added.
+    
+    translator_for_logging = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+    sample_sentence_for_log = val_pairs[0][0] if val_pairs else (train_pairs[0][0] if train_pairs else "default sample sentence")
+    attn_cb = AttentionLogger(translator_for_logging, sample_sentence_for_log)
     overfit_cb = make_overfit_callback(total_epochs=n_epochs)
-    history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
-                                   callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
+
+    callbacks_list = [cp_callback, wandb_cb, attn_cb, overfit_cb]
+    
+    logging.info("Training Transformer model...")
+    history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs, callbacks=callbacks_list)
     logging.info("Training completed successfully")
-    # ── store one‑number‑per‑run so sweeps can plot them ───────────
-    # Save training history
+
+    # Load best weights for inference if save_best_only was used
+    if os.path.exists(checkpoint_path) and cp_callback.save_best_only:
+        logging.info(f"Loading best weights from {checkpoint_path} for final evaluation and inference.")
+        train_translator.load_weights(checkpoint_path)
+    
+    out_dir = run_root # Results saved in the run-specific directory
     logging.info("Saving evaluation results...")
     rdf = pd.DataFrame(history.history)
-    rdf.to_csv(f"{out_dir}history.csv")
-    fig, axes = plt.subplots(2, 1)
-    rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
-    rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
-    plt.savefig(f"{out_dir}history_plot.pdf")
+    rdf.to_csv(f"{out_dir}history.csv", index_label="epoch") # Save epoch numbers
+    if not rdf.empty:
+        fig, axes = plt.subplots(2, 1, figsize=(10, 8)) # Adjusted figsize
+        # Plot loss and val_loss
+        loss_cols = [col for col in rdf.columns if 'loss' in col.lower()]
+        if loss_cols: rdf[loss_cols].plot(ax=axes[0], title="Loss")
+        # Plot accuracy and val_accuracy (and AUROC)
+        metric_cols = [col for col in rdf.columns if 'loss' not in col.lower()]
+        if metric_cols: rdf[metric_cols].plot(ax=axes[1], title="Metrics")
+        plt.tight_layout()
+        plt.savefig(f"{out_dir}history_plot.pdf")
+        plt.close(fig)
+    else:
+        logging.warning("History dataframe is empty. Skipping plot generation.")
 
-    # Perform inferences n_demo = 0 for doing so for the full validation data.
+
     if n_demo >= 0:
-        random.shuffle(val_pairs)
+        inference_samples = list(val_pairs) # Use validation pairs for demo
+        random.shuffle(inference_samples)
         if n_demo > 0:
-            val_pairs = val_pairs[:n_demo]
-        inp_, targ_ = zip(*val_pairs)
-        results = []
-        logging.info("Performing inferences using the trained model...")
-        translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-        num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
-        if num_sections:
-            for chunk in np.array_split(list(inp_), num_sections):
-                result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-                results.append(result.tolist())
-            result = sum(results, [])
-            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
-            result_df.to_csv(f"{out_dir}predictions.csv")
-            print(result_df)
-            logging.info(f"Results written to {out_dir}predictions.csv")
+            inference_samples = inference_samples[:n_demo]
+        
+        inp_, targ_ = zip(*inference_samples) if inference_samples else ([], [])
+        results_list = []
+        
+        if inp_:
+            logging.info(f"Performing inferences on {len(inp_)} samples...")
+            # Create a new Translator instance with the potentially updated (best) weights
+            inference_translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+            
+            num_sections = math.ceil(len(inp_) / batch_size)
+            for i_chunk, chunk in enumerate(np.array_split(list(inp_), num_sections)):
+                logging.info(f"Inferring chunk {i_chunk+1}/{num_sections}")
+                # tf_translate expects explicit args now
+                translation_output = inference_translator.tf_translate(
+                    tf.constant(chunk), 
+                    tf.constant(sequence_length, dtype=tf.int32), # max_length for translation
+                    tf.constant(False, dtype=tf.bool),           # return_attention
+                    tf.constant(0.0, dtype=tf.float32)           # temperature (greedy)
+                )
+                results_list.extend(translation_output['text'].numpy().astype(str))
+            
+            result_df = pd.DataFrame({'Input_Phrase': inp_, 'Predicted_Output': results_list, 'True_Output': targ_})
+            result_df.to_csv(f"{out_dir}predictions.csv", index=False)
+            print("\nSample Predictions:")
+            print(result_df.head())
+            logging.info(f"Prediction results written to {out_dir}predictions.csv")
         else:
-            logging.warning("No inference samples to process.")
+            logging.warning("No inference samples to process (n_demo might be 0 and val_pairs empty, or n_demo was negative).")
 
     wandb.finish()
 
