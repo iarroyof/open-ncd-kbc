@@ -47,13 +47,14 @@ class HParams:
     heads: int = 8
     stacks: int = 1
     key_dim: int | None = None
+    dropout: float = 0.1               # ← NEW: global dropout rate
     batch: int = 64
     epochs: int = 30
     train_path: str | None = None
     valid_path: str | None = None
     out_dir: str = "results"
     seed: int = 42
-    attn_sample_indices: List[int] | None = None  # New field for attention logging
+    attn_sample_indices: List[int] | None = None  # for attention heat-maps
 
     def __post_init__(self):
         if self.key_dim is None:
@@ -162,42 +163,74 @@ class PosEmbed(layers.Layer):
         return None
 
 class EncBlock(layers.Layer):
-    def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
+    def __init__(self, dim: int, latent: int,
+                 heads: int, key_dim: int, dropout: float):
         super().__init__()
-        self.mha = layers.MultiHeadAttention(heads, key_dim)
+        # attention with probability dropout
+        self.mha = layers.MultiHeadAttention(heads, key_dim, dropout=dropout)
+        self.mha_drop = layers.Dropout(dropout)
+
+        # position-wise FFN
         self.ffn = keras.Sequential([
             layers.Dense(latent, activation="relu"),
             layers.Dense(dim),
         ])
+        self.ffn_drop = layers.Dropout(dropout)
+
+        # layer norms
         self.norm1 = MyLayerNorm(dim)
         self.norm2 = MyLayerNorm(dim)
 
-    def call(self, x: tf.Tensor, mask: tf.Tensor | None = None, training: bool = False) -> tf.Tensor:
-        attn = self.mha(tf.cast(x, tf.float32), tf.cast(x, tf.float32), training=training)
-        x = self.norm1(tf.cast(x, tf.float32) + tf.cast(attn, tf.float32))
-        ffn_out = self.ffn(tf.cast(x, tf.float32), training=training)
-        return self.norm2(tf.cast(x, tf.float32) + tf.cast(ffn_out, tf.float32))
+    def call(self, x: tf.Tensor,
+             mask: tf.Tensor | None = None,
+             training: bool = False) -> tf.Tensor:
+        # self-attention sub-layer
+        attn = self.mha(x, x, training=training)
+        x = self.norm1(x + self.mha_drop(attn, training=training))
+
+        # feed-forward sub-layer
+        ffn_out = self.ffn(x, training=training)
+        return self.norm2(x + self.ffn_drop(ffn_out, training=training))
+
 
 class DecBlock(layers.Layer):
-    def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
+    def __init__(self, dim: int, latent: int,
+                 heads: int, key_dim: int, dropout: float):
         super().__init__()
-        self.self_mha = layers.MultiHeadAttention(heads, key_dim)
-        self.cross_mha = layers.MultiHeadAttention(heads, key_dim)
+        # masked self-attention
+        self.self_mha  = layers.MultiHeadAttention(heads, key_dim, dropout=dropout)
+        self.self_drop = layers.Dropout(dropout)
+
+        # encoder–decoder attention
+        self.cross_mha  = layers.MultiHeadAttention(heads, key_dim, dropout=dropout)
+        self.cross_drop = layers.Dropout(dropout)
+
+        # FFN
         self.ffn = keras.Sequential([
             layers.Dense(latent, activation="relu"),
             layers.Dense(dim),
         ])
+        self.ffn_drop = layers.Dropout(dropout)
+
+        # norms
         self.norm1 = MyLayerNorm(dim)
         self.norm2 = MyLayerNorm(dim)
         self.norm3 = MyLayerNorm(dim)
 
-    def call(self, y: tf.Tensor, enc_out: tf.Tensor, training: bool = False) -> tf.Tensor:
-        self_attn = self.self_mha(tf.cast(y, tf.float32), tf.cast(y, tf.float32), training=training)
-        y = self.norm1(tf.cast(y, tf.float32) + tf.cast(self_attn, tf.float32))
-        cross_attn = self.cross_mha(tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), training=training)
-        y = self.norm2(tf.cast(y, tf.float32) + tf.cast(cross_attn, tf.float32))
-        ffn_out = self.ffn(tf.cast(y, tf.float32), training=training)
-        return self.norm3(tf.cast(y, tf.float32) + tf.cast(ffn_out, tf.float32))
+    def call(self, y: tf.Tensor, enc_out: tf.Tensor,
+             training: bool = False) -> tf.Tensor:
+        # 1. masked self-attention
+        self_attn = self.self_mha(y, y, training=training)
+        y = self.norm1(y + self.self_drop(self_attn, training=training))
+
+        # 2. encoder–decoder attention
+        cross_attn = self.cross_mha(y, enc_out, training=training)
+        y = self.norm2(y + self.cross_drop(cross_attn, training=training))
+
+        # 3. FFN
+        ffn_out = self.ffn(y, training=training)
+        return self.norm3(y + self.ffn_drop(ffn_out, training=training))
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # 5. Model builder
@@ -206,16 +239,26 @@ class DecBlock(layers.Layer):
 def build_model(h: HParams) -> keras.Model:
     enc_in = keras.Input((None,), dtype="int64", name="encoder_inputs")
     dec_in = keras.Input((None,), dtype="int64", name="decoder_inputs")
+
+    # encoder
     x = PosEmbed(h.seq_len, h.vocab_size, h.model_dim)(enc_in)
     for _ in range(h.stacks):
-        x = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(x)
+        x = EncBlock(h.model_dim, h.latent_dim,
+                     h.heads, h.key_dim,
+                     dropout=h.dropout)(x)
     enc_out = x
+
+    # decoder
     y = PosEmbed(h.seq_len + 1, h.vocab_size, h.model_dim)(dec_in)
     for _ in range(h.stacks):
-        y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim)(y, enc_out)
-    y = layers.Dropout(0.1)(y)
+        y = DecBlock(h.model_dim, h.latent_dim,
+                     h.heads, h.key_dim,
+                     dropout=h.dropout)(y, enc_out)
+
+    y = layers.Dropout(h.dropout)(y)  # final dropout (was 0.1)
     out = layers.Dense(h.vocab_size, activation="softmax")(y)
     return keras.Model([enc_in, dec_in], out, name="transformer")
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # 6. Dataset pipeline
@@ -288,6 +331,11 @@ def batch_predict(model, src_vect, max_len, start_token, end_token, batch_size=3
 # ════════════════════════════════════════════════════════════════════════════
 
 class AttentionLoggerCallback(keras.callbacks.Callback):
+    """
+    Logs encoder–decoder cross-attention heat-maps for a few validation samples.
+    Uses the same global dropout rate (h.dropout) in the temporary model so
+    visualisations match the main network.
+    """
     def __init__(self, h, valid_pairs, input_vect, output_vect, log_samples=5):
         super().__init__()
         self.h = h
@@ -295,119 +343,128 @@ class AttentionLoggerCallback(keras.callbacks.Callback):
         self.input_vect = input_vect
         self.output_vect = output_vect
         self.log_samples = log_samples
-        self.start_token_id = self.output_vect([START])[0, 0].numpy()
-        self.end_token_id = self.output_vect([END])[0, 0].numpy()
 
+        self.start_token_id = output_vect([START])[0, 0].numpy()
+        self.end_token_id   = output_vect([END ])[0, 0].numpy()
+
+    # ------------------------------------------------------------------ #
     def on_epoch_end(self, epoch, logs=None):
-        # Select samples
+        # ── pick samples -------------------------------------------------
         if self.h.attn_sample_indices:
-            indices = [i for i in self.h.attn_sample_indices if 0 <= i < len(self.valid_pairs)]
+            indices = [i for i in self.h.attn_sample_indices
+                       if 0 <= i < len(self.valid_pairs)]
             samples = [self.valid_pairs[i] for i in indices]
         else:
-            samples = random.sample(self.valid_pairs, min(self.log_samples, len(self.valid_pairs)))
-            indices = ["random"] * len(samples)
-        
+            samples = random.sample(self.valid_pairs,
+                                    min(self.log_samples, len(self.valid_pairs)))
+            indices = ["rand"] * len(samples)
+
         src_texts, _ = zip(*samples)
         enc_inputs = self.input_vect(src_texts).numpy()
 
-        # Generate predictions with temperature sampling
+        # ── autoregressive generation -----------------------------------
         batch_size = len(src_texts)
         enc_inputs_tensor = tf.convert_to_tensor(enc_inputs, dtype=tf.int64)
-        dec_inputs = tf.fill([batch_size, 1], tf.cast(self.start_token_id, tf.int64))
+        dec_inputs = tf.fill([batch_size, 1],
+                             tf.cast(self.start_token_id, tf.int64))
+
         predictions = [[] for _ in range(batch_size)]
-        finished = tf.zeros(batch_size, dtype=tf.bool)
+        finished    = tf.zeros(batch_size, dtype=tf.bool)
         temperature = 0.7
-        
+
         for step in range(self.h.seq_len):
             preds = self.model.predict([enc_inputs_tensor, dec_inputs], verbose=0)
             logits = preds[:, -1, :] / temperature
-            next_tokens = tf.random.categorical(logits, num_samples=1, dtype=tf.int64)
+            next_tokens = tf.random.categorical(logits, 1, dtype=tf.int64)
             next_tokens = tf.squeeze(next_tokens, axis=-1)
-            
-            # Debug top probabilities
-            if step < 3:  # Log for first 3 steps
-                top_probs = tf.sort(preds[0, -1, :], direction='DESCENDING')[:5]
-                top_ids = tf.argsort(preds[0, -1, :], direction='DESCENDING')[:5]
-                vocab = self.output_vect.get_vocabulary()
-                LOGGER.info(f"Sample 0, Step {step}, Top probs: {top_probs.numpy()}, Tokens: {[vocab[id] for id in top_ids.numpy()]}")
-            
+
             for j in range(batch_size):
                 if not finished[j]:
-                    token = next_tokens[j].numpy()
-                    predictions[j].append(token)
-                    if token == self.end_token_id:
-                        finished = tf.tensor_scatter_nd_update(finished, [[j]], [True])
-            
+                    tok = next_tokens[j].numpy()
+                    predictions[j].append(tok)
+                    if tok == self.end_token_id:
+                        finished = tf.tensor_scatter_nd_update(finished,
+                                                               [[j]], [True])
+
             if tf.reduce_all(finished):
                 break
-                
-            dec_inputs = tf.concat([dec_inputs, tf.expand_dims(next_tokens, -1)], axis=1)
+            dec_inputs = tf.concat([dec_inputs,
+                                    tf.expand_dims(next_tokens, -1)], axis=1)
 
-        # Convert predictions to numpy arrays for attention model
-        pred_inputs = [np.array(pred[:self.h.seq_len], dtype=np.int64) for pred in predictions]
-        pred_inputs = tf.keras.preprocessing.sequence.pad_sequences(pred_inputs, maxlen=self.h.seq_len + 1, padding='post', value=0)
+        # pad predictions for temp model
+        pred_inputs = [np.array(seq[:self.h.seq_len], dtype=np.int64)
+                       for seq in predictions]
+        pred_inputs = tf.keras.preprocessing.sequence.pad_sequences(
+            pred_inputs, maxlen=self.h.seq_len + 1, padding='post', value=0)
 
-        # Build temporary model to output cross-attention scores
+        # ── build temp model with the same dropout ----------------------
         enc_in = keras.Input((None,), dtype="int64", name="encoder_inputs")
         dec_in = keras.Input((None,), dtype="int64", name="decoder_inputs")
-        x = PosEmbed(self.h.seq_len, self.h.vocab_size, self.h.model_dim)(enc_in)
+
+        x = PosEmbed(self.h.seq_len, self.h.vocab_size,
+                     self.h.model_dim)(enc_in)
         for _ in range(self.h.stacks):
-            x = EncBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)(x)
+            x = EncBlock(self.h.model_dim, self.h.latent_dim,
+                         self.h.heads, self.h.key_dim,
+                         dropout=self.h.dropout)(x)
         enc_out = x
-        y = PosEmbed(self.h.seq_len + 1, self.h.vocab_size, self.h.model_dim)(dec_in)
-        cross_attn_outputs = []
+
+        y = PosEmbed(self.h.seq_len + 1, self.h.vocab_size,
+                     self.h.model_dim)(dec_in)
+        cross_attn_outs = []
         for _ in range(self.h.stacks):
-            dec_block = DecBlock(self.h.model_dim, self.h.latent_dim, self.h.heads, self.h.key_dim)
-            y = dec_block(y, enc_out)
-            _, cross_attn = dec_block.cross_mha(
-                tf.cast(y, tf.float32), tf.cast(enc_out, tf.float32), return_attention_scores=True
-            )
-            cross_attn_outputs.append(cross_attn)
-        y = layers.Dropout(0.1)(y)
+            dec_blk = DecBlock(self.h.model_dim, self.h.latent_dim,
+                               self.h.heads, self.h.key_dim,
+                               dropout=self.h.dropout)
+            y = dec_blk(y, enc_out)
+            _, cross_attn = dec_blk.cross_mha(
+                y, enc_out, return_attention_scores=True)
+            cross_attn_outs.append(cross_attn)
+
+        y = layers.Dropout(self.h.dropout)(y)
         out = layers.Dense(self.h.vocab_size, activation="softmax")(y)
-        attn_model = keras.Model([enc_in, dec_in], [out] + cross_attn_outputs)
+
+        attn_model = keras.Model([enc_in, dec_in], [out] + cross_attn_outs)
         attn_model.set_weights(self.model.get_weights())
 
-        # Log heatmaps for each sample
-        for sample_idx in range(len(src_texts)):
-            # Trim source to non-padding tokens
-            src_valid = np.where(enc_inputs[sample_idx] != 0)[0]
-            src_end = src_valid[-1] + 1 if src_valid.size > 0 else 1
-            src_tokens = [self.input_vect.get_vocabulary()[int(token)] for token in enc_inputs[sample_idx][:src_end]]
+        # ── log heat-maps ----------------------------------------------
+        vocab_in  = self.input_vect.get_vocabulary()
+        vocab_out = self.output_vect.get_vocabulary()
 
-            # Trim predicted sequence to [end] token
-            pred_tokens = predictions[sample_idx]
-            tgt_end = len(pred_tokens)
-            for i, token in enumerate(pred_tokens):
-                if token == self.end_token_id:
-                    tgt_end = i + 1
-                    break
-            tgt_tokens = [self.output_vect.get_vocabulary()[token] for token in pred_tokens[:tgt_end]]
+        for s_idx, src_vec in enumerate(enc_inputs):
+            src_len = int(np.sum(src_vec != 0))
+            src_tok = [vocab_in[int(t)] for t in src_vec[:src_len]]
 
-            # Compute attention scores for the predicted sequence
-            enc_input_single = enc_inputs[sample_idx:sample_idx+1]
-            dec_input_single = pred_inputs[sample_idx:sample_idx+1]
-            outputs = attn_model.predict([enc_input_single, dec_input_single], verbose=0)
-            attn_scores = outputs[1:]  # Skip output logits, take attention scores
+            pred_ids = predictions[s_idx]
+            tgt_len = next((i + 1 for i, t in enumerate(pred_ids)
+                            if t == self.end_token_id), len(pred_ids))
+            tgt_tok = [vocab_out[t] for t in pred_ids[:tgt_len]]
 
-            # Log full predicted sequence for debugging
-            pred_text = " ".join([self.output_vect.get_vocabulary()[token] for token in pred_tokens[:tgt_end]])
-            LOGGER.info(f"Sample {sample_idx} (Index {indices[sample_idx]}): Predicted sequence: {pred_text}")
+            enc_single = enc_inputs[s_idx:s_idx+1]
+            dec_single = pred_inputs[s_idx:s_idx+1]
+            outputs = attn_model.predict([enc_single, dec_single], verbose=0)
+            attn_mats = outputs[1:]
 
-            # Log heatmaps for each layer
-            for layer_idx, scores in enumerate(attn_scores):
-                attn_matrix = scores[0, 0][:tgt_end, :src_end]  # Trim to valid spans
+            LOGGER.info(
+                f"Epoch {epoch} | sample {s_idx} | pred: {' '.join(tgt_tok)}"
+            )
+
+            for l_idx, scores in enumerate(attn_mats):
+                mat = scores[0, 0][:tgt_len, :src_len]
                 fig, ax = plt.subplots(figsize=(8, 6))
-                im = ax.imshow(attn_matrix, cmap='viridis')
-                ax.set_xticks(range(len(src_tokens)))
-                ax.set_yticks(range(len(tgt_tokens)))
-                ax.set_xticklabels(src_tokens, rotation=90)
-                ax.set_yticklabels(tgt_tokens)
-                ax.set_title(f"Epoch {epoch} Layer {layer_idx} Head 0 Sample {sample_idx} (Index {indices[sample_idx]})")
+                im = ax.imshow(mat, cmap='viridis')
+                ax.set_xticks(range(src_len))
+                ax.set_yticks(range(tgt_len))
+                ax.set_xticklabels(src_tok, rotation=90)
+                ax.set_yticklabels(tgt_tok)
+                ax.set_title(f"E{epoch} L{l_idx} S{s_idx} ({indices[s_idx]})")
                 plt.colorbar(im)
-                wandb.log({f"attention/epoch_{epoch}_layer_{layer_idx}_sample_{sample_idx}": wandb.Image(fig)})
+                wandb.log({f"attention/E{epoch}_L{l_idx}_S{s_idx}":
+                           wandb.Image(fig)})
                 plt.close(fig)
+
         LOGGER.info(f"Logged attention matrices for epoch {epoch}")
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # 9. Custom Loss with Label Smoothing
@@ -544,6 +601,8 @@ def main():
     parser.add_argument("--out-dir", type=str, default="results", help="Output directory")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--attn-sample-indices", type=int, nargs="*", default=None, help="Validation sample indices for attention logging")
+    parser.add_argument("--dropout", type=float, default=None, help="Global dropout rate used throughout the Transformer")
+
     args = parser.parse_args()
     
     if args.train and args.train_path is None:
