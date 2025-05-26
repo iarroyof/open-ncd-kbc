@@ -239,7 +239,10 @@ class PositionalEmbedding(tf.keras.layers.Layer):
 
     def call(self, x):
         length = tf.shape(x)[1]
-        return self.token_emb(x) + self.pos_enc[:, :length, :]
+        tok = self.token_emb(x)                      # (B, L, d)  float16
+        pos = tf.cast(self.pos_enc[:, :length, :],   # match dtype
+                      tok.dtype)                     # float16
+        return tok + pos
 
 class BahdanauAttention(tf.keras.layers.Layer):
     """Bahdanau attention mechanism for sequence-to-sequence models."""
@@ -306,7 +309,7 @@ class Encoder(tf.keras.layers.Layer):
             ]) for _ in range(num_layers)
         ]
 
-    def call(self, tokens, state=None):             # state ignored
+    def call(self, tokens, state=None, training=False):             # state ignored
         x = self.embed(tokens)                      # (B, S, d)
         padding_mask = tf.cast(tokens != 0, tf.int32)[:, None, None, :]
         padding_mask = (1 - padding_mask) * -1e9    # -> large -inf where pads
@@ -375,7 +378,7 @@ class Decoder(tf.keras.layers.Layer):
         self.fc = layers.Dense(output_vocab_size)   # final LM projection
 
     # ------------------------------------------------------------------  
-    def call(self, inputs, state=None):
+    def call(self, inputs, state=None, training=False):
         """
         inputs = (new_tokens, enc_output, enc_padding_mask)
         `state` keeps *all tokens seen so far* (shape (B, T_prev)).
