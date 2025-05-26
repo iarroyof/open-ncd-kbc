@@ -251,7 +251,8 @@ class Decoder(tf.keras.layers.Layer):
         vectors = self.embedding(new_tokens)
         outputs_and_states = self.rnn(vectors, initial_state=state)
         rnn_output, *dec_state = outputs_and_states
-        dec_state = [(dec_state[2*i], dec_state[2*i+1]) for i in range(self.num_layers)]
+        #dec_state = [(dec_state[2*i], dec_state[2*i+1]) for i in range(self.num_layers)]
+        dec_state = enc_state
         context_vector, attention_weights = self.attention(rnn_output, enc_output, mask)
         rnn_step = rnn_output[:, -1, :]
         context_step = context_vector[:, -1, :]
@@ -324,7 +325,8 @@ class TrainTranslator(tf.keras.Model):
         max_t = tf.shape(target_tokens)[1]
         with tf.GradientTape() as tape:
             enc_output, enc_state = self.encoder(input_tokens)
-            dec_state = [(enc_state[2*i], enc_state[2*i+1]) for i in range(self.decoder.num_layers)]
+            #dec_state = [(enc_state[2*i], enc_state[2*i+1]) for i in range(self.decoder.num_layers)]
+            dec_state = enc_state
             total_loss = tf.constant(0.0, tf.float32)
             for t in tf.range(max_t - 1):
                 new_tokens = target_tokens[:, t:t + 2]
@@ -350,7 +352,8 @@ class TrainTranslator(tf.keras.Model):
          target_tokens, target_mask) = self._preprocess(input_text, target_text)
         max_t = tf.shape(target_tokens)[1]
         enc_output, enc_state = self.encoder(input_tokens)
-        dec_state = [(enc_state[2*i], enc_state[2*i+1]) for i in range(self.decoder.num_layers)]
+        #dec_state = [(enc_state[2*i], enc_state[2*i+1]) for i in range(self.decoder.num_layers)]
+        dec_state = enc_state
         total_loss = tf.constant(0.0, tf.float32)
         for t in tf.range(max_t - 1):
             new_tokens = target_tokens[:, t:t + 2]
@@ -428,7 +431,8 @@ class Translator(tf.Module):
         batch_size = tf.shape(input_text)[0]
         input_tokens = self.input_text_processor(input_text)
         enc_output, enc_state = self.encoder(input_tokens)
-        dec_state = [(enc_state[2*i], enc_state[2*i+1]) for i in range(len(enc_state)//2)]
+        #dec_state = [(enc_state[2*i], enc_state[2*i+1]) for i in range(len(enc_state)//2)]
+        dec_state = enc_state
         new_tokens = tf.fill([batch_size, 1], self.start_token)
         result_tokens, attention = [], []
         done = tf.zeros([batch_size, 1], dtype=tf.bool)
