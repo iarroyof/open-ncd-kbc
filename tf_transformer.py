@@ -543,9 +543,8 @@ class TextMetricsCallback(keras.callbacks.Callback):
         )
         num_seqs = len(preds)
         with_end = sum(any(t == self.end_id for t in seq) for seq in preds)
-        LOGGER.info("Epoch %d: %d/%d (%.1f%%) predictions ended with [end]",
-                    self.model.current_epoch, with_end, num_seqs,
-                    100 * with_end / num_seqs)
+        LOGGER.info("%d/%d (%.1f%%) greedy predictions ended with [end]",
+                    with_end, num_seqs, 100 * with_end / num_seqs)
         hyp = _ids_to_text(preds, self.vocab, self.end_id)
         return list(hyp), list(ref_texts)
 
