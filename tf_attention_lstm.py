@@ -299,6 +299,10 @@ class Decoder(tf.keras.layers.Layer):
         """
         new_tokens, enc_output, mask = inputs
         if state is not None:
+            # Handle both flat list [h1, c1, h2, c2, ...] and nested list [[h1, c1], [h2, c2], ...]
+            if isinstance(state[0], (list, tuple)):
+                # Flatten nested list of tuples: [[h1, c1], [h2, c2], ...] -> [h1, c1, h2, c2, ...]
+                state = [s for pair in state for s in pair]
             # Group flat list [h1, c1, h2, c2, ..., hN, cN] into [(h1, c1), (h2, c2), ..., (hN, cN)]
             state = [(state[2*i], state[2*i+1]) for i in range(self.num_layers)]
         vectors = self.embedding(new_tokens)
