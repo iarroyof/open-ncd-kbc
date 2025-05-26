@@ -297,10 +297,11 @@ class TransformerEncoderLayer(layers.Layer):
 
     def call(self, inputs, training=False, mask=None):
         attn_output = self.mha(query=inputs, value=inputs, key=inputs, attention_mask=mask)
-        attn_output = self.dropout1(attn_output, training=training)
+        attn_output = self.dropout1(attn_output, training=training)  # Use `training` param
         out1 = self.layernorm1(inputs + attn_output)
+        
         ffn_output = self.ffn(out1)
-        ffn_output = self.dropout2(ffn_output, training=training)
+        ffn_output = self.dropout2(ffn_output, training=training)  # Use `training` param
         return self.layernorm2(out1 + ffn_output)
 
 class TransformerEncoder(layers.Layer):
@@ -345,16 +346,16 @@ class TransformerDecoderLayer(layers.Layer):
         dec_mask = tf.logical_and(dec_mask, tf.cast(look_ahead_mask, tf.bool)[tf.newaxis, tf.newaxis, :, :])
 
         attn1 = self.mha1(query=inputs, value=inputs, key=inputs, attention_mask=dec_mask)
-        attn1 = self.dropout1(attn1, training=training)
+        attn1 = self.dropout1(attn1, training=training)  # Use `training` param
         out1 = self.layernorm1(inputs + attn1)
-
+    
         attn2 = self.mha2(query=out1, value=enc_output, key=enc_output, 
                          attention_mask=dec_mask[:, :, :, :tf.shape(enc_output)[1]])
-        attn2 = self.dropout2(attn2, training=training)
+        attn2 = self.dropout2(attn2, training=training)  # Use `training` param
         out2 = self.layernorm2(out1 + attn2)
-
+    
         ffn_output = self.ffn(out2)
-        ffn_output = self.dropout3(ffn_output, training=training)
+        ffn_output = self.dropout3(ffn_output, training=training)  # Use `training` param
         return self.layernorm3(out2 + ffn_output)
 
 class TransformerDecoder(layers.Layer):
