@@ -351,11 +351,24 @@ class TransformerDecoderLayer(layers.Layer):
 
     def call(self, inputs, enc_output, training=False):
         tar_seq_len = tf.shape(inputs)[1]
-        look_ahead_mask = tf.linalg.band_part(tf.ones((tar_seq_len, tar_seq_len)), -1, 0)
-        dec_mask = tf.math.not_equal(inputs, 0)[:, tf.newaxis, tf.newaxis, :]
-        dec_mask = tf.logical_and(dec_mask, tf.cast(look_ahead_mask, tf.bool)[tf.newaxis, tf.newaxis, :, :])
-
-        attn1 = self.mha1(query=inputs, value=inputs, key=inputs, attention_mask=dec_mask)
+        # 1. Self-attention mask (lower triangular + padding mask)
+        look_ahead_mask = tf.linalg.band_part(tf.ones((tar_seq_len, tar_seq_len)), -1, 0)  # (T, T)
+        dec_mask = tf.math.not_equal(inputs, 0)  # (B, T)
+        dec_mask = dec_mask[:, tf.newaxis, tf.newaxis, :]  # (B, 1, 1, T)
+        look_ahead_mask = tf.cast(look_ahead_mask, tf.bool)[tf.newaxis, tf.newaxis, :, :]  # (1, 1, T, T)
+        self_attention_mask = tf.logical_and(dec_mask, look_ahead_mask)  # (B, 1, T, T)
+    
+        # 2. Cross-attention mask (padding mask only)
+        enc_padding_mask = tf.math.not_equal(enc_output, 0)  # (B, S)
+        enc_padding_mask = enc_padding_mask[:, tf.newaxis, tf.newaxis, :]  # (B, 1, 1, S)
+    
+        # 3. Apply attention layers
+        attn1 = self.mha1(
+            query=inputs,
+            value=inputs,
+            key=inputs,
+            attention_mask=self_attention_mask  # Now shape: (B, 1, T, T)
+        )
         attn1 = self.dropout1(attn1, training=training)  # Use `training` param
         out1 = self.layernorm1(inputs + attn1)
     
