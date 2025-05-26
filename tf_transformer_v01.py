@@ -243,7 +243,8 @@ class PositionalEncoding(tf.keras.layers.Layer):
 
     def call(self, inputs): # inputs: (batch_size, seq_len, d_model)
         seq_len = tf.shape(inputs)[1]
-        return inputs + self.pos_encoding[:, :seq_len, :]
+        # Ensure positional encoding matches the dtype of inputs for mixed precision
+        return inputs + tf.cast(self.pos_encoding[:, :seq_len, :], dtype=inputs.dtype)
 
     def get_config(self):
         config = super().get_config()
@@ -357,8 +358,11 @@ class Encoder(tf.keras.layers.Layer):
         self.dropout = tf.keras.layers.Dropout(rate)
 
     def call(self, x, training, mask):
-        x = self.embedding(x)
-        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        x = self.embedding(x) # x is now potentially float16 if mixed precision is on
+        # Scale embedding by d_model
+        scaling_factor = tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        x *= tf.cast(scaling_factor, x.dtype) # Cast scaling factor to x's dtype
+        
         x = self.pos_encoding(x)
         x = self.dropout(x, training=training)
         for i in range(self.num_layers):
@@ -392,12 +396,16 @@ class Decoder(tf.keras.layers.Layer):
         self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
         self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
-        self.final_layer = tf.keras.layers.Dense(target_vocab_size)
+        # Ensure the final layer computes in float32 for numerical stability with mixed precision
+        self.final_layer = tf.keras.layers.Dense(target_vocab_size, dtype=tf.float32)
 
     def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
         attention_weights = {}
-        x = self.embedding(x)
-        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        x = self.embedding(x) # x is now potentially float16
+        # Scale embedding by d_model
+        scaling_factor = tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        x *= tf.cast(scaling_factor, x.dtype) # Cast scaling factor to x's dtype
+
         x = self.pos_encoding(x)
         x = self.dropout(x, training=training)
 
