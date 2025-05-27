@@ -152,9 +152,11 @@ class PosEmbed(layers.Layer):
                  ", input_shape =", tf.shape(x), summarize=-1)
         tf.debugging.assert_less_equal(
             length, self.max_len,
-            message=f"Decoder length {length.numpy()} exceeds positional "
-                    f"embedding size {self.max_len}. "
-                    f"Increase --dec-max-mult or stop the loop earlier."
+            message=(
+                "Sequence length exceeds the positional-embedding table "
+                f"of size {self.max_len}. "
+                "Increase --dec-max-mult or stop the loop earlier."
+            )
         )
         return self.tok(x) + self.pos(self.idx[:length])
 
