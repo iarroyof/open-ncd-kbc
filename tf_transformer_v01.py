@@ -23,6 +23,7 @@ import traceback
 import yaml
 from typing import List, Tuple
 import zipfile
+import os
 
 # ── third-party ────────────────────────────────────────────────────────────
 import numpy as np
@@ -385,18 +386,30 @@ def main():
     model.build([(None, None), (None, None)])
     model.summary(print_fn=LOGGER.info)
 
-    # ----------------------------- W&B -------------------------------
-    # init first → only then wandb.run.* is guaranteed to exist
-    # ------------------------------------------------------------------
-    wandb.init(project="tf-transformer", save_code=False)
+    # ---------------------------------------------------------------
+    # 1️⃣ W&B – create the run *first* so we have its metadata
+    # ---------------------------------------------------------------
+    run = wandb.init(                           # same pattern you used before
+            project="tf-transformer",
+            config=vars(args),                  # CLI flags in the config
+    )
+    cfg = run.config                            # optional shorthand
 
-    # Build output folder: <root>/<project>/<sweep-or-solo>/<run-id>
-    root     = Path(h.out_path)
-    project  = wandb.run.project or "unknown_project"
-    sweep_id = wandb.run.sweep.id if wandb.run.sweep else "solo"
-    run_dir  = root / project / sweep_id / wandb.run.id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    # ---------------------------------------------------------------
+    #     Derive the output folder
+    #     <out-path>/<project>/<sweep-id|solo>/<run-id>/
+    # ---------------------------------------------------------------
+    project_name = run.project or "wandb_project"
+    sweep_id     = run.sweep_id or "solo"       # .sweep_id is always present
+    run_id       = run.id                       # always present
 
+    run_root = os.path.join(                    # keep a final "/" for ease
+        os.path.normpath(h.out_path), project_name, sweep_id, run_id
+    ) + os.sep
+    os.makedirs(run_root, exist_ok=True)
+
+    # everything below keeps using `run_root` instead of `run_dir`
+    run_dir = Path(run_root)                    # convenience Path object
     # save vectorisers after run_dir exists
     save_tv(INPUT_VECT,  run_dir / "input.keras")
     save_tv(OUTPUT_VECT, run_dir / "output.keras")
