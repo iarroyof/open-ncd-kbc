@@ -505,6 +505,7 @@ class TrainTranslator(tf.keras.Model):
             dec_target_padding_mask, # (B, 1, 1, T_tar), True where target is padded
             look_ahead_mask_for_shape[tf.newaxis, tf.newaxis, :, :] # (1, 1, T_tar, T_tar), True for future
         ) # Result is (B, 1, T_tar, T_tar)
+        return enc_padding_mask, combined_dec_self_attention_mask, dec_enc_padding_mask # Add this line
 
     def _call_logic(self, input_tokens, target_tokens_input, training):
         # Note: target_tokens_input is tar_inp from train_step/test_step
