@@ -279,78 +279,64 @@ class Translator(tf.Module):
     # ------------------------------------------------------------------
     #  Sampling helper – supports temperature, top-k and nucleus (top-p)
     # ------------------------------------------------------------------
+    # ──────────────────────────────────────────────────────────────────────
+    # Translator.sample  – temperature / top-k / top-p aware
+    # ──────────────────────────────────────────────────────────────────────
     def sample(
         self,
         logits: tf.Tensor,
-        *,                      # force keyword args ↓ for clarity
+        *,                         # force keyword args for clarity
         temperature: float | None = None,
-        top_k: int | None       = None,
-        top_p: float | None     = None,
+        top_k:       int   | None = None,
+        top_p:       float | None = None,
     ) -> tf.Tensor:
         """
-        Return a tensor of shape **[batch]** with one sampled token-id per
-        batch element.
-
-        Parameters
-        ----------
-        logits : tf.Tensor[batch, vocab]
-            Raw soft-max logits for the next step.
-        temperature : float | None
-            τ = 0  → greedy; τ < 1  → sharper; τ > 1  → flatter.
-        top_k : int | None
-            Keep only the K highest-logit tokens before sampling.
-        top_p : float | None
-            *Nucleus* filtering – keep the smallest set of tokens whose
-            cumulative soft-max probability ≥ p.
-
-        Notes
-        -----
-        • If **all three controls are “off’’** (temperature == 0 or None,
-          top_k == 0 or None, top_p == 0 or None) the method reduces to
-          **greedy decoding** (arg-max).  
-        • The method automatically masks the three banned ids
-          (“”, [UNK], [start]) that were stored in `self.token_mask`.
+        Return a tensor **[batch]** with one token-id per batch element,
+        applying (optional) temperature, top-k and/or nucleus (top-p) filtering.
+    
+        • If every control is “off’’ (τ==0 or None, k==0/None, p==0/None)
+          the function degenerates to plain greedy decoding (arg-max).
+    
+        • Tokens whose ids are marked in `self.token_mask` are never sampled.
         """
-
-        # 1) dtype hygiene – keep everything in float32 for tf.where / softmax
+        # ---- 1.  dtype hygiene --------------------------------------------------
         logits = tf.cast(logits, tf.float32)
-
-        # 2) permanently mask out unwanted tokens
-        mask   = self.token_mask[None, :]                 # shape [1, V]
-        logits = tf.where(mask, tf.constant(-np.inf, tf.float32), logits)
-
-        # 3) temperature scaling  (τ == 0 → greedy, handled later)
+    
+        # ---- 2.  permanently ban unwanted ids ----------------------------------
+        banned = self.token_mask[None, :]                    # [1,V]
+        logits = tf.where(banned, tf.constant(-np.inf, tf.float32), logits)
+    
+        # ---- 3.  temperature ----------------------------------------------------
         τ = 0.0 if temperature is None else temperature
         if τ > 0.0:
             logits = logits / τ
-
-        # 4) top-k filtering
+    
+        # ---- 4.  top-k ----------------------------------------------------------
         if top_k and top_k > 0:
             kth = tf.math.top_k(logits, k=top_k).values[:, -1, tf.newaxis]
             logits = tf.where(logits < kth, tf.constant(-np.inf, tf.float32), logits)
-
-        # 5) nucleus / top-p filtering
+    
+        # ---- 5.  top-p (nucleus) -----------------------------------------------
         if top_p and top_p > 0.0:
-            sorted_logits = tf.sort(logits, direction="DESCENDING", axis=-1)
+            sorted_logits = tf.sort(logits, axis=-1, direction="DESCENDING")
             cdf = tf.math.cumsum(tf.nn.softmax(sorted_logits, axis=-1), axis=-1)
-            # index of last token that keeps cumulative prob ≤ p
-            mask_idx = tf.argmax(tf.cast(cdf > top_p, tf.int32), axis=-1)
-            # get corresponding threshold value
+            # index of *first* token where cumulative prob > p
+            cut_idx = tf.argmax(tf.cast(cdf > top_p, tf.int32), axis=-1)
+            # logit threshold corresponding to that index
             thresh = tf.gather_nd(
                 sorted_logits,
-                tf.stack([tf.range(tf.shape(logits)[0]), mask_idx], axis=1),
+                tf.stack([tf.range(tf.shape(logits)[0]), cut_idx], axis=1)
             )
             logits = tf.where(logits < thresh[:, tf.newaxis],
                               tf.constant(-np.inf, tf.float32), logits)
-
-        # ------------------------------------------------------------------
-        # 6) final choice – greedy if all filters removed nothing, else sample
-        # ------------------------------------------------------------------
+    
+        # ---- 6.  final choice ---------------------------------------------------
         greedy = (τ == 0.0) and (not top_k or top_k == 0) and (not top_p or top_p == 0.0)
         if greedy:
             return tf.argmax(logits, axis=-1, output_type=tf.int64)
-
-        return tf.random.categorical(logits, num_samples=1, dtype=tf.int64)[:, 0]
+    
+        # categorical returns shape [B,1]  →  squeeze to [B]
+        return tf.random.categorical(logits, 1, dtype=tf.int64)[:, 0]
 
 
     def translate(self, text, max_len=50):
@@ -371,7 +357,12 @@ class Translator(tf.Module):
                 break
             logits = self.model([enc_in, dec_in], training=False)[:, -1, :]
             # expand dims so rank == 2 → avoid accidental flattening
-            new_tok = self.sample(logits)
+            new_tok = self.sample(
+                logits,
+                temperature=self.temperature,
+                top_k=self.top_k,
+                top_p=self.top_p,
+            )
             done |= (new_tok == self.end)               # shapes [B] ✓
             new_tok = tf.where(done, 0, new_tok)        # still [B] ✓
 
