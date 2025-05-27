@@ -34,6 +34,8 @@ from tensorflow.keras import layers
 from tensorflow.keras.layers import TextVectorization
 from tensorflow.keras import mixed_precision
 import wandb
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # ── logging setup ─────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -126,6 +128,52 @@ def save_tv(tv: TextVectorization, path: Path) -> None:
         zf.testzip()
     LOGGER.info("Saved and verified %s", path)
 
+# ── attention logger ────────────────────────────────────────────────────
+class AttentionLogger(keras.callbacks.Callback):
+    """
+    After every epoch draw attention heat-maps for a handful of
+    validation sentences.  Only *decoder cross-attention* is plotted –
+    that is, how each generated token attends to the encoded source.
+
+    One PNG per block×head is written to <run_dir>/attn_ep_<N>.png and
+    also logged as a W&B artefact.
+    """
+    def __init__(self, translator: Translator,
+                 src_texts: list[str],
+                 run_dir:   Path,
+                 every_n_epochs: int = 1):
+        super().__init__()
+        self.t        = translator
+        self.src      = src_texts
+        self.run_dir  = run_dir
+        self.every_n  = every_n_epochs
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch % self.every_n:   # skip
+            return
+
+        # run a forward pass that captures cross-attn scores
+        outs = self.t.tf_translate(tf.constant(self.src))
+        preds = outs["text"].numpy().astype(str)
+
+        # walk over decoder blocks
+        for b_i, block in enumerate(self.t.model.layers):
+            if not isinstance(block, DecBlock):
+                continue
+            scores = block.cross_scores[0]   # [heads, tgt, src]
+            for h_i, head in enumerate(scores):
+                plt.figure(figsize=(8, 4))
+                sns.heatmap(head.numpy(),
+                            xticklabels=self.src[0].split(),   # source tokens
+                            yticklabels=preds[0].split(),      # predicted tokens
+                            cmap="viridis")
+                plt.xlabel("source")
+                plt.ylabel("prediction")
+                plt.title(f"epoch {epoch} – block {b_i} head {h_i}")
+                fname = self.run_dir / f"attn_ep{epoch}_b{b_i}_h{h_i}.png"
+                plt.tight_layout();  plt.savefig(fname); plt.close()
+                wandb.log({fname.name: wandb.Image(str(fname))}, step=epoch)
+
 # ── transformer layers ────────────────────────────────────────────────────
 class MyLayerNorm(layers.Layer):
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -166,7 +214,9 @@ class PosEmbed(layers.Layer):
 class EncBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int, dropout: float):
         super().__init__()
-        self.mha = layers.MultiHeadAttention(heads, key_dim, dropout=dropout)
+        self.mha = layers.MultiHeadAttention(heads, key_dim, dropout=dropout,
+                                             name="enc_self",
+                                             output_shape=None)
         self.mha_drop = layers.Dropout(dropout)
         self.ffn = keras.Sequential([
             layers.Dense(latent, activation="relu"),
@@ -176,14 +226,19 @@ class EncBlock(layers.Layer):
         self.norm1, self.norm2 = MyLayerNorm(dim), MyLayerNorm(dim)
 
     def call(self, x: tf.Tensor, training=False):                  # type: ignore[override]
-        x = self.norm1(x + self.mha_drop(self.mha(x, x, training=training), training))
+        attn_out, self.last_scores = self.mha(                     # <── NEW
+            x, x, return_attention_scores=True,
+            training=training)
+        x = self.norm1(x + self.mha_drop(attn_out, training))
         return self.norm2(x + self.ffn_drop(self.ffn(x, training=training), training))
 
 class DecBlock(layers.Layer):
     def __init__(self, dim: int, latent: int, heads: int, key_dim: int, dropout: float):
         super().__init__()
-        self.self_mha = layers.MultiHeadAttention(heads, key_dim, dropout=dropout)
-        self.cross_mha = layers.MultiHeadAttention(heads, key_dim, dropout=dropout)
+        self.self_mha  = layers.MultiHeadAttention(heads, key_dim, dropout=dropout,
+                                                   name="dec_self")
+        self.cross_mha = layers.MultiHeadAttention(heads, key_dim, dropout=dropout,
+                                                   name="dec_cross")
         self.drop1 = layers.Dropout(dropout)
         self.drop2 = layers.Dropout(dropout)
         self.ffn = keras.Sequential([
@@ -196,8 +251,13 @@ class DecBlock(layers.Layer):
         self.norm3 = MyLayerNorm(dim)
 
     def call(self, y: tf.Tensor, enc_out: tf.Tensor, training=False):  # type: ignore[override]
-        y = self.norm1(y + self.drop1(self.self_mha(y, y, training=training), training))
-        y = self.norm2(y + self.drop2(self.cross_mha(y, enc_out, training=training), training))
+        sa_out,  self.self_scores  = self.self_mha(
+            y, y, return_attention_scores=True, training=training)
+        y = self.norm1(y + self.drop1(sa_out,  training))
+
+        ca_out,  self.cross_scores = self.cross_mha(
+            y, enc_out, return_attention_scores=True, training=training)
+        y = self.norm2(y + self.drop2(ca_out, training))
         return self.norm3(y + self.ffn_drop(self.ffn(y, training=training), training))
 
 # model builder
@@ -419,7 +479,16 @@ def main():
                   help="keep only the K highest-logit tokens (0 = off)")
     p.add_argument("--top-p",       type=float, default=0.9,
                   help="nucleus sampling cumulative probability cutoff (0 = off)")
-  
+    p.add_argument("--dec-max-mult", type=int,   default=1,
+                   help="decoder max-length multiplier vs. --seq-len")
+    p.add_argument("--latent-dim",   type=int,   default=2048,
+                   help="feed-forward network inner dimension")
+    p.add_argument("--heads",        type=int,   default=1,
+                   help="number of self-attention heads")
+    p.add_argument("--stacks",       type=int,   default=1,
+                   help="number of encoder / decoder blocks")
+    p.add_argument("--attn-samples", type=int,   default=1,
+                   help="how many validation sentences to plot attention for")
     # hyper overrides
     for fld in ("seq_len vocab_size model_dim latent_dim heads stacks key_dim "
                 "batch dropout seed").split():        # --out-path replaces --out-dir
@@ -490,9 +559,20 @@ def main():
     callbacks = [wandb.keras.WandbCallback(save_model=False)]
 
     if train_ds:
-        model.fit(train_ds, validation_data=valid_ds,
-                  epochs=h.epochs, callbacks=callbacks)
+        # pick the first N validation samples for visualisation
+        sample_src = [s for s, _ in valid_pairs[: cfg.attn_samples]]
+        attn_cb = AttentionLogger(
+            translator = Translator(model, INPUT_VECT, OUTPUT_VECT,
+                                    temperature=cfg.temperature,
+                                    top_k=cfg.top_k,
+                                    top_p=cfg.top_p),
+            src_texts  = sample_src,
+            run_dir    = run_dir)
 
+        model.fit(train_ds,
+                  validation_data = valid_ds,
+                  epochs          = h.epochs,
+                  callbacks       = callbacks + [attn_cb])
     if args.evaluate:
         try:
             tf.print("\n[MAIN] Starting translation evaluation …")
