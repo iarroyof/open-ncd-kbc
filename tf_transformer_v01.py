@@ -57,7 +57,7 @@ class HParams:
     epochs: int = 30
     train_path: str | None = None
     valid_path: str | None = None
-    out_dir: str = "results"
+    out_path: str = "results"
     seed: int = 42
     attn_sample_indices: List[int] | None = None
     debug: bool = False  # additional flag
@@ -95,7 +95,7 @@ def parse_line(line: str) -> Tuple[str, str]:
         while not cols[4].isdigit():
             extras.append(cols.pop(4))
         cols[3] = " ".join([cols[3], *extras])
-    src = f"{pred} {cols[2]}"
+    src = f"{cols[2]} {pred}"
     tgt = f"{START} {cols[3]} {END}"
     return src, tgt
 
@@ -106,7 +106,7 @@ def parse_src(line: str) -> str:
     cols.pop(0)
     raw_pred = cols[1]
     pred = " ".join(re.findall(r"[A-Z][a-z]*", raw_pred)).lower() or raw_pred
-    return f"{pred} {cols[2]}"
+    return f"{cols[2]} {pred}"
 
 # ── vectorizer helpers ─────────────────────────────────────────────────────
 def build_vectorizer(vocab: int, seq_len: int) -> TextVectorization:
@@ -343,10 +343,11 @@ def main():
     p.add_argument("--train-path")
     p.add_argument("--valid-path", required=True)
     p.add_argument("--epochs", type=int, default=30)
+    p.add_argument("--out-path", default="results", help="root dir for outputs")
     p.add_argument("--debug", action="store_true")
     # hyper overrides
     for fld in ("seq_len vocab_size model_dim latent_dim heads stacks key_dim "
-                "batch dropout out_dir seed").split():
+                "batch dropout seed").split():        # --out-path replaces --out-dir
         p.add_argument(f"--{fld.replace('_','-')}", type=int)
     args = p.parse_args()
 
@@ -384,7 +385,14 @@ def main():
     model.build([(None, None), (None, None)])
     model.summary(print_fn=LOGGER.info)
 
-    run_dir = Path(h.out_dir) / "runs"
+    # ------------------------------------------------------------------
+    # Build output folder: <root>/<project>/<sweep-or-solo>/<run-id>
+    # ------------------------------------------------------------------
+    root = Path(h.out_path)
+    project = wandb.env.get_project() or wandb.run.project
+    sweep_id = wandb.run.sweep.id if wandb.run.sweep else "solo"
+    run_dir  = root / project / sweep_id / wandb.run.id
+    run_dir.mkdir(parents=True, exist_ok=True)
     run_dir.mkdir(parents=True, exist_ok=True)
     save_tv(INPUT_VECT, run_dir / "input.keras")
     save_tv(OUTPUT_VECT, run_dir / "output.keras")
@@ -400,10 +408,12 @@ def main():
         try:
             tf.print("\n[MAIN] Starting translation evaluation …")
             t = Translator(model, INPUT_VECT, OUTPUT_VECT)
-            inp, _ = zip(*valid_pairs)
-            preds = t.tf_translate(tf.constant(list(inp)))["text"].numpy()
-            pd.DataFrame({"src": inp, "pred": preds}).to_csv(
-                run_dir / "predictions.csv", index=False)
+            src, tgt = zip(*valid_pairs)               # keep gold answers
+            preds = t.tf_translate(tf.constant(list(src)))["text"].numpy()
+            tgt_text = [t for _, t in valid_pairs]   # ADD target column
+            pd.DataFrame(
+               {"source": inp, "prediction": preds, "target": tgt_text}
+            ).to_csv(run_dir / "predictions.csv", index=False)
             LOGGER.info("Saved predictions → %s", run_dir / "predictions.csv")
         except Exception as exc:
             tb = "".join(traceback.format_tb(exc.__traceback__))
