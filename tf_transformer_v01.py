@@ -201,7 +201,7 @@ def build_model(h: HParams) -> keras.Model:
     for _ in range(h.stacks):
         x = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, dropout=h.dropout)(x)
     enc_out = x
-    y = PosEmbed(h.seq_len + 1, h.vocab_size, h.model_dim)(dec_in)
+    y = PosEmbed(50, h.vocab_size, h.model_dim)(dec_in)  # Increased to match inference max_length
     for _ in range(h.stacks):
         y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, dropout=h.dropout)(y, enc_out)
     y = layers.Dropout(h.dropout)(y)
