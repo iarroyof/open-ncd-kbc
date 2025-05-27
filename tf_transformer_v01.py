@@ -180,10 +180,8 @@ class AttentionLogger(keras.callbacks.Callback):
                 #  • use the *trainer’s* epoch as the global step
                 #  • group all heads of a block under one key so they
                 #    show up side-by-side in the UI
-                wandb.log(
-                    {f"attn/block{b_i}": wandb.Image(str(fname))},
-                    step=epoch
-                )
+                # let W&B manage the global step to avoid “step < current”
+                wandb.log({f"attn/block{b_i}": wandb.Image(str(fname))})
 
 # ── transformer layers ────────────────────────────────────────────────────
 class MyLayerNorm(layers.Layer):
