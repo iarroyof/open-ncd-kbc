@@ -401,7 +401,7 @@ class Decoder(tf.keras.layers.Layer):
         self.embedding = tf.keras.layers.Embedding(target_vocab_size, d_model)
         self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
         # Corrected: Use the previously defined DecoderLayer, not DecBlock
-        self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
+        self.dec_layers = [DecBlock(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
         # Ensure the final layer computes in float32 for numerical stability with mixed precision
         self.final_layer = tf.keras.layers.Dense(target_vocab_size, dtype=tf.float32)
