@@ -241,7 +241,15 @@ def masked_accuracy(y_true, y_pred):
 
 # ── translator (eager) ────────────────────────────────────────────────────
 class Translator(tf.Module):
-    def __init__(self, model, in_tv, out_tv):
+    def __init__(
+            self,
+            model,
+            in_tv,
+            out_tv,
+            *,
+            temperature: float = 0.8,
+            top_k: int = 40,
+            top_p: float = 0.9):
         super().__init__()
         self.model = model
         self.in_tv, self.out_tv = in_tv, out_tv
@@ -257,54 +265,92 @@ class Translator(tf.Module):
         self.token_mask = np.zeros(idx_from_str.vocabulary_size(), dtype=bool)
         self.token_mask[ban_ids] = True
         self.dec_max = model.get_layer("pos_dec").max_len
+        # sampling hyper-params
+        self.temperature = temperature
+        self.top_k       = top_k
+        self.top_p       = top_p              
 
     def tokens_to_text(self, tokens):
         return tf.strings.strip(
-            tf.strings.reduce_join(
-                self.out_str(tokens), axis=1, separator=" "
-            )
+             tf.strings.reduce_join(
+                 self.out_str(tokens), axis=1, separator=" "
+             )
         )
+    # ------------------------------------------------------------------
+    #  Sampling helper – supports temperature, top-k and nucleus (top-p)
+    # ------------------------------------------------------------------
+    def sample(
+        self,
+        logits: tf.Tensor,
+        *,                      # force keyword args ↓ for clarity
+        temperature: float | None = None,
+        top_k: int | None       = None,
+        top_p: float | None     = None,
+    ) -> tf.Tensor:
+        """
+        Return a tensor of shape **[batch]** with one sampled token-id per
+        batch element.
 
-def sample(self, logits, *, temperature: float,
-           top_k: int, top_p: float):
-    """
-    Return a tensor shape [B] with one sampled id per batch element.
-    """
-    # 1) dtype hygiene
-    logits = tf.cast(logits, tf.float32)
+        Parameters
+        ----------
+        logits : tf.Tensor[batch, vocab]
+            Raw soft-max logits for the next step.
+        temperature : float | None
+            τ = 0  → greedy; τ < 1  → sharper; τ > 1  → flatter.
+        top_k : int | None
+            Keep only the K highest-logit tokens before sampling.
+        top_p : float | None
+            *Nucleus* filtering – keep the smallest set of tokens whose
+            cumulative soft-max probability ≥ p.
 
-    # 2)  mask unwanted tokens (same as before)
-    mask   = self.token_mask[None, :]           # [1,V]
-    logits = tf.where(mask, tf.constant(-np.inf, tf.float32), logits)
+        Notes
+        -----
+        • If **all three controls are “off’’** (temperature == 0 or None,
+          top_k == 0 or None, top_p == 0 or None) the method reduces to
+          **greedy decoding** (arg-max).  
+        • The method automatically masks the three banned ids
+          (“”, [UNK], [start]) that were stored in `self.token_mask`.
+        """
 
-    # 3)  temperature (τ==0 → greedy)
-    if temperature and temperature > 0.0:
-        logits = logits / temperature
+        # 1) dtype hygiene – keep everything in float32 for tf.where / softmax
+        logits = tf.cast(logits, tf.float32)
 
-    # 4)  top-k filtering
-    if top_k and top_k > 0:
-        kth = tf.math.top_k(logits, k=top_k).values[:, -1, tf.newaxis]
-        logits = tf.where(logits < kth, tf.constant(-np.inf, tf.float32), logits)
+        # 2) permanently mask out unwanted tokens
+        mask   = self.token_mask[None, :]                 # shape [1, V]
+        logits = tf.where(mask, tf.constant(-np.inf, tf.float32), logits)
 
-    # 5)  nucleus (top-p) filtering
-    if top_p and top_p > 0.0:
-        sorted_logits = tf.sort(logits, direction="DESCENDING", axis=-1)
-        cdf = tf.math.cumsum(tf.nn.softmax(sorted_logits, axis=-1), axis=-1)
-        # last position where cdf <= p
-        cut_indices = tf.argmax(tf.cast(cdf <= top_p, tf.int32), axis=-1)
-        # broadcast each cut to vocab axis
-        thresh = tf.gather_nd(sorted_logits,
-                              tf.stack([tf.range(tf.shape(logits)[0]),
-                                        cut_indices], axis=1))
-        logits = tf.where(logits < thresh[:, tf.newaxis],
-                          tf.constant(-np.inf, tf.float32), logits)
+        # 3) temperature scaling  (τ == 0 → greedy, handled later)
+        τ = 0.0 if temperature is None else temperature
+        if τ > 0.0:
+            logits = logits / τ
 
-    # 6)  sample (or greedy if τ==0 and everything else off)
-    if temperature == 0.0 and top_k == 0 and top_p == 0.0:
-        return tf.argmax(logits, -1, output_type=tf.int64)
+        # 4) top-k filtering
+        if top_k and top_k > 0:
+            kth = tf.math.top_k(logits, k=top_k).values[:, -1, tf.newaxis]
+            logits = tf.where(logits < kth, tf.constant(-np.inf, tf.float32), logits)
 
-    return tf.random.categorical(logits, num_samples=1,
-                                 dtype=tf.int64)[:, 0]
+        # 5) nucleus / top-p filtering
+        if top_p and top_p > 0.0:
+            sorted_logits = tf.sort(logits, direction="DESCENDING", axis=-1)
+            cdf = tf.math.cumsum(tf.nn.softmax(sorted_logits, axis=-1), axis=-1)
+            # index of last token that keeps cumulative prob ≤ p
+            mask_idx = tf.argmax(tf.cast(cdf > top_p, tf.int32), axis=-1)
+            # get corresponding threshold value
+            thresh = tf.gather_nd(
+                sorted_logits,
+                tf.stack([tf.range(tf.shape(logits)[0]), mask_idx], axis=1),
+            )
+            logits = tf.where(logits < thresh[:, tf.newaxis],
+                              tf.constant(-np.inf, tf.float32), logits)
+
+        # ------------------------------------------------------------------
+        # 6) final choice – greedy if all filters removed nothing, else sample
+        # ------------------------------------------------------------------
+        greedy = (τ == 0.0) and (not top_k or top_k == 0) and (not top_p or top_p == 0.0)
+        if greedy:
+            return tf.argmax(logits, axis=-1, output_type=tf.int64)
+
+        return tf.random.categorical(logits, num_samples=1, dtype=tf.int64)[:, 0]
 
 
     def translate(self, text, max_len=50):
@@ -325,11 +371,7 @@ def sample(self, logits, *, temperature: float,
                 break
             logits = self.model([enc_in, dec_in], training=False)[:, -1, :]
             # expand dims so rank == 2 → avoid accidental flattening
-            new_tok = self.sample(
-                logits,
-                temperature=cfg.temperature,
-                top_k=cfg.top_k,
-                top_p=cfg.top_p)
+            new_tok = self.sample(logits)
             done |= (new_tok == self.end)               # shapes [B] ✓
             new_tok = tf.where(done, 0, new_tok)        # still [B] ✓
 
@@ -376,6 +418,13 @@ def main():
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--out-path", default="results", help="root dir for outputs")
     p.add_argument("--debug", action="store_true")
+    p.add_argument("--temperature", type=float, default=0.3,
+                  help="0 = greedy decoding; >0 adds randomness")
+    p.add_argument("--top-k",       type=int,   default=0,
+                  help="keep only the K highest-logit tokens (0 = off)")
+    p.add_argument("--top-p",       type=float, default=0.0,
+                  help="nucleus sampling cumulative probability cutoff (0 = off)")
+  
     # hyper overrides
     for fld in ("seq_len vocab_size model_dim latent_dim heads stacks key_dim "
                 "batch dropout seed").split():        # --out-path replaces --out-dir
@@ -452,7 +501,12 @@ def main():
     if args.evaluate:
         try:
             tf.print("\n[MAIN] Starting translation evaluation …")
-            t = Translator(model, INPUT_VECT, OUTPUT_VECT)
+            t = Translator(
+                    model, INPUT_VECT, OUTPUT_VECT,
+                    temperature=cfg.temperature,   # e.g. 0.8
+                    top_k=cfg.top_k,               # e.g. 40
+                    top_p=cfg.top_p,               # e.g. 0.9
+            )
             src, tgt_text = zip(*valid_pairs)         # gold answers
             preds = t.tf_translate(tf.constant(list(src)))["text"].numpy()
             pd.DataFrame(
