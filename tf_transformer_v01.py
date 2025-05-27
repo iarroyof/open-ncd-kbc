@@ -176,7 +176,14 @@ class AttentionLogger(keras.callbacks.Callback):
                 plt.title(f"epoch {epoch} – block {b_i} head {h_i}")
                 fname = self.run_dir / f"attn_ep{epoch}_b{b_i}_h{h_i}.png"
                 plt.tight_layout();  plt.savefig(fname); plt.close()
-                wandb.log({fname.name: wandb.Image(str(fname))}, step=epoch)
+                # ----------  W&B upload --------------------------------
+                #  • use the *trainer’s* epoch as the global step
+                #  • group all heads of a block under one key so they
+                #    show up side-by-side in the UI
+                wandb.log(
+                    {f"attn/block{b_i}": wandb.Image(str(fname))},
+                    step=epoch
+                )
 
 # ── transformer layers ────────────────────────────────────────────────────
 class MyLayerNorm(layers.Layer):
