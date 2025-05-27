@@ -278,42 +278,27 @@ class EncBlock(layers.Layer):
         self.norm1 = layers.LayerNormalization()
         self.norm2 = layers.LayerNormalization()
 
+
     def call(
         self,
         x: tf.Tensor,
         mask: tf.Tensor | None = None,
         training: bool = False,
     ) -> tf.Tensor:
-        # Self-attention. Ensure the input to attention is float32 if mixed precision is off,
-        # otherwise let mixed precision handle it.
-        # The error indicates iteration over a symbolic tensor within the MHA, which is unusual.
-        # The MultiHeadAttention layer itself should handle its inputs correctly in a @tf.function context.
-        # The issue might stem from how the `mask` is being used or its type within the MHA.
-        # Let's ensure the mask passed to MHA is the expected type (usually float mask).
-        # Although the error mentions iterating over a symbolic tensor, which points to AutoGraph issues.
-        # However, MultiHeadAttention is a standard Keras layer and should be AutoGraph compatible.
-        # The most likely cause is something subtle about the mask or input shape interaction.
-        # Let's remove the explicit cast to float32 within the call for now, as mixed precision handles dtype.
-        # The MultiHeadAttention layer should handle the mask correctly if it's boolean or float.
-        # Let's pass the boolean mask directly. The LayerNormalization also expects the float dtype determined by mixed precision.
+        # Self-attention. The MultiHeadAttention layer should handle its inputs correctly in a @tf.function context.
+        # Pass the boolean mask directly. The LayerNormalization also expects the float dtype determined by mixed precision.
+        # The explicit casts were removed as they are often handled by mixed precision.
 
-        # Removed explicit casts here:
-        # attn = self.mha(tf.cast(x, dtype=tf.float32), tf.cast(x, dtype=tf.float32), attention_mask=mask, training=training)
-        # x = self.norm1(tf.cast(x, dtype=tf.float32) + tf.cast(attn, dtype=tf.float32))
-        # ffn_out = self.ffn(tf.cast(x, dtype=tf.float32), training=training)
-        # return self.norm2(tf.cast(x, dtype=tf.float32) + tf.cast(ffn_out, dtype=tf.float32))
-
-        # Use MultiHeadAttention's mask argument directly with the boolean mask
         attn, _ = self.mha(query=x, value=x, key=x, attention_mask=mask, training=training, return_attention_scores=False)
 
         # Residual connection and normalization
-        out1 = self.norm1(x + attn) # Use the dtype from mixed precision
+        out1 = self.norm1(x + attn)
 
-        ffn_out = self.ffn(out1, training=training)
+        ffn_output = self.ffn(out1, training=training)
 
         # Residual connection and normalization
-        out2 = self.norm2(out1 + ffn_output) # Use the dtype from mixed precision
-        return out2 # Return the output after the second normalization
+        out2 = self.norm2(out1 + ffn_output)
+        return out2
 
 
 class DecBlock(layers.Layer):
@@ -345,26 +330,18 @@ class DecBlock(layers.Layer):
         padding_mask: tf.Tensor | None = None,
     ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]: # Also return attention weights
         # Unmasked self-attention (apply look_ahead_mask)
-        # Removed explicit casts here:
-        # attn1, attn_weights_block1 = self.self_mha(query=tf.cast(y, dtype=tf.float32), value=tf.cast(y, dtype=tf.float32), key=tf.cast(y, dtype=tf.float32), attention_mask=look_ahead_mask, training=training, return_attention_scores=True)
-        # out1 = self.norm1(tf.cast(y, dtype=tf.float32) + tf.cast(attn1, dtype=tf.float32))
-
-        # Apply look_ahead_mask to the self-attention
+        # Removed explicit casts here, rely on mixed precision if enabled
         attn1, attn_weights_block1 = self.self_mha(query=y, value=y, key=y, attention_mask=look_ahead_mask, training=training, return_attention_scores=True)
-        out1 = self.norm1(y + attn1) # Use the dtype from mixed precision
+        out1 = self.norm1(y + attn1)
 
         # Unmasked cross-attention (apply padding_mask to encoder output)
-        # Removed explicit casts here:
-        # attn2, attn_weights_block2 = self.cross_mha(query=tf.cast(out1, dtype=tf.float32), value=tf.cast(enc_output, dtype=tf.float32), key=tf.cast(enc_output, dtype=tf.float32), attention_mask=padding_mask, training=training, return_attention_scores=True)
-        # out2 = self.norm2(tf.cast(out1, dtype=tf.float32) + tf.cast(attn2, dtype=tf.float32))
-
-        # Apply padding_mask to the encoder-decoder attention
+        # Removed explicit casts here, rely on mixed precision if enabled
         attn2, attn_weights_block2 = self.cross_mha(query=out1, value=enc_output, key=enc_output, attention_mask=padding_mask, training=training, return_attention_scores=True)
-        out2 = self.norm2(out1 + attn2) # Use the dtype from mixed precision
+        out2 = self.norm2(out1 + attn2)
 
         ffn_output = self.ffn(out2, training=training)
-        out3 = self.norm3(out2 + ffn_output) # Use the dtype from mixed precision
-        return out3, attn_weights_block1, attn_weights_block2 # Return attention weights
+        out3 = self.norm3(out2 + ffn_output)
+        return out3, attn_weights_block1, attn_weights_block2
 
 class Encoder(tf.keras.layers.Layer):
     def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size,
@@ -380,7 +357,7 @@ class Encoder(tf.keras.layers.Layer):
 
         self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model)
         self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
-        # Ensure EncoderLayer instances are created with the correct parameters
+        # Corrected: Use the previously defined EncoderLayer, not EncBlock
         self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
 
@@ -423,7 +400,7 @@ class Decoder(tf.keras.layers.Layer):
 
         self.embedding = tf.keras.layers.Embedding(target_vocab_size, d_model)
         self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
-        # Ensure DecoderLayer instances are created with the correct parameters
+        # Corrected: Use the previously defined DecoderLayer, not DecBlock
         self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
         # Ensure the final layer computes in float32 for numerical stability with mixed precision
@@ -477,10 +454,12 @@ class TrainTranslator(tf.keras.Model):
         self.input_vocab_size = input_text_processor.vocabulary_size()
         self.output_vocab_size = output_text_processor.vocabulary_size()
 
+        # Pass correct layer classes
         self.encoder = Encoder(num_layers, d_model, num_heads, dff,
                                self.input_vocab_size, maximum_position_encoding, dropout)
         self.decoder = Decoder(num_layers, d_model, num_heads, dff,
                                self.output_vocab_size, maximum_position_encoding, dropout)
+
 
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
@@ -516,6 +495,7 @@ class TrainTranslator(tf.keras.Model):
         enc_padding_mask, combined_dec_self_attn_mask, dec_enc_padding_mask = self._create_masks(
             input_tokens, target_tokens_input
         )
+        # Pass masks to encoder and decoder layers within the @tf.function
         enc_output = self.encoder(input_tokens, training=training, mask=enc_padding_mask)
         decoder_output_obj = self.decoder(
             target_tokens_input, enc_output, training=training,
@@ -604,6 +584,7 @@ class TrainTranslator(tf.keras.Model):
             # Note: input/output_text_processor are not directly part of the model's saveable config
             # when using save_weights_only. They are handled separately.
         }
+        
 class Translator(tf.Module):
     def __init__(self, encoder, decoder, input_text_processor, output_text_processor):
         super().__init__()
