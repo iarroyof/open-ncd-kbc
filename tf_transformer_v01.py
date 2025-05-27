@@ -273,24 +273,27 @@ class Translator(tf.Module):
     def translate(self, text, max_len=50):
         batch = tf.shape(text)[0]
         enc_in = self.in_tv(text)
-        dec_in = tf.fill([batch, 1], self.start)
+        # (batch, 1) – keep rank-2 from the very beginning
+        dec_in = tf.fill([batch, 1], self.start, name="dec_start")
         done   = tf.zeros([batch, 1], tf.bool)
         out_tokens = []
 
         tf.print("[Translator] enc_inputs shape:", tf.shape(enc_in))
         for step in range(max_len):
-            if tf.shape(dec_in)[-1] >= self.dec_max:
+            # SAFER: explicitly take the sequence dimension
+            seq_len = tf.shape(dec_in)[1]
+            if seq_len >= self.dec_max:
                 tf.print("[Translator] reached dec_max_len → stopping early")
                 break
             logits = self.model([enc_in, dec_in], training=False)[:, -1, :]
-            new_tok = self.sample(logits)
+            # expand dims so rank == 2 → avoid accidental flattening
+            new_tok = tf.expand_dims(self.sample(logits), 1)
             done |= (new_tok == self.end)
             new_tok = tf.where(done, 0, new_tok)
             out_tokens.append(new_tok)
             dec_in = tf.concat([dec_in, new_tok], axis=-1)
 
-            tf.print("[Translator] step", step,
-                     "dec_len", tf.shape(dec_in)[-1])
+            tf.print("[Translator] step", step, "dec_len", seq_len + 1)
             if tf.reduce_all(done): break
 
         return {"text": self.tokens_to_text(tf.concat(out_tokens, -1))}
