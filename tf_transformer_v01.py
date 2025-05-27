@@ -45,6 +45,7 @@ LOGGER = logging.getLogger("tf_transformer")
 @dataclass(kw_only=True)
 class HParams:
     seq_len: int = 30
+    dec_max_mult: int = 4
     vocab_size: int = 15_000
     model_dim: int = 512
     latent_dim: int = 2048
@@ -144,11 +145,17 @@ class PosEmbed(layers.Layer):
         self.pos = layers.Embedding(max_len, dim, name="pos_emb")
         self.idx = tf.range(max_len)
 
-    def call(self, x: tf.Tensor) -> tf.Tensor:                     # type: ignore[override]
+    def call(self, x: tf.Tensor):                     # type: ignore[override]
         length = tf.shape(x)[-1]
         tf.print("[PosEmbed] actual_len =", length,
                  "/ max_len =", self.max_len,
                  ", input_shape =", tf.shape(x), summarize=-1)
+        tf.debugging.assert_less_equal(
+            length, self.max_len,
+            message=f"Decoder length {length.numpy()} exceeds positional "
+                    f"embedding size {self.max_len}. "
+                    f"Increase --dec-max-mult or stop the loop earlier."
+        )
         return self.tok(x) + self.pos(self.idx[:length])
 
     def compute_mask(self, *_) -> None: return None
@@ -200,9 +207,11 @@ def build_model(h: HParams) -> keras.Model:
         x = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, h.dropout)(x)
     enc_out = x
 
-    y = PosEmbed(h.seq_len + 1, h.vocab_size, h.model_dim, name="pos_dec")(dec_in)
+    dec_max_len = h.seq_len * h.dec_max_mult
+    y = PosEmbed(dec_max_len, h.vocab_size, h.model_dim, name="pos_dec")(dec_in)
     for _ in range(h.stacks):
         y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, h.dropout)(y, enc_out)
+      
     y = layers.Dropout(h.dropout)(y)
     out = layers.Dense(h.vocab_size, activation="softmax", name="logits")(y)
     return keras.Model([enc_in, dec_in], out, name="transformer")
@@ -244,6 +253,7 @@ class Translator(tf.Module):
         ban_ids = idx_from_str(["", "[UNK]", "[start]"]).numpy()
         self.token_mask = np.zeros(idx_from_str.vocabulary_size(), dtype=bool)
         self.token_mask[ban_ids] = True
+        self.dec_max = model.get_layer("pos_dec").max_len
 
     def tokens_to_text(self, tokens):
         return tf.strings.strip(
@@ -267,6 +277,9 @@ class Translator(tf.Module):
 
         tf.print("[Translator] enc_inputs shape:", tf.shape(enc_in))
         for step in range(max_len):
+            if tf.shape(dec_in)[-1] >= self.dec_max:
+                tf.print("[Translator] reached dec_max_len → stopping early")
+                break
             logits = self.model([enc_in, dec_in], training=False)[:, -1, :]
             new_tok = self.sample(logits)
             done |= (new_tok == self.end)
