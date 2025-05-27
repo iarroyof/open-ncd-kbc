@@ -385,19 +385,21 @@ def main():
     model.build([(None, None), (None, None)])
     model.summary(print_fn=LOGGER.info)
 
+    # ----------------------------- W&B -------------------------------
+    # init first → only then wandb.run.* is guaranteed to exist
     # ------------------------------------------------------------------
+    wandb.init(project="tf-transformer", save_code=False)
+
     # Build output folder: <root>/<project>/<sweep-or-solo>/<run-id>
-    # ------------------------------------------------------------------
-    root = Path(h.out_path)
-    project = wandb.env.get_project() or wandb.run.project
+    root     = Path(h.out_path)
+    project  = wandb.run.project or "unknown_project"
     sweep_id = wandb.run.sweep.id if wandb.run.sweep else "solo"
     run_dir  = root / project / sweep_id / wandb.run.id
     run_dir.mkdir(parents=True, exist_ok=True)
-    run_dir.mkdir(parents=True, exist_ok=True)
-    save_tv(INPUT_VECT, run_dir / "input.keras")
-    save_tv(OUTPUT_VECT, run_dir / "output.keras")
 
-    wandb.init(project="tf-transformer", save_code=False)
+    # save vectorisers after run_dir exists
+    save_tv(INPUT_VECT,  run_dir / "input.keras")
+    save_tv(OUTPUT_VECT, run_dir / "output.keras")
     callbacks = [wandb.keras.WandbCallback(save_model=False)]
 
     if train_ds:
@@ -408,11 +410,10 @@ def main():
         try:
             tf.print("\n[MAIN] Starting translation evaluation …")
             t = Translator(model, INPUT_VECT, OUTPUT_VECT)
-            src, tgt = zip(*valid_pairs)               # keep gold answers
+            src, tgt_text = zip(*valid_pairs)         # gold answers
             preds = t.tf_translate(tf.constant(list(src)))["text"].numpy()
-            tgt_text = [t for _, t in valid_pairs]   # ADD target column
             pd.DataFrame(
-               {"source": inp, "prediction": preds, "target": tgt_text}
+               {"source": src, "prediction": preds, "target": tgt_text}
             ).to_csv(run_dir / "predictions.csv", index=False)
             LOGGER.info("Saved predictions → %s", run_dir / "predictions.csv")
         except Exception as exc:
