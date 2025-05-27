@@ -321,11 +321,15 @@ class Translator(tf.Module):
             sorted_logits = tf.sort(logits, axis=-1, direction="DESCENDING")
             cdf = tf.math.cumsum(tf.nn.softmax(sorted_logits, axis=-1), axis=-1)
             # index of *first* token where cumulative prob > p
-            cut_idx = tf.argmax(tf.cast(cdf > top_p, tf.int32), axis=-1)
+            # ――― keep cut-off index in an *explicit* dtype (int32) ――――
+            cut_idx = tf.argmax(
+                tf.cast(cdf > top_p, tf.int32), axis=-1, output_type=tf.int32
+            )
             # logit threshold corresponding to that index
+            batch_idx = tf.range(tf.shape(logits)[0], dtype=tf.int32)  # <- same dtype
             thresh = tf.gather_nd(
                 sorted_logits,
-                tf.stack([tf.range(tf.shape(logits)[0]), cut_idx], axis=1)
+                tf.stack([batch_idx, cut_idx], axis=1),
             )
             logits = tf.where(logits < thresh[:, tf.newaxis],
                               tf.constant(-np.inf, tf.float32), logits)
