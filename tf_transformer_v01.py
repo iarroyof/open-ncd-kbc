@@ -501,10 +501,12 @@ def main():
             p.add_argument(flag, type=int)
     args = p.parse_args()
 
-    cfg: dict = {k: v for k, v in vars(args).items()
-                 if v is not None and k in HParams.__dataclass_fields__}
-    cfg.setdefault("debug", args.debug)
-    h = HParams(**cfg)
+    cli_cfg = {k: v for k, v in vars(args).items()
+               if k in HParams.__dataclass_fields__ and v is not None}
+    
+    run = wandb.init(project="tf-transformer", config=cli_cfg)
+    cfg = run.config                      # merged: defaults + CLI + sweep
+    h   = HParams(**cfg)                  # unified hyper-parameter object
 
     if h.debug:
         LOGGER.setLevel(logging.DEBUG)
