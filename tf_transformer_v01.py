@@ -201,25 +201,25 @@ def parse_dataset_name(training_data):
 # --- Transformer Model Architecture ---
 
 def create_padding_mask(seq):
-    """Creates a padding mask for sequences.
+    """Creates a boolean padding mask for sequences.
     Args:
         seq: A tensor of shape (batch_size, seq_len) containing token IDs.
              0 is assumed to be the padding token.
     Returns:
-        A tensor of shape (batch_size, 1, 1, seq_len) for multi-head attention.
+        A boolean tensor of shape (batch_size, 1, 1, seq_len) where True means masked.
     """
-    seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
-    return seq[:, tf.newaxis, tf.newaxis, :]  # (batch_size, 1, 1, seq_len)
+    seq_mask = tf.math.equal(seq, 0)  # This is already boolean: True where padded
+    return seq_mask[:, tf.newaxis, tf.newaxis, :]  # (batch_size, 1, 1, seq_len)
 
 def create_look_ahead_mask(size):
-    """Creates a look-ahead mask for the decoder's self-attention.
+    """Creates a boolean look-ahead mask for the decoder's self-attention.
     Args:
         size: The length of the target sequence.
     Returns:
-        A tensor of shape (size, size) that masks future tokens.
+        A boolean tensor of shape (size, size) where True means future tokens are masked.
     """
-    mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
-    return mask  # (seq_len, seq_len)
+    mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)  # float: 1.0 for upper triangle (masked)
+    return tf.cast(mask, tf.bool)  # Convert to boolean: True for upper triangle
 
 class PositionalEncoding(tf.keras.layers.Layer):
     def __init__(self, position, d_model, **kwargs):
@@ -468,24 +468,54 @@ class TrainTranslator(tf.keras.Model):
         self.train_accuracy_metric = keras.metrics.SparseCategoricalAccuracy(name="train_accuracy")
         self.val_accuracy_metric = keras.metrics.SparseCategoricalAccuracy(name="val_accuracy")
 
-    def _create_masks(self, inp, tar):
+    def _create_masks(self, inp, tar_inp_seq): # Renamed 'tar' to 'tar_inp_seq' for clarity
+        # Encoder padding mask (boolean: True for pads)
         enc_padding_mask = create_padding_mask(inp)
-        dec_padding_mask = create_padding_mask(inp) # For encoder output in decoder's MHA2
+
+        # Decoder's 2nd MHA: masks padding in the encoder's output (keys/values)
+        # This is the same as enc_padding_mask if inp is the encoder input.
+        dec_enc_padding_mask = create_padding_mask(inp) 
+
+        # Decoder's 1st MHA (self-attention):
+        target_seq_len = tf.shape(tar_inp_seq)[1]
         
-        look_ahead_mask = create_look_ahead_mask(tf.shape(tar)[1])
-        dec_target_padding_mask = create_padding_mask(tar)
-        combined_mask = tf.maximum(dec_target_padding_mask, look_ahead_mask)
-        return enc_padding_mask, combined_mask, dec_padding_mask
+        # Look-ahead mask (boolean: True for future positions)
+        look_ahead_mask_for_shape = create_look_ahead_mask(target_seq_len) # Shape (tar_seq_len, tar_seq_len)
+        
+        # Padding mask for the target sequence itself (boolean: True for pads in target)
+        dec_target_padding_mask = create_padding_mask(tar_inp_seq) # Shape (batch, 1, 1, tar_seq_len)
+
+        # Combined mask for decoder self-attention.
+        # A position in the target sequence is masked if it's a padding token OR it's a future token.
+        # Both dec_target_padding_mask and look_ahead_mask_for_shape need to broadcast correctly.
+        # dec_target_padding_mask (B, 1, 1, T_tar) -> needs to be (B, 1, T_tar, T_tar) for element-wise OR with look_ahead
+        # look_ahead_mask_for_shape (T_tar, T_tar)
+        # We need a combined mask of shape like (B, 1, T_tar, T_tar) or (B, T_tar, T_tar)
+        # tf.logical_or will broadcast. look_ahead_mask will be (1, T_tar, T_tar)
+        # dec_target_padding_mask (B,1,1,T_tar) should be reshaped or broadcast as (B,1,T_tar,1) to OR with (1,T_tar,T_tar)
+        # This is tricky. Let MHA handle the expansion of 2D masks if possible.
+        # Let's make the combined mask by ensuring look_ahead is applied, and padding within target is applied.
+        # MultiHeadAttention expects mask for (query_len, key_len). For self-attention this is (T_tar, T_tar).
+        # The padding mask for target is (B, 1, 1, T_tar). MHA will expand it to (B, 1, T_tar, T_tar) if query is T_tar.
+        # The look_ahead mask is (T_tar, T_tar). MHA will expand it to (B, 1, T_tar, T_tar).
+        # So we can pass them as a list or combine.
+        # A common way for combined mask for self-attention in decoder:
+        # mask out future tokens, and mask out padding tokens in the target sequence.
+        combined_dec_self_attention_mask = tf.logical_or(
+            dec_target_padding_mask, # (B, 1, 1, T_tar), True where target is padded
+            look_ahead_mask_for_shape[tf.newaxis, tf.newaxis, :, :] # (1, 1, T_tar, T_tar), True for future
+        ) # Result is (B, 1, T_tar, T_tar)
 
     def _call_logic(self, input_tokens, target_tokens_input, training):
-        enc_padding_mask, combined_lookahead_mask, dec_padding_mask = self._create_masks(
-            input_tokens, target_tokens_input
+        # Note: target_tokens_input is tar_inp from train_step/test_step
+        enc_padding_mask, combined_dec_self_attn_mask, dec_enc_padding_mask = self._create_masks(
+            input_tokens, target_tokens_input # target_tokens_input is the decoder's input sequence
         )
         enc_output = self.encoder(input_tokens, training=training, mask=enc_padding_mask)
         decoder_output_obj = self.decoder(
             target_tokens_input, enc_output, training=training,
-            look_ahead_mask=combined_lookahead_mask,
-            padding_mask=dec_padding_mask
+            look_ahead_mask=combined_dec_self_attn_mask, # For Decoder's MHA1 (self-attention)
+            padding_mask=dec_enc_padding_mask          # For Decoder's MHA2 (encoder-decoder attention, masks enc_output)
         )
         return decoder_output_obj.logits
 
