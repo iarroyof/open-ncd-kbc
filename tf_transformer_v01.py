@@ -58,6 +58,9 @@ class HParams:
     dropout: float = 0.3 # 0.1
     batch: int = 64
     attn_samples: int = 1
+    temperature: float = 0.8       # 0 ⇒ greedy
+    top_k:       int   = 40        # 0 ⇒ off
+    top_p:       float = 0.9       # 0 ⇒ off  
     epochs: int = 30
     train_path: str | None = None
     valid_path: str | None = None
