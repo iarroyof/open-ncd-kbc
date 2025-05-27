@@ -358,7 +358,7 @@ class Encoder(tf.keras.layers.Layer):
         self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model)
         self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
         # Corrected: Use the previously defined EncoderLayer, not EncBlock
-        self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
+        self.enc_layers = [DecBlock(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
 
     def call(self, x, training, mask):
