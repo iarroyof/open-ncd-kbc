@@ -220,7 +220,20 @@ def create_look_ahead_mask(size):
     """
     mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)  # float: 1.0 for upper triangle (masked)
     return tf.cast(mask, tf.bool)  # Convert to boolean: True for upper triangle
+    
+class MaskedLoss(tf.keras.losses.Loss):
+    def __init__(self):
+        super().__init__(name='masked_loss')
+        self.loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+            from_logits=True, reduction='none')
 
+    def __call__(self, real, pred):
+        pred = tf.cast(pred, tf.float32) # Ensure float32 for stability
+        loss_ = self.loss_object(real, pred)
+        mask = tf.cast(tf.math.not_equal(real, 0), loss_.dtype)
+        loss_ *= mask
+        return tf.reduce_sum(loss_) / tf.reduce_sum(mask) # Average over non-padded tokens
+        
 class PositionalEncoding(tf.keras.layers.Layer):
     def __init__(self, position, d_model, **kwargs):
         super(PositionalEncoding, self).__init__(**kwargs)
@@ -254,91 +267,104 @@ class PositionalEncoding(tf.keras.layers.Layer):
         })
         return config
 
-class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads, dff, rate=0.1, **kwargs):
-        super(EncoderLayer, self).__init__(**kwargs)
-        self.d_model = d_model
-        self.num_heads = num_heads
-        self.dff = dff
-        self.rate = rate
-
-        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
-        self.mha = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads)
-        self.ffn = tf.keras.Sequential([
-            tf.keras.layers.Dense(dff, activation='relu'),
-            tf.keras.layers.Dense(d_model)
+class EncBlock(layers.Layer):
+    def __init__(self, dim: int, latent: int, heads: int, key_dim: int):
+        super().__init__()
+        self.mha = layers.MultiHeadAttention(heads, key_dim)
+        self.ffn = keras.Sequential([
+            layers.Dense(latent, activation="relu"),
+            layers.Dense(dim),
         ])
-        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.dropout1 = tf.keras.layers.Dropout(rate)
-        self.dropout2 = tf.keras.layers.Dropout(rate)
+        self.norm1 = layers.LayerNormalization()
+        self.norm2 = layers.LayerNormalization()
 
-    def call(self, x, training, mask):
-        attn_output, _ = self.mha(query=x, value=x, key=x, attention_mask=mask, training=training, return_attention_scores=False)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(x + attn_output)
+    def call(
+        self,
+        x: tf.Tensor,
+        mask: tf.Tensor | None = None,
+        training: bool = False,
+    ) -> tf.Tensor:
+        # Self-attention. Ensure the input to attention is float32 if mixed precision is off,
+        # otherwise let mixed precision handle it.
+        # The error indicates iteration over a symbolic tensor within the MHA, which is unusual.
+        # The MultiHeadAttention layer itself should handle its inputs correctly in a @tf.function context.
+        # The issue might stem from how the `mask` is being used or its type within the MHA.
+        # Let's ensure the mask passed to MHA is the expected type (usually float mask).
+        # Although the error mentions iterating over a symbolic tensor, which points to AutoGraph issues.
+        # However, MultiHeadAttention is a standard Keras layer and should be AutoGraph compatible.
+        # The most likely cause is something subtle about the mask or input shape interaction.
+        # Let's remove the explicit cast to float32 within the call for now, as mixed precision handles dtype.
+        # The MultiHeadAttention layer should handle the mask correctly if it's boolean or float.
+        # Let's pass the boolean mask directly. The LayerNormalization also expects the float dtype determined by mixed precision.
 
-        ffn_output = self.ffn(out1, training=training)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        out2 = self.layernorm2(out1 + ffn_output)
-        return out2
+        # Removed explicit casts here:
+        # attn = self.mha(tf.cast(x, dtype=tf.float32), tf.cast(x, dtype=tf.float32), attention_mask=mask, training=training)
+        # x = self.norm1(tf.cast(x, dtype=tf.float32) + tf.cast(attn, dtype=tf.float32))
+        # ffn_out = self.ffn(tf.cast(x, dtype=tf.float32), training=training)
+        # return self.norm2(tf.cast(x, dtype=tf.float32) + tf.cast(ffn_out, dtype=tf.float32))
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            "d_model": self.d_model,
-            "num_heads": self.num_heads,
-            "dff": self.dff,
-            "rate": self.rate
-        })
-        return config
+        # Use MultiHeadAttention's mask argument directly with the boolean mask
+        attn, _ = self.mha(query=x, value=x, key=x, attention_mask=mask, training=training, return_attention_scores=False)
 
-class DecoderLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads, dff, rate=0.1, **kwargs):
-        super(DecoderLayer, self).__init__(**kwargs)
-        self.d_model = d_model
-        self.num_heads = num_heads
-        self.dff = dff
-        self.rate = rate
+        # Residual connection and normalization
+        out1 = self.norm1(x + attn) # Use the dtype from mixed precision
 
-        assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
-        self.mha1 = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads) # Causal self-attention
-        self.mha2 = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads) # Encoder-decoder attention
+        ffn_out = self.ffn(out1, training=training)
 
-        self.ffn = tf.keras.Sequential([
-            tf.keras.layers.Dense(dff, activation='relu'),
-            tf.keras.layers.Dense(d_model)
+        # Residual connection and normalization
+        out2 = self.norm2(out1 + ffn_output) # Use the dtype from mixed precision
+        return out2 # Return the output after the second normalization
+
+
+class DecBlock(layers.Layer):
+    def __init__(
+        self,
+        dim: int,
+        latent: int,
+        heads: int,
+        key_dim: int,
+    ):
+        super().__init__()
+        self.self_mha = layers.MultiHeadAttention(heads, key_dim) # Causal self-attention
+        self.cross_mha = layers.MultiHeadAttention(heads, key_dim) # Encoder-decoder attention
+
+        self.ffn = keras.Sequential([
+            layers.Dense(latent, activation="relu"),
+            layers.Dense(dim),
         ])
-        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm3 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.dropout1 = tf.keras.layers.Dropout(rate)
-        self.dropout2 = tf.keras.layers.Dropout(rate)
-        self.dropout3 = tf.keras.layers.Dropout(rate)
+        self.norm1 = layers.LayerNormalization()
+        self.norm2 = layers.LayerNormalization()
+        self.norm3 = layers.LayerNormalization()
 
-    def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
-        attn1, attn_weights_block1 = self.mha1(query=x, value=x, key=x, attention_mask=look_ahead_mask, training=training, return_attention_scores=True)
-        attn1 = self.dropout1(attn1, training=training)
-        out1 = self.layernorm1(x + attn1)
+    def call(
+        self,
+        y: tf.Tensor,
+        enc_output: tf.Tensor,
+        training: bool = False,
+        look_ahead_mask: tf.Tensor | None = None, # Added mask args to call signature
+        padding_mask: tf.Tensor | None = None,
+    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]: # Also return attention weights
+        # Unmasked self-attention (apply look_ahead_mask)
+        # Removed explicit casts here:
+        # attn1, attn_weights_block1 = self.self_mha(query=tf.cast(y, dtype=tf.float32), value=tf.cast(y, dtype=tf.float32), key=tf.cast(y, dtype=tf.float32), attention_mask=look_ahead_mask, training=training, return_attention_scores=True)
+        # out1 = self.norm1(tf.cast(y, dtype=tf.float32) + tf.cast(attn1, dtype=tf.float32))
 
-        attn2, attn_weights_block2 = self.mha2(query=out1, value=enc_output, key=enc_output, attention_mask=padding_mask, training=training, return_attention_scores=True)
-        attn2 = self.dropout2(attn2, training=training)
-        out2 = self.layernorm2(out1 + attn2)
+        # Apply look_ahead_mask to the self-attention
+        attn1, attn_weights_block1 = self.self_mha(query=y, value=y, key=y, attention_mask=look_ahead_mask, training=training, return_attention_scores=True)
+        out1 = self.norm1(y + attn1) # Use the dtype from mixed precision
+
+        # Unmasked cross-attention (apply padding_mask to encoder output)
+        # Removed explicit casts here:
+        # attn2, attn_weights_block2 = self.cross_mha(query=tf.cast(out1, dtype=tf.float32), value=tf.cast(enc_output, dtype=tf.float32), key=tf.cast(enc_output, dtype=tf.float32), attention_mask=padding_mask, training=training, return_attention_scores=True)
+        # out2 = self.norm2(tf.cast(out1, dtype=tf.float32) + tf.cast(attn2, dtype=tf.float32))
+
+        # Apply padding_mask to the encoder-decoder attention
+        attn2, attn_weights_block2 = self.cross_mha(query=out1, value=enc_output, key=enc_output, attention_mask=padding_mask, training=training, return_attention_scores=True)
+        out2 = self.norm2(out1 + attn2) # Use the dtype from mixed precision
 
         ffn_output = self.ffn(out2, training=training)
-        ffn_output = self.dropout3(ffn_output, training=training)
-        out3 = self.layernorm3(out2 + ffn_output)
-        return out3, attn_weights_block1, attn_weights_block2
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            "d_model": self.d_model,
-            "num_heads": self.num_heads,
-            "dff": self.dff,
-            "rate": self.rate
-        })
-        return config
+        out3 = self.norm3(out2 + ffn_output) # Use the dtype from mixed precision
+        return out3, attn_weights_block1, attn_weights_block2 # Return attention weights
 
 class Encoder(tf.keras.layers.Layer):
     def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size,
@@ -354,18 +380,21 @@ class Encoder(tf.keras.layers.Layer):
 
         self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model)
         self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
+        # Ensure EncoderLayer instances are created with the correct parameters
         self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
 
     def call(self, x, training, mask):
+        seq_len = tf.shape(x)[1]
         x = self.embedding(x) # x is now potentially float16 if mixed precision is on
         # Scale embedding by d_model
         scaling_factor = tf.math.sqrt(tf.cast(self.d_model, tf.float32))
         x *= tf.cast(scaling_factor, x.dtype) # Cast scaling factor to x's dtype
-        
+
         x = self.pos_encoding(x)
         x = self.dropout(x, training=training)
         for i in range(self.num_layers):
+            # Pass the mask to each EncoderLayer
             x = self.enc_layers[i](x, training, mask)
         return x
 
@@ -394,13 +423,17 @@ class Decoder(tf.keras.layers.Layer):
 
         self.embedding = tf.keras.layers.Embedding(target_vocab_size, d_model)
         self.pos_encoding = PositionalEncoding(maximum_position_encoding, d_model)
+        # Ensure DecoderLayer instances are created with the correct parameters
         self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
         # Ensure the final layer computes in float32 for numerical stability with mixed precision
         self.final_layer = tf.keras.layers.Dense(target_vocab_size, dtype=tf.float32)
 
+
+    # Added mask arguments to call signature
     def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
         attention_weights = {}
+        seq_len = tf.shape(x)[1]
         x = self.embedding(x) # x is now potentially float16
         # Scale embedding by d_model
         scaling_factor = tf.math.sqrt(tf.cast(self.d_model, tf.float32))
@@ -410,16 +443,18 @@ class Decoder(tf.keras.layers.Layer):
         x = self.dropout(x, training=training)
 
         for i in range(self.num_layers):
+            # Pass both masks to each DecoderLayer
             x, block1, block2 = self.dec_layers[i](x, enc_output, training, look_ahead_mask, padding_mask)
             attention_weights[f'decoder_layer{i+1}_block1_self_attn'] = block1
             attention_weights[f'decoder_layer{i+1}_block2_enc_dec_attn'] = block2
-        
-        logits = self.final_layer(x)
-        
+
+        logits = self.final_layer(x) # Output logits are float32 due to dtype=tf.float32
+
         class TransformerDecoderOutput: # Simple container
             def __init__(self, logits_val, attention_weights_val):
                 self.logits = logits_val
                 self.attention_weights = attention_weights_val
+
         return TransformerDecoderOutput(logits, attention_weights)
 
     def get_config(self):
@@ -433,27 +468,12 @@ class Decoder(tf.keras.layers.Layer):
         })
         return config
 
-class MaskedLoss(tf.keras.losses.Loss):
-    def __init__(self):
-        super().__init__(name='masked_loss')
-        self.loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-            from_logits=True, reduction='none')
-
-    def __call__(self, real, pred):
-        pred = tf.cast(pred, tf.float32) # Ensure float32 for stability
-        loss_ = self.loss_object(real, pred)
-        mask = tf.cast(tf.math.not_equal(real, 0), loss_.dtype)
-        loss_ *= mask
-        return tf.reduce_sum(loss_) / tf.reduce_sum(mask) # Average over non-padded tokens
-
-# --- Training and Translation Classes ---
-
 class TrainTranslator(tf.keras.Model):
     def __init__(self, d_model: int, num_heads: int, dff: int, num_layers: int,
                  input_text_processor, output_text_processor,
                  maximum_position_encoding: int, dropout: float = 0.1):
         super().__init__()
-        
+
         self.input_vocab_size = input_text_processor.vocabulary_size()
         self.output_vocab_size = output_text_processor.vocabulary_size()
 
@@ -464,64 +484,51 @@ class TrainTranslator(tf.keras.Model):
 
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
-        
+
         self.train_accuracy_metric = keras.metrics.SparseCategoricalAccuracy(name="train_accuracy")
         self.val_accuracy_metric = keras.metrics.SparseCategoricalAccuracy(name="val_accuracy")
 
-    def _create_masks(self, inp, tar_inp_seq): # Renamed 'tar' to 'tar_inp_seq' for clarity
+    def _create_masks(self, inp, tar_inp_seq):
         # Encoder padding mask (boolean: True for pads)
         enc_padding_mask = create_padding_mask(inp)
 
         # Decoder's 2nd MHA: masks padding in the encoder's output (keys/values)
-        # This is the same as enc_padding_mask if inp is the encoder input.
-        dec_enc_padding_mask = create_padding_mask(inp) 
+        dec_enc_padding_mask = create_padding_mask(inp)
 
         # Decoder's 1st MHA (self-attention):
         target_seq_len = tf.shape(tar_inp_seq)[1]
-        
+
         # Look-ahead mask (boolean: True for future positions)
-        look_ahead_mask_for_shape = create_look_ahead_mask(target_seq_len) # Shape (tar_seq_len, tar_seq_len)
-        
+        look_ahead_mask_for_shape = create_look_ahead_mask(target_seq_len)
+
         # Padding mask for the target sequence itself (boolean: True for pads in target)
-        dec_target_padding_mask = create_padding_mask(tar_inp_seq) # Shape (batch, 1, 1, tar_seq_len)
+        dec_target_padding_mask = create_padding_mask(tar_inp_seq)
 
         # Combined mask for decoder self-attention.
-        # A position in the target sequence is masked if it's a padding token OR it's a future token.
-        # Both dec_target_padding_mask and look_ahead_mask_for_shape need to broadcast correctly.
-        # dec_target_padding_mask (B, 1, 1, T_tar) -> needs to be (B, 1, T_tar, T_tar) for element-wise OR with look_ahead
-        # look_ahead_mask_for_shape (T_tar, T_tar)
-        # We need a combined mask of shape like (B, 1, T_tar, T_tar) or (B, T_tar, T_tar)
-        # tf.logical_or will broadcast. look_ahead_mask will be (1, T_tar, T_tar)
-        # dec_target_padding_mask (B,1,1,T_tar) should be reshaped or broadcast as (B,1,T_tar,1) to OR with (1,T_tar,T_tar)
-        # This is tricky. Let MHA handle the expansion of 2D masks if possible.
-        # Let's make the combined mask by ensuring look_ahead is applied, and padding within target is applied.
-        # MultiHeadAttention expects mask for (query_len, key_len). For self-attention this is (T_tar, T_tar).
-        # The padding mask for target is (B, 1, 1, T_tar). MHA will expand it to (B, 1, T_tar, T_tar) if query is T_tar.
-        # The look_ahead mask is (T_tar, T_tar). MHA will expand it to (B, 1, T_tar, T_tar).
-        # So we can pass them as a list or combine.
-        # A common way for combined mask for self-attention in decoder:
-        # mask out future tokens, and mask out padding tokens in the target sequence.
         combined_dec_self_attention_mask = tf.logical_or(
-            dec_target_padding_mask, # (B, 1, 1, T_tar), True where target is padded
-            look_ahead_mask_for_shape[tf.newaxis, tf.newaxis, :, :] # (1, 1, T_tar, T_tar), True for future
-        ) # Result is (B, 1, T_tar, T_tar)
-        return enc_padding_mask, combined_dec_self_attention_mask, dec_enc_padding_mask # Add this line
+            dec_target_padding_mask,
+            look_ahead_mask_for_shape[tf.newaxis, tf.newaxis, :, :]
+        )
+        return enc_padding_mask, combined_dec_self_attention_mask, dec_enc_padding_mask
 
+    @tf.function # Moved the core logic into a tf.function
     def _call_logic(self, input_tokens, target_tokens_input, training):
-        # Note: target_tokens_input is tar_inp from train_step/test_step
         enc_padding_mask, combined_dec_self_attn_mask, dec_enc_padding_mask = self._create_masks(
-            input_tokens, target_tokens_input # target_tokens_input is the decoder's input sequence
+            input_tokens, target_tokens_input
         )
         enc_output = self.encoder(input_tokens, training=training, mask=enc_padding_mask)
         decoder_output_obj = self.decoder(
             target_tokens_input, enc_output, training=training,
-            look_ahead_mask=combined_dec_self_attn_mask, # For Decoder's MHA1 (self-attention)
-            padding_mask=dec_enc_padding_mask          # For Decoder's MHA2 (encoder-decoder attention, masks enc_output)
+            look_ahead_mask=combined_dec_self_attn_mask,
+            padding_mask=dec_enc_padding_mask
         )
         return decoder_output_obj.logits
 
     def train_step(self, data):
         input_text, target_text = data
+        # Text processing happens outside the @tf.function decorated _call_logic
+        # because TextVectorization can be slow inside tf.function.
+        # Keras's .fit handles calling these preprocessing steps outside the main training loop trace.
         input_tokens = self.input_text_processor(input_text)
         target_tokens = self.output_text_processor(target_text)
 
@@ -529,53 +536,64 @@ class TrainTranslator(tf.keras.Model):
         tar_real = target_tokens[:, 1:]
 
         with tf.GradientTape() as tape:
+            # Call the @tf.function wrapped core logic
             predictions = self._call_logic(input_tokens, tar_inp, training=True)
-            loss = self.compiled_loss(tar_real, predictions) # Uses MaskedLoss via compile()
+            loss = self.compiled_loss(tar_real, predictions)
 
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-        
+
         self.train_accuracy_metric.update_state(tar_real, predictions, sample_weight=tf.cast(tar_real != 0, tf.float32))
         # Return a dict mapping metric names to current value
         results = {'loss': loss, 'accuracy': self.train_accuracy_metric.result()}
         # Include other metrics from compile()
         for metric in self.metrics:
-            if metric.name not in ['loss', 'accuracy']: # Exclude already handled loss and this model's custom accuracy
+            # Check if the metric is one of the compiled metrics and not the ones we handle manually
+            if metric.name in [m.name for m in self.compiled_metrics.metrics]:
                  results[metric.name] = metric.result()
         return results
 
 
     def test_step(self, data):
         input_text, target_text = data
+        # Text processing happens outside the @tf.function wrapped _call_logic
         input_tokens = self.input_text_processor(input_text)
         target_tokens = self.output_text_processor(target_text)
 
         tar_inp = target_tokens[:, :-1]
         tar_real = target_tokens[:, 1:]
-        
+
+        # Call the @tf.function wrapped core logic
         predictions = self._call_logic(input_tokens, tar_inp, training=False)
         loss = self.compiled_loss(tar_real, predictions)
 
         self.val_accuracy_metric.update_state(tar_real, predictions, sample_weight=tf.cast(tar_real != 0, tf.float32))
         results = {'loss': loss, 'accuracy': self.val_accuracy_metric.result()}
         for metric in self.metrics: # Include other metrics from compile()
-            if metric.name not in ['loss', 'accuracy']:
+            if metric.name in [m.name for m in self.compiled_metrics.metrics]:
                  results[metric.name] = metric.result()
         return results
-    
+
     @property
     def metrics(self):
         # We need to list all metrics here for Keras to manage them,
         # including the ones added in `compile()`.
         # `compiled_loss` and `compiled_metrics` are set by `compile`.
         # The accuracy metrics are manually managed here for train/val.
+        # Ensure unique metrics.
         base_metrics = [self.train_accuracy_metric, self.val_accuracy_metric]
         if self._is_compiled: # if compiled
-             base_metrics.extend(self.compiled_metrics.metrics) # compiled_metrics includes AUC
+             # Add compiled metrics, avoiding duplicates if they exist in base_metrics by chance
+             compiled_metrics_names = {m.name for m in self.compiled_metrics.metrics}
+             base_metrics.extend([m for m in self.compiled_metrics.metrics if m.name not in {bm.name for bm in base_metrics}])
         return base_metrics
 
 
     def get_config(self):
+        # get_config for the model should return config for its layers if needed for saving/loading.
+        # For simplicity and since we save vectorizers separately and the model's weights,
+        # we can return a basic config or rely on the layers' configs if they are custom and serializable.
+        # The current simple config is likely sufficient if we reload using the same parameters.
         return {
             "d_model": self.encoder.d_model,
             "num_heads": self.encoder.num_heads,
@@ -583,8 +601,9 @@ class TrainTranslator(tf.keras.Model):
             "num_layers": self.encoder.num_layers,
             "dropout_rate": self.encoder.rate,
             "maximum_position_encoding": self.encoder.maximum_position_encoding
+            # Note: input/output_text_processor are not directly part of the model's saveable config
+            # when using save_weights_only. They are handled separately.
         }
-
 class Translator(tf.Module):
     def __init__(self, encoder, decoder, input_text_processor, output_text_processor):
         super().__init__()
