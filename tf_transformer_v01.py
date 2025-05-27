@@ -265,21 +265,47 @@ class Translator(tf.Module):
             )
         )
 
-    def sample(self, logits):
-        # make sure the three inputs fed to tf.where have *identical*
-        # floating-point dtype.  The easiest fix is to up-cast the model
-        # logits once, then build everything else in that same dtype.
+def sample(self, logits, *, temperature: float,
+           top_k: int, top_p: float):
+    """
+    Return a tensor shape [B] with one sampled id per batch element.
+    """
+    # 1) dtype hygiene
+    logits = tf.cast(logits, tf.float32)
 
-        logits = tf.cast(logits, tf.float32)         # ❶ unify dtype
+    # 2)  mask unwanted tokens (same as before)
+    mask   = self.token_mask[None, :]           # [1,V]
+    logits = tf.where(mask, tf.constant(-np.inf, tf.float32), logits)
 
-        # broadcasting mask -> [1, vocab] is enough; an extra size-1
-        # time-step dimension isn’t needed and avoids shape surprises.
-        mask   = self.token_mask[None, :]            # ❷ shape [1, V]
+    # 3)  temperature (τ==0 → greedy)
+    if temperature and temperature > 0.0:
+        logits = logits / temperature
 
-        banned = tf.constant(-np.inf, logits.dtype)  # ❸ same dtype
-        logits = tf.where(mask, banned, logits)
+    # 4)  top-k filtering
+    if top_k and top_k > 0:
+        kth = tf.math.top_k(logits, k=top_k).values[:, -1, tf.newaxis]
+        logits = tf.where(logits < kth, tf.constant(-np.inf, tf.float32), logits)
 
+    # 5)  nucleus (top-p) filtering
+    if top_p and top_p > 0.0:
+        sorted_logits = tf.sort(logits, direction="DESCENDING", axis=-1)
+        cdf = tf.math.cumsum(tf.nn.softmax(sorted_logits, axis=-1), axis=-1)
+        # last position where cdf <= p
+        cut_indices = tf.argmax(tf.cast(cdf <= top_p, tf.int32), axis=-1)
+        # broadcast each cut to vocab axis
+        thresh = tf.gather_nd(sorted_logits,
+                              tf.stack([tf.range(tf.shape(logits)[0]),
+                                        cut_indices], axis=1))
+        logits = tf.where(logits < thresh[:, tf.newaxis],
+                          tf.constant(-np.inf, tf.float32), logits)
+
+    # 6)  sample (or greedy if τ==0 and everything else off)
+    if temperature == 0.0 and top_k == 0 and top_p == 0.0:
         return tf.argmax(logits, -1, output_type=tf.int64)
+
+    return tf.random.categorical(logits, num_samples=1,
+                                 dtype=tf.int64)[:, 0]
+
 
     def translate(self, text, max_len=50):
         batch = tf.shape(text)[0]
@@ -299,7 +325,11 @@ class Translator(tf.Module):
                 break
             logits = self.model([enc_in, dec_in], training=False)[:, -1, :]
             # expand dims so rank == 2 → avoid accidental flattening
-            new_tok = self.sample(logits)                 # [B]
+            new_tok = self.sample(
+                logits,
+                temperature=cfg.temperature,
+                top_k=cfg.top_k,
+                top_p=cfg.top_p)
             done |= (new_tok == self.end)               # shapes [B] ✓
             new_tok = tf.where(done, 0, new_tok)        # still [B] ✓
 
