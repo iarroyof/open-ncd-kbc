@@ -45,14 +45,14 @@ LOGGER = logging.getLogger("tf_transformer")
 @dataclass(kw_only=True)
 class HParams:
     seq_len: int = 30
-    dec_max_mult: int = 4
+    dec_max_mult: int = 1 # 4
     vocab_size: int = 15_000
     model_dim: int = 512
     latent_dim: int = 2048
-    heads: int = 8
+    heads: int = 1  # 8
     stacks: int = 1
     key_dim: int | None = None
-    dropout: float = 0.1
+    dropout: float = 0.3 # 0.1
     batch: int = 64
     epochs: int = 30
     train_path: str | None = None
