@@ -209,11 +209,17 @@ def build_model(h: HParams) -> keras.Model:
 
 # masked loss + accuracy
 class MaskedLoss(tf.keras.losses.Loss):
-    def __init__(self): super().__init__(name="masked_loss")
-    def __call__(self, y_true, y_pred, _=None):
-        loss = tf.keras.losses.sparse_categorical_crossentropy(y_true, y_pred)
+    def __init__(self):                       # keep default wrapper
+        super().__init__(reduction="none", name="masked_loss")
+        self.base = tf.keras.losses.SparseCategoricalCrossentropy(
+            from_logits=False, reduction="none"
+        )
+
+    def call(self, y_true, y_pred):           # <- correct to override
+        loss = self.base(y_true, y_pred)
         mask = tf.cast(y_true != 0, loss.dtype)
         return tf.reduce_sum(loss * mask) / tf.reduce_sum(mask)
+
 
 def masked_accuracy(y_true, y_pred):
     mask = tf.cast(y_true != 0, tf.float32)
