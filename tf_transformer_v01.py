@@ -265,10 +265,14 @@ class Translator(tf.Module):
         )
 
     def sample(self, logits):
+        """Greedy + token-mask → shape [batch]"""
         logits = tf.cast(logits, tf.float32)
-        mask   = self.token_mask[None, None, :]
-        logits = tf.where(mask, tf.constant(-np.inf, tf.float32), logits)
-        return tf.argmax(logits, -1, output_type=tf.int64)
+        logits = tf.where(
+            self.token_mask[None, :],       # mask shape [vocab]
+            tf.constant(-1e9, tf.float32),  # keep dtype consistent
+            logits,
+        )
+        return tf.argmax(logits, axis=-1, output_type=tf.int64)  # [B]
 
     def translate(self, text, max_len=50):
         batch = tf.shape(text)[0]
@@ -287,11 +291,13 @@ class Translator(tf.Module):
                 break
             logits = self.model([enc_in, dec_in], training=False)[:, -1, :]
             # expand dims so rank == 2 → avoid accidental flattening
-            new_tok = tf.expand_dims(self.sample(logits), 1)
+            new_tok = self.sample(logits)                 # [B]
             done |= (new_tok == self.end)
-            new_tok = tf.where(done, 0, new_tok)
+            new_tok = tf.where(done, 0, new_tok)          # [B]
+
+            new_tok = tf.expand_dims(new_tok, 1)          # [B,1]
             out_tokens.append(new_tok)
-            dec_in = tf.concat([dec_in, new_tok], axis=-1)
+            dec_in = tf.concat([dec_in, new_tok], axis=1) # ranks match
 
             tf.print("[Translator] step", step, "dec_len", seq_len + 1)
             if tf.reduce_all(done): break
