@@ -243,6 +243,12 @@ class Translator(tf.Module):
         return tf.strings.strip(result_text)
 
     def sample(self, logits, temperature):
+        # Ensure logits is rank 2
+        logits = tf.ensure_shape(logits, [None, None])  # [batch_size, vocab_size]
+        if tf.rank(logits) > 2:
+            logits = tf.squeeze(logits, axis=0)  # Remove extra dimension if present
+        tf.debugging.assert_rank(logits, 2)
+        
         logits = tf.cast(logits, tf.float32)
         mask = self.token_mask[tf.newaxis, tf.newaxis, :]
         logits = tf.where(mask, tf.constant(-np.inf, dtype=tf.float32), logits)
@@ -252,16 +258,21 @@ class Translator(tf.Module):
         return tf.squeeze(sampled, axis=-1)
 
     def translate(self, input_text, max_length=50, temperature=1.0):
+        # Assert input_text is rank 1 (batch of strings)
+        tf.debugging.assert_rank(input_text, 1)
         batch_size = tf.shape(input_text)[0]
-        input_tokens = self.input_text_processor(input_text)
+        input_tokens = self.input_text_processor(input_text)  # Should be [batch_size, seq_len]
+        tf.debugging.assert_rank(input_tokens, 2)
         enc_inputs = input_tokens
-        dec_inputs = tf.fill([batch_size, 1], self.start_token)
+        dec_inputs = tf.fill([batch_size, 1], self.start_token)  # [batch_size, 1]
         result_tokens = []
         done = tf.zeros([batch_size, 1], dtype=tf.bool)
         
         for _ in range(max_length):
-            preds = self.model([enc_inputs, dec_inputs], training=False)
-            logits = preds[:, -1, :]
+            preds = self.model([enc_inputs, dec_inputs], training=False)  # [batch_size, seq_len_dec, vocab_size]
+            tf.debugging.assert_rank(preds, 3)
+            logits = preds[:, -1, :]  # Should be [batch_size, vocab_size]
+            tf.debugging.assert_rank(logits, 2)
             new_tokens = self.sample(logits, temperature)
             done |= (new_tokens == self.end_token)
             new_tokens = tf.where(done, tf.constant(0, dtype=tf.int64), new_tokens)
@@ -424,7 +435,9 @@ def main():
         num_sections = math.ceil(len(inp_) / h.batch) if inp_ else 0
         if num_sections:
             for chunk in np.array_split(list(inp_), num_sections):
-                result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+                chunk_tensor = tf.constant(chunk, dtype=tf.string)  # Ensure [batch_size]
+                tf.debugging.assert_rank(chunk_tensor, 1)  # Verify rank 1
+                result = translator.tf_translate(chunk_tensor)['text'].numpy()
                 results.append(result.tolist())
             result = sum(results, [])
             result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
