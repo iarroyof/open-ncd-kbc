@@ -489,10 +489,17 @@ def main():
                    help="number of encoder / decoder blocks")
     p.add_argument("--attn-samples", type=int,   default=1,
                    help="how many validation sentences to plot attention for")
-    # hyper overrides
-    for fld in ("seq_len vocab_size model_dim latent_dim heads stacks key_dim "
-                "batch dropout seed").split():        # --out-path replaces --out-dir
-        p.add_argument(f"--{fld.replace('_','-')}", type=int)
+
+    manual_flags = {
+        "--train-path", "--valid-path", "--out-path",
+        "--epochs", "--temperature", "--top-k", "--top-p",
+        "--train", "--evaluate", "--debug"
+    }
+    for fld in HParams.__dataclass_fields__:          # iterate every field
+        flag = f"--{fld.replace('_','-')}"
+        if flag in manual_flags:
+            continue                                  # already declared
+        p.add_argument(flag, type=int if fld != "debug" else bool)
     args = p.parse_args()
 
     cfg: dict = {k: v for k, v in vars(args).items()
