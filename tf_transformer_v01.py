@@ -582,24 +582,32 @@ def main():
     callbacks = [wandb.keras.WandbCallback(save_model=False)]
 
     if train_ds:
-        # ── decide which validation rows to visualise ───────────────────────
-        if cfg.attn_sample_indices:                       # explicit list wins
+        # ── decide which validation rows to visualise ───────────────────
+        if getattr(cfg, "attn_sample_indices", None):
             idx = [int(i) for i in cfg.attn_sample_indices.split(",")]
-        else:                                             # fall back to “first N”
+        else:
             idx = list(range(cfg.attn_samples))
-    sample_src = [valid_pairs[i][0] for i in idx]
-        attn_cb = AttentionLogger(
-            translator = Translator(model, INPUT_VECT, OUTPUT_VECT,
-                                    temperature=cfg.temperature,
-                                    top_k=cfg.top_k,
-                                    top_p=cfg.top_p),
-            src_texts  = sample_src,
-            run_dir    = run_dir)
 
-        model.fit(train_ds,
-                  validation_data = valid_ds,
-                  epochs          = h.epochs,
-                  callbacks       = callbacks + [attn_cb])
+        sample_src = [valid_pairs[i][0] for i in idx]
+
+        attn_cb = AttentionLogger(
+            translator=Translator(
+                model, INPUT_VECT, OUTPUT_VECT,
+                temperature=cfg.temperature,
+                top_k=cfg.top_k,
+                top_p=cfg.top_p,
+            ),
+            src_texts=sample_src,
+            run_dir=run_dir,
+        )
+
+        model.fit(
+            train_ds,
+            validation_data=valid_ds,
+            epochs=h.epochs,
+            callbacks=callbacks + [attn_cb],
+        )
+
     if args.evaluate:
         try:
             tf.print("\n[MAIN] Starting translation evaluation …")
