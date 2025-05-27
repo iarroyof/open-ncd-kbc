@@ -201,7 +201,7 @@ def build_model(h: HParams) -> keras.Model:
     for _ in range(h.stacks):
         x = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, dropout=h.dropout)(x)
     enc_out = x
-    y = PosEmbed(50, h.vocab_size, h.model_dim)(dec_in)  # Increased to match inference max_length
+    y = PosEmbed(50, h.vocab_size, h.model_dim)(dec_in)  # Matches inference max_length
     for _ in range(h.stacks):
         y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, dropout=h.dropout)(y, enc_out)
     y = layers.Dropout(h.dropout)(y)
@@ -248,7 +248,6 @@ class Translator(tf.Module):
         logits = tf.where(mask, tf.constant(-np.inf, dtype=tf.float32), logits)
         if temperature == 0.0:
             return tf.argmax(logits, axis=-1, output_type=tf.int64)
-        logits = tf.squeeze(logits, axis=1)
         return tf.random.categorical(logits / temperature, num_samples=1, dtype=tf.int64)
 
     def translate(self, input_text, max_length=50, temperature=1.0):
