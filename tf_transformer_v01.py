@@ -265,8 +265,19 @@ class Translator(tf.Module):
         )
 
     def sample(self, logits):
-        mask   = self.token_mask[None, None, :]
-        logits = tf.where(mask, tf.constant(-np.inf, tf.float32), logits)
+        # make sure the three inputs fed to tf.where have *identical*
+        # floating-point dtype.  The easiest fix is to up-cast the model
+        # logits once, then build everything else in that same dtype.
+
+        logits = tf.cast(logits, tf.float32)         # ❶ unify dtype
+
+        # broadcasting mask -> [1, vocab] is enough; an extra size-1
+        # time-step dimension isn’t needed and avoids shape surprises.
+        mask   = self.token_mask[None, :]            # ❷ shape [1, V]
+
+        banned = tf.constant(-np.inf, logits.dtype)  # ❸ same dtype
+        logits = tf.where(mask, banned, logits)
+
         return tf.argmax(logits, -1, output_type=tf.int64)
 
     def translate(self, text, max_len=50):
