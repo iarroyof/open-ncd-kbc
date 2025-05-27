@@ -284,8 +284,9 @@ class Translator(tf.Module):
         batch = tf.shape(text)[0]
         enc_in = self.in_tv(text)
         # (batch, 1) – keep rank-2 from the very beginning
+        # keep the decoder sequence 2-D, but the “done” flag 1-D
         dec_in = tf.fill([batch, 1], self.start, name="dec_start")
-        done   = tf.zeros([batch, 1], tf.bool)
+        done   = tf.zeros([batch],      tf.bool)        # <-- rank-1
         out_tokens = []
 
         tf.print("[Translator] enc_inputs shape:", tf.shape(enc_in))
@@ -298,12 +299,12 @@ class Translator(tf.Module):
             logits = self.model([enc_in, dec_in], training=False)[:, -1, :]
             # expand dims so rank == 2 → avoid accidental flattening
             new_tok = self.sample(logits)                 # [B]
-            done |= (new_tok == self.end)
-            new_tok = tf.where(done, 0, new_tok)          # [B]
+            done |= (new_tok == self.end)               # shapes [B] ✓
+            new_tok = tf.where(done, 0, new_tok)        # still [B] ✓
 
-            new_tok = tf.expand_dims(new_tok, 1)          # [B,1]
+            new_tok = tf.expand_dims(new_tok, 1)        # [B,1]
             out_tokens.append(new_tok)
-            dec_in = tf.concat([dec_in, new_tok], axis=1) # ranks match
+            dec_in = tf.concat([dec_in, new_tok], axis=1)  # ranks now match
 
             tf.print("[Translator] step", step, "dec_len", seq_len + 1)
             if tf.reduce_all(done): break
