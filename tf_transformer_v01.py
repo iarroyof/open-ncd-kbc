@@ -493,6 +493,10 @@ def main():
                    help="number of encoder / decoder blocks")
     p.add_argument("--attn-samples", type=int,   default=1,
                    help="how many validation sentences to plot attention for")
+    # choose explicit rows, 0-based, comma-separated
+    p.add_argument("--attn-sample-indices", type=str, default="0",
+                   help="comma-separated list of validation row indices to "
+                        "visualise attention for (overrides --attn-samples)")  
 
     for fld in HParams.__dataclass_fields__:
         flag = f"--{fld.replace('_','-')}"
@@ -571,8 +575,12 @@ def main():
     callbacks = [wandb.keras.WandbCallback(save_model=False)]
 
     if train_ds:
-        # pick the first N validation samples for visualisation
-        sample_src = [s for s, _ in valid_pairs[: cfg.attn_samples]]
+        # ── decide which validation rows to visualise ───────────────────────
+        if cfg.attn_sample_indices:                       # explicit list wins
+            idx = [int(i) for i in cfg.attn_sample_indices.split(",")]
+        else:                                             # fall back to “first N”
+            idx = list(range(cfg.attn_samples))
+    sample_src = [valid_pairs[i][0] for i in idx]
         attn_cb = AttentionLogger(
             translator = Translator(model, INPUT_VECT, OUTPUT_VECT,
                                     temperature=cfg.temperature,
