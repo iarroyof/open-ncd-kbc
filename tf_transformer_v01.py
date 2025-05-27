@@ -1,3 +1,4 @@
+# LAtest working code with metrics correctly applied
 from __future__ import annotations
 
 # Standard library imports
@@ -11,7 +12,8 @@ import string
 import yaml
 from typing import List, Tuple
 import zipfile
-import math
+
+# Third-party imports
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -201,7 +203,7 @@ def build_model(h: HParams) -> keras.Model:
     for _ in range(h.stacks):
         x = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, dropout=h.dropout)(x)
     enc_out = x
-    y = PosEmbed(50, h.vocab_size, h.model_dim)(dec_in)  # Matches inference max_length
+    y = PosEmbed(h.seq_len + 1, h.vocab_size, h.model_dim)(dec_in)
     for _ in range(h.stacks):
         y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, dropout=h.dropout)(y, enc_out)
     y = layers.Dropout(h.dropout)(y)
@@ -243,46 +245,36 @@ class Translator(tf.Module):
         return tf.strings.strip(result_text)
 
     def sample(self, logits, temperature):
-        # Ensure logits is rank 2
-        logits = tf.ensure_shape(logits, [None, None])  # [batch_size, vocab_size]
-        if tf.rank(logits) > 2:
-            logits = tf.squeeze(logits, axis=0)  # Remove extra dimension if present
-        tf.debugging.assert_rank(logits, 2)
-        
         logits = tf.cast(logits, tf.float32)
         mask = self.token_mask[tf.newaxis, tf.newaxis, :]
         logits = tf.where(mask, tf.constant(-np.inf, dtype=tf.float32), logits)
         if temperature == 0.0:
             return tf.argmax(logits, axis=-1, output_type=tf.int64)
-        sampled = tf.random.categorical(logits / temperature, num_samples=1, dtype=tf.int64)
-        return tf.squeeze(sampled, axis=-1)
+        logits = tf.squeeze(logits, axis=1)
+        return tf.random.categorical(logits / temperature, num_samples=1, dtype=tf.int64)
 
     def translate(self, input_text, max_length=50, temperature=1.0):
-        # Assert input_text is rank 1 (batch of strings)
-        tf.debugging.assert_rank(input_text, 1)
         batch_size = tf.shape(input_text)[0]
-        input_tokens = self.input_text_processor(input_text)  # Should be [batch_size, seq_len]
-        tf.debugging.assert_rank(input_tokens, 2)
+        input_tokens = self.input_text_processor(input_text)
         enc_inputs = input_tokens
-        dec_inputs = tf.fill([batch_size, 1], self.start_token)  # [batch_size, 1]
+        dec_inputs = tf.fill([batch_size, 1], self.start_token)
         result_tokens = []
         done = tf.zeros([batch_size, 1], dtype=tf.bool)
         
         for _ in range(max_length):
-            preds = self.model([enc_inputs, dec_inputs], training=False)  # [batch_size, seq_len_dec, vocab_size]
-            tf.debugging.assert_rank(preds, 3)
-            logits = preds[:, -1, :]  # Should be [batch_size, vocab_size]
-            tf.debugging.assert_rank(logits, 2)
+            preds = self.model([enc_inputs, dec_inputs], training=False)
+            logits = preds[:, -1, :]
             new_tokens = self.sample(logits, temperature)
             done |= (new_tokens == self.end_token)
             new_tokens = tf.where(done, tf.constant(0, dtype=tf.int64), new_tokens)
-            result_tokens.append(tf.expand_dims(new_tokens, axis=-1))
-            dec_inputs = tf.concat([dec_inputs, tf.expand_dims(new_tokens, axis=-1)], axis=-1)
+            result_tokens.append(new_tokens)
+            dec_inputs = tf.concat([dec_inputs, new_tokens], axis=-1)
             if tf.executing_eagerly() and tf.reduce_all(done):
                 break
         
         result_tokens = tf.concat(result_tokens, axis=-1)
-        return {'text': self.tokens_to_text(result_tokens)}
+        result_text = self.tokens_to_text(result_tokens)
+        return {'text': result_text}
 
     @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.string)])
     def tf_translate(self, input_text):
@@ -293,8 +285,8 @@ INPUT_VECT: TextVectorization
 OUTPUT_VECT: TextVectorization
 
 def _fmt(src: tf.Tensor, tgt: tf.Tensor):
-    src_tok = tf.cast(INPUT_VECT(src), tf.int64)
-    tgt_tok = tf.cast(OUTPUT_VECT(tgt), tf.int64)
+    src_tok = INPUT_VECT(src)
+    tgt_tok = OUTPUT_VECT(tgt)
     return {"encoder_inputs": src_tok, "decoder_inputs": tgt_tok[:, :-1]}, tgt_tok[:, 1:]
 
 def make_ds(pairs: List[Tuple[str, str]], h: HParams) -> tf.data.Dataset:
@@ -304,44 +296,45 @@ def make_ds(pairs: List[Tuple[str, str]], h: HParams) -> tf.data.Dataset:
 
 # Padding-aware accuracy
 def masked_accuracy(y_true, y_pred):
-    mask = tf.cast(tf.not_equal(y_true, 0), dtype=tf.float32)
+    mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
     pred_ids = tf.argmax(y_pred, axis=-1, output_type=tf.int64)
-    matches = tf.cast(y_true, tf.int64) == pred_ids
-    return tf.reduce_sum(tf.cast(matches, tf.float32) * mask) / tf.reduce_sum(mask)
+    matches = tf.cast(tf.equal(tf.cast(y_true, tf.int64), pred_ids), tf.float32)
+    return tf.reduce_sum(matches * mask) / tf.reduce_sum(mask)
 
 # Main execution
 def main():
     global INPUT_VECT, OUTPUT_VECT
+    LOGGER.info("Starting tf_transformer.py")
+
     parser = argparse.ArgumentParser(description="Train Transformer model with optional immediate evaluation and weight saving")
-    parser.add_argument("--config", type=str, help="Path to YAML config file")
-    parser.add_argument("--train-path", type=str, help="Path to training data")
+    parser.add_argument("--config", type=str, default=None, help="Path to YAML config file")
+    parser.add_argument("--train-path", type=str, default=None, help="Path to training data")
     parser.add_argument("--valid-path", type=str, required=True, help="Path to validation data")
     parser.add_argument("--train", action="store_true", help="Enable training")
     parser.add_argument("--evaluate", action="store_true", help="Enable immediate evaluation after training")
     parser.add_argument("--save-weights", action="store_true", help="Save model weights to ckpt.weights.h5")
-    parser.add_argument("--n-demo", type=int, default=0, help="Number of test samples to predict")
-    parser.add_argument("--seq-len", type=int, default=16, help="Maximum sequence length")
+    parser.add_argument("--seq-len", type=int, default=30, help="Maximum sequence length")
     parser.add_argument("--vocab-size", type=int, default=15000, help="Vocabulary size")
     parser.add_argument("--model-dim", type=int, default=512, help="Model embedding dimension")
     parser.add_argument("--latent-dim", type=int, default=2048, help="Feed-forward network latent dimension")
     parser.add_argument("--heads", type=int, default=8, help="Number of attention heads")
     parser.add_argument("--stacks", type=int, default=1, help="Number of transformer stacks")
-    parser.add_argument("--key-dim", type=int, help="Attention key dimension")
-    parser.add_argument("--batch-size", type=int, default=64, dest="batch", help="Batch size")
-    parser.add_argument("--epochs", type=int, default=2, help="Number of training epochs")
-    parser.add_argument("--out-dir", type=str, default="runs", help="Output directory")
+    parser.add_argument("--key-dim", type=int, default=None, help="Attention key dimension (defaults to model_dim/heads)")
+    parser.add_argument("--batch", type=int, default=64, help="Batch size")
+    parser.add_argument("--epochs", type=int, default=30, help="Number of training epochs")
+    parser.add_argument("--out-dir", type=str, default="results", help="Output directory")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument("--attn-sample-indices", type=int, nargs="*", help="Validation sample indices for attention logging")
-    parser.add_argument("--dropout", type=float, help="Global dropout rate used throughout the Transformer")
+    parser.add_argument("--attn-sample-indices", type=int, nargs="*", default=None, help="Validation sample indices for attention logging")
+    parser.add_argument("--dropout", type=float, default=None, help="Global dropout rate used throughout the Transformer")
 
     args = parser.parse_args()
-
-    if args.train and not args.train_path:
+    
+    if args.train and args.train_path is None:
         parser.error("--train-path is required when --train is specified")
 
     # Enable mixed precision
     mixed_precision.set_global_policy('mixed_float16')
-    LOGGER.info("Mixed precision training with 'mixed_float16'")
+    LOGGER.info("Mixed precision training enabled with 'mixed_float16' policy")
 
     config = {}
     if args.config:
@@ -356,7 +349,7 @@ def main():
     h = HParams(**config)
 
     if not args.train:
-        LOGGER.info("No action; default to training mode")
+        LOGGER.info("No action specified; use --train to train the model")
         return
 
     train_lines = Path(h.train_path).read_text().splitlines()
@@ -373,7 +366,7 @@ def main():
     LOGGER.info(f"Output vocabulary sample: {OUTPUT_VECT.get_vocabulary()[:20]}")
 
     wandb_config = asdict(h)
-    wandb.init(project="transformer", config=wandb_config, save_code=True)
+    wandb.init(project="tf-transformer", config=wandb_config, save_code=True)
 
     run_out_dir = Path(h.out_dir) / wandb.run.project / (wandb.run.sweep_id or "nosweep") / wandb.run.id
     run_out_dir.mkdir(parents=True, exist_ok=True)
@@ -384,9 +377,6 @@ def main():
         yaml.dump(config_dict, f)
 
     h.out_dir = str(run_out_dir)
-
-    save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input.keras")
-    save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
     train_ds = make_ds(train_pairs, h)
@@ -410,10 +400,10 @@ def main():
     ]
     if args.save_weights:
         callbacks.append(keras.callbacks.ModelCheckpoint(
-            filepath=run_out_dir / "ckpt.weights.h5",
-            save_weights_only=True,
-            verbose=1
+            Path(h.out_dir) / "ckpt.weights.h5", save_weights_only=True, verbose=1
         ))
+        save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input.keras")
+        save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.keras")
 
     hist = model.fit(
         train_ds,
@@ -421,32 +411,15 @@ def main():
         epochs=h.epochs,
         callbacks=callbacks,
     )
-    pd.DataFrame(hist.history).to_csv(run_out_dir / "history.csv")
+    pd.DataFrame(hist.history).to_csv(Path(h.out_dir) / "history.csv", index=False)
 
-    # Perform inferences
-    if args.n_demo >= 0:
-        random.shuffle(valid_pairs)
-        if args.n_demo > 0:
-            valid_pairs = valid_pairs[:args.n_demo]
-        inp_, targ_ = zip(*valid_pairs)
-        results = []
-        LOGGER.info("Performing inference...")
+    if args.evaluate:
         translator = Translator(model, INPUT_VECT, OUTPUT_VECT)
-        num_sections = math.ceil(len(inp_) / h.batch) if inp_ else 0
-        if num_sections:
-            for chunk in np.array_split(list(inp_), num_sections):
-                chunk_tensor = tf.constant(chunk, dtype=tf.string)  # Ensure [batch_size]
-                tf.debugging.assert_rank(chunk_tensor, 1)  # Verify rank 1
-                result = translator.tf_translate(chunk_tensor)['text'].numpy()
-                results.append(result.tolist())
-            result = sum(results, [])
-            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
-            result_df.to_csv(run_out_dir / "predictions.csv", index=False)
-            LOGGER.info(f"Results written to: {run_out_dir / 'predictions.csv'}")
-        else:
-            LOGGER.warning("No samples to process.")
-
-    wandb.finish()
+        inp_, targ_ = zip(*valid_pairs)
+        results = translator.tf_translate(tf.constant(list(inp_)))['text'].numpy().tolist()
+        result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': results, 'Obj_true': targ_})
+        result_df.to_csv(run_out_dir / "predictions.csv", index=False)
+        LOGGER.info(f"Saved predictions to: {run_out_dir / 'predictions.csv'}")
 
 if __name__ == "__main__":
     main()
