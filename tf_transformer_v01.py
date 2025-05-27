@@ -490,16 +490,15 @@ def main():
     p.add_argument("--attn-samples", type=int,   default=1,
                    help="how many validation sentences to plot attention for")
 
-    manual_flags = {
-        "--train-path", "--valid-path", "--out-path",
-        "--epochs", "--temperature", "--top-k", "--top-p",
-        "--train", "--evaluate", "--debug"
-    }
-    for fld in HParams.__dataclass_fields__:          # iterate every field
+    for fld in HParams.__dataclass_fields__:
         flag = f"--{fld.replace('_','-')}"
-        if flag in manual_flags:
-            continue                                  # already declared
-        p.add_argument(flag, type=int if fld != "debug" else bool)
+        if flag in p._option_string_actions:          # already present → skip
+            continue
+        # bool -> store_true ; everything else -> int
+        if fld == "debug":
+            p.add_argument(flag, action="store_true")
+        else:
+            p.add_argument(flag, type=int)
     args = p.parse_args()
 
     cfg: dict = {k: v for k, v in vars(args).items()
