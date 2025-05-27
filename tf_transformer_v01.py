@@ -57,6 +57,7 @@ class HParams:
     key_dim: int | None = None
     dropout: float = 0.3 # 0.1
     batch: int = 64
+    attn_samples: int = 1
     epochs: int = 30
     train_path: str | None = None
     valid_path: str | None = None
