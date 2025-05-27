@@ -221,13 +221,13 @@ def build_model(h: HParams) -> keras.Model:
 
 # masked loss + accuracy
 class MaskedLoss(tf.keras.losses.Loss):
-    def __init__(self):                       # keep default wrapper
+    def __init__(self): 
         super().__init__(reduction="none", name="masked_loss")
         self.base = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=False, reduction="none"
         )
 
-    def call(self, y_true, y_pred):           # <- correct to override
+    def call(self, y_true, y_pred): 
         loss = self.base(y_true, y_pred)
         mask = tf.cast(y_true != 0, loss.dtype)
         return tf.reduce_sum(loss * mask) / tf.reduce_sum(mask)
@@ -387,7 +387,7 @@ def main():
     model.summary(print_fn=LOGGER.info)
 
     # ---------------------------------------------------------------
-    # 1️⃣ W&B – create the run *first* so we have its metadata
+    # create the run *first* so we have its metadata
     # ---------------------------------------------------------------
     run = wandb.init(                           # same pattern you used before
             project="tf-transformer",
