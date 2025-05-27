@@ -409,11 +409,11 @@ def main():
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--out-path", default="results", help="root dir for outputs")
     p.add_argument("--debug", action="store_true")
-    p.add_argument("--temperature", type=float, default=0.3,
+    p.add_argument("--temperature", type=float, default=0.8,
                   help="0 = greedy decoding; >0 adds randomness")
-    p.add_argument("--top-k",       type=int,   default=0,
+    p.add_argument("--top-k",       type=int,   default=40,
                   help="keep only the K highest-logit tokens (0 = off)")
-    p.add_argument("--top-p",       type=float, default=0.0,
+    p.add_argument("--top-p",       type=float, default=0.9,
                   help="nucleus sampling cumulative probability cutoff (0 = off)")
   
     # hyper overrides
