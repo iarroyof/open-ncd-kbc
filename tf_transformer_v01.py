@@ -265,14 +265,9 @@ class Translator(tf.Module):
         )
 
     def sample(self, logits):
-        """Greedy + token-mask → shape [batch]"""
-        logits = tf.cast(logits, tf.float32)
-        logits = tf.where(
-            self.token_mask[None, :],       # mask shape [vocab]
-            tf.constant(-1e9, tf.float32),  # keep dtype consistent
-            logits,
-        )
-        return tf.argmax(logits, axis=-1, output_type=tf.int64)  # [B]
+        mask   = self.token_mask[None, None, :]
+        logits = tf.where(mask, tf.constant(-np.inf, tf.float32), logits)
+        return tf.argmax(logits, -1, output_type=tf.int64)
 
     def translate(self, text, max_len=50):
         batch = tf.shape(text)[0]
