@@ -1,4 +1,3 @@
-# LAtest working code with metrics correctly applied
 from __future__ import annotations
 
 # Standard library imports
@@ -12,8 +11,7 @@ import string
 import yaml
 from typing import List, Tuple
 import zipfile
-
-# Third-party imports
+import math
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -203,7 +201,7 @@ def build_model(h: HParams) -> keras.Model:
     for _ in range(h.stacks):
         x = EncBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, dropout=h.dropout)(x)
     enc_out = x
-    y = PosEmbed(h.seq_len + 1, h.vocab_size, h.model_dim)(dec_in)
+    y = PosEmbed(50, h.vocab_size, h.model_dim)(dec_in)  # Increased to match inference max_length
     for _ in range(h.stacks):
         y = DecBlock(h.model_dim, h.latent_dim, h.heads, h.key_dim, dropout=h.dropout)(y, enc_out)
     y = layers.Dropout(h.dropout)(y)
@@ -313,6 +311,7 @@ def main():
     parser.add_argument("--train", action="store_true", help="Enable training")
     parser.add_argument("--evaluate", action="store_true", help="Enable immediate evaluation after training")
     parser.add_argument("--save-weights", action="store_true", help="Save model weights to ckpt.weights.h5")
+    parser.add_argument("--n-demo", type=int, default=0, help="Number of test samples to predict. Default is 0, so predict on the full validation data.")
     parser.add_argument("--seq-len", type=int, default=30, help="Maximum sequence length")
     parser.add_argument("--vocab-size", type=int, default=15000, help="Vocabulary size")
     parser.add_argument("--model-dim", type=int, default=512, help="Model embedding dimension")
@@ -414,13 +413,28 @@ def main():
     )
     pd.DataFrame(hist.history).to_csv(Path(h.out_dir) / "history.csv", index=False)
 
-    if args.evaluate:
-        translator = Translator(model, INPUT_VECT, OUTPUT_VECT)
+    # Perform inferences (mirroring LSTM script)
+    if args.n_demo >= 0:
+        random.shuffle(valid_pairs)
+        if args.n_demo > 0:
+            valid_pairs = valid_pairs[:args.n_demo]
         inp_, targ_ = zip(*valid_pairs)
-        results = translator.tf_translate(tf.constant(list(inp_)))['text'].numpy().tolist()
-        result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': results, 'Obj_true': targ_})
-        result_df.to_csv(run_out_dir / "predictions.csv", index=False)
-        LOGGER.info(f"Saved predictions to: {run_out_dir / 'predictions.csv'}")
+        results = []
+        LOGGER.info("Performing inferences using the trained model...")
+        translator = Translator(model, INPUT_VECT, OUTPUT_VECT)
+        num_sections = math.ceil(len(inp_) / h.batch) if inp_ else 0
+        if num_sections:
+            for chunk in np.array_split(list(inp_), num_sections):
+                result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+                results.append(result.tolist())
+            result = sum(results, [])
+            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
+            result_df.to_csv(run_out_dir / "predictions.csv", index=False)
+            LOGGER.info(f"Results written to {run_out_dir / 'predictions.csv'}")
+        else:
+            LOGGER.warning("No inference samples to process.")
+
+    wandb.finish()
 
 if __name__ == "__main__":
     main()
