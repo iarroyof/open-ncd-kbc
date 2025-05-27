@@ -302,31 +302,31 @@ def masked_accuracy(y_true, y_pred):
 def main():
     global INPUT_VECT, OUTPUT_VECT
     parser = argparse.ArgumentParser(description="Train Transformer model with optional immediate evaluation and weight saving")
-    parser.add_argument("--config")
-    parser.add_argument("--train-path")
-    parser.add_argument("--valid-path", required=True)
-    parser.add_argument("--train", action="store_true")
-    parser.add_argument("--evaluate", action="store_true")
-    parser.add_argument("--save-weights", action="store_true")
-    parser.add_argument("--n-demo", type=int, default=0)
-    parser.add_argument("--seq-len", type=int, default=16)
-    parser.add_argument("--vocab-size", type=int, default=15000)
-    parser.add_argument("--model-dim", type=int, default=512)
-    parser.add_argument("--latent-dim", type=int, default=2048)
-    parser.add_argument("--heads", type=int, default=8)
-    parser.add_argument("--stacks", type=int, default=1)
-    parser.add_argument("--key-dim", type=int)
-    parser.add_argument("--batch-size", type=int, default=64, dest="batch")
-    parser.add_argument("--epochs", type=int, default=2)
-    parser.add_argument("--out-dir", type=str, default="runs")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--attn-sample-indices", type=int, nargs="*")
-    parser.add_argument("--dropout", type=float)
+    parser.add_argument("--config", type=str, help="Path to YAML config file")
+    parser.add_argument("--train-path", type=str, help="Path to training data")
+    parser.add_argument("--valid-path", type=str, required=True, help="Path to validation data")
+    parser.add_argument("--train", action="store_true", help="Enable training")
+    parser.add_argument("--evaluate", action="store_true", help="Enable immediate evaluation after training")
+    parser.add_argument("--save-weights", action="store_true", help="Save model weights to ckpt.weights.h5")
+    parser.add_argument("--n-demo", type=int, default=0, help="Number of test samples to predict")
+    parser.add_argument("--seq-len", type=int, default=16, help="Maximum sequence length")
+    parser.add_argument("--vocab-size", type=int, default=15000, help="Vocabulary size")
+    parser.add_argument("--model-dim", type=int, default=512, help="Model embedding dimension")
+    parser.add_argument("--latent-dim", type=int, default=2048, help="Feed-forward network latent dimension")
+    parser.add_argument("--heads", type=int, default=8, help="Number of attention heads")
+    parser.add_argument("--stacks", type=int, default=1, help="Number of transformer stacks")
+    parser.add_argument("--key-dim", type=int, help="Attention key dimension")
+    parser.add_argument("--batch-size", type=int, default=64, dest="batch", help="Batch size")
+    parser.add_argument("--epochs", type=int, default=2, help="Number of training epochs")
+    parser.add_argument("--out-dir", type=str, default="runs", help="Output directory")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--attn-sample-indices", type=int, nargs="*", help="Validation sample indices for attention logging")
+    parser.add_argument("--dropout", type=float, help="Global dropout rate used throughout the Transformer")
 
     args = parser.parse_args()
 
     if args.train and not args.train_path:
-        parser.error("--train-path is required when --train is_train=True")
+        parser.error("--train-path is required when --train is specified")
 
     # Enable mixed precision
     mixed_precision.set_global_policy('mixed_float16')
@@ -355,8 +355,8 @@ def main():
 
     INPUT_VECT = build_vectorizer(h.vocab_size, h.seq_len)
     OUTPUT_VECT = build_vectorizer(h.vocab_size, h.seq_len + 1)
-    INPUT_VECT.adapt([s.encode('utf-8').decode('utf-8') for s, _ in train_pairs])
-    OUTPUT_VECT.adapt([t.encode('utf-8').decode('utf-8') for _, t in train_pairs])
+    INPUT_VECT.adapt([s for s, _ in train_pairs])
+    OUTPUT_VECT.adapt([t for _, t in train_pairs])
 
     LOGGER.info(f"Output vocabulary size: {len(OUTPUT_VECT.get_vocabulary())}")
     LOGGER.info(f"Output vocabulary sample: {OUTPUT_VECT.get_vocabulary()[:20]}")
@@ -374,8 +374,8 @@ def main():
 
     h.out_dir = str(run_out_dir)
 
-    save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input.pkl")
-    save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.pkl")
+    save_tv(INPUT_VECT, Path(h.out_dir) / "vectorizers" / "input.keras")
+    save_tv(OUTPUT_VECT, Path(h.out_dir) / "vectorizers" / "output.keras")
     h.vocab_size = max(len(INPUT_VECT.get_vocabulary()), len(OUTPUT_VECT.get_vocabulary()))
 
     train_ds = make_ds(train_pairs, h)
@@ -427,7 +427,7 @@ def main():
                 result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
                 results.append(result.tolist())
             result = sum(results, [])
-            result_df = pd.DataFrame({'Subjetc_pred': inp_, 'Object': result, 'Object_true': targ_})
+            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
             result_df.to_csv(run_out_dir / "predictions.csv", index=False)
             LOGGER.info(f"Results written to: {run_out_dir / 'predictions.csv'}")
         else:
