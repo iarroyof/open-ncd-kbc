@@ -210,15 +210,13 @@ class AttentionLogger(keras.callbacks.Callback):
             dec_idx += 1
 
         # ── 3. upload everything on a *new* step to avoid clashes ─────
-        for k, v in imgs_to_log.items():
-            wandb.log({k: v}, commit=False)   # queue without closing step
-        wandb.log({}, commit=True)            # now close the step
+           # now close the step
+        if imgs_to_log:                       # only log if something to log
+            for k, v in imgs_to_log.items():
+                wandb.log({k: v}, commit=False)   # queue without closing step
+            wandb.log({}, commit=True)            # finally close the step
 
-        # ── 3. single upload (step = epoch, commit=True) ───────────────
-        if log_dict:                       # only log if something to log
-            wandb.log(log_dict, step=epoch, commit=True)
-
-# ── transformer layers ────────────────────────────────────────────────────
+  # ── transformer layers ────────────────────────────────────────────────────
 class MyLayerNorm(layers.Layer):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
