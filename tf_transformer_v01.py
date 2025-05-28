@@ -166,10 +166,19 @@ class AttentionLogger(keras.callbacks.Callback):
                 continue
             scores = block.cross_scores[0]   # [heads, tgt, src]
             for h_i, head in enumerate(scores):
+                # ── keep only valid tokens ───────────────────────────
+                src_tokens  = self.src[0].split()
+                pred_tokens = preds[0].split()
+                if "[end]" in pred_tokens:                      # trim after EOS
+                    pred_tokens = pred_tokens[:pred_tokens.index("[end]")]
+
+                attn = head[: len(pred_tokens), : len(src_tokens)]  # slice
+
+                # ── draw ────────────────────────────────────────────
                 plt.figure(figsize=(8, 4))
-                sns.heatmap(head.numpy(),
-                            xticklabels=self.src[0].split(),   # source tokens
-                            yticklabels=preds[0].split(),      # predicted tokens
+                sns.heatmap(attn.numpy(),
+                            xticklabels=src_tokens,
+                            yticklabels=pred_tokens,
                             cmap="viridis")
                 plt.xlabel("source")
                 plt.ylabel("prediction")
