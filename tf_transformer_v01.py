@@ -153,44 +153,45 @@ class AttentionLogger(keras.callbacks.Callback):
         self.every_n  = every_n_epochs
 
     def on_epoch_end(self, epoch, logs=None):
-        if epoch % self.every_n:   # skip
+        if epoch % self.every_n:           # skip epochs we don’t want
             return
 
-        # run a forward pass that captures cross-attn scores
-        outs = self.t.tf_translate(tf.constant(self.src))
-        preds = outs["text"].numpy().astype(str)
+        # ── run a forward pass that captures cross-attention ───────────
+        outs   = self.t.tf_translate(tf.constant(self.src))
+        preds  = outs["text"].numpy().astype(str)
 
-        # walk over decoder blocks
-        for b_i, block in enumerate(self.t.model.layers):
+        # ── iterate *only* over decoder blocks ─────────────────────────
+        dec_idx = 0                        # logical “decoder block #”
+        for block in self.t.model.layers:
             if not isinstance(block, DecBlock):
-                continue
-            scores = block.cross_scores[0]   # [heads, tgt, src]
-            for h_i, head in enumerate(scores):
-                # ── keep only valid tokens ───────────────────────────
-                src_tokens  = self.src[0].split()
-                pred_tokens = preds[0].split()
-                if "[end]" in pred_tokens:                      # trim after EOS
-                    pred_tokens = pred_tokens[:pred_tokens.index("[end]")]
+                continue                   # skip encoder + other layers
 
-                attn = head[: len(pred_tokens), : len(src_tokens)]  # slice
+            scores = block.cross_scores[0]       # [heads, tgt, src]
 
-                # ── draw ────────────────────────────────────────────
+            for h_i, head in enumerate(scores):  # one heat-map per head
                 plt.figure(figsize=(8, 4))
-                sns.heatmap(attn.numpy(),
-                            xticklabels=src_tokens,
-                            yticklabels=pred_tokens,
-                            cmap="viridis")
+                sns.heatmap(
+                    head.numpy(),
+                    xticklabels=self.src[0].split(),    # source tokens
+                    yticklabels=preds[0].split(),       # predicted tokens
+                    cmap="viridis")
                 plt.xlabel("source")
                 plt.ylabel("prediction")
-                plt.title(f"epoch {epoch} – block {b_i} head {h_i}")
-                fname = self.run_dir / f"attn_ep{epoch}_b{b_i}_h{h_i}.png"
-                plt.tight_layout();  plt.savefig(fname); plt.close()
-                # ----------  W&B upload --------------------------------
-                #  • use the *trainer’s* epoch as the global step
-                #  • group all heads of a block under one key so they
-                #    show up side-by-side in the UI
-                # let W&B manage the global step to avoid “step < current”
-                wandb.log({f"attn/block{b_i}": wandb.Image(str(fname))})
+                plt.title(
+                    f"epoch {epoch} – decoder-block {dec_idx} head {h_i}")
+
+                fname = (
+                    self.run_dir /
+                    f"attn_ep{epoch}_dec{dec_idx}_h{h_i}.png")
+                plt.tight_layout()
+                plt.savefig(fname)
+                plt.close()
+
+                # … and log to W&B
+                wandb.log({f"attn/dec{dec_idx}": wandb.Image(str(fname))},
+                          step=epoch)
+
+            dec_idx += 1                   # next decoder block
 
 # ── transformer layers ────────────────────────────────────────────────────
 class MyLayerNorm(layers.Layer):
