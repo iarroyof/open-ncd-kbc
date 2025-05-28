@@ -153,35 +153,34 @@ class AttentionLogger(keras.callbacks.Callback):
         self.every_n  = every_n_epochs
 
     def on_epoch_end(self, epoch, logs=None):
-        # ── skip epochs we’re not interested in ───────────────────────
+        # ── skip epochs we are not supposed to visualise ──────────────
         if epoch % self.every_n:
             return
 
-        # ── run a translation pass to populate cross-attn matrices ───
-        outs   = self.t.tf_translate(tf.constant(self.src))
-        preds  = outs["text"].numpy().astype(str)
+        # ── 1. run one forward pass to fill cross-attention buffers ───
+        outs  = self.t.tf_translate(tf.constant(self.src))
+        pred  = outs["text"].numpy().astype(str)[0]           # first sample
+        p_tok = pred.split()                                  # valid tgt toks
+        s_tok = self.src[0].split()                           # valid src toks
 
-        # ── iterate over *decoder* blocks only ────────────────────────
-        dec_idx = 0
-        for block in self.t.model.layers:
-            if not isinstance(block, DecBlock):
-                continue                          # skip enc-blocks & others
+        # ── 2. iterate over *decoder* blocks and heads ────────────────
+        dec_idx  = 0
+        log_dict = {}                                         # collect imgs
 
-            scores = block.cross_scores[0]        # shape [heads, tgt, src]
+        for layer in self.t.model.layers:
+            if not isinstance(layer, DecBlock):
+                continue                                      # skip enc-blocks
 
+            scores = layer.cross_scores[0]   # [heads, tgt, src]
             for h_i, head in enumerate(scores):
-                # ---- draw heat-map ----------------------------------
                 plt.figure(figsize=(8, 4))
-                sns.heatmap(
-                    head.numpy(),
-                    xticklabels=self.src[0].split(),     # valid source toks
-                    yticklabels=preds[0].split(),        # valid pred  toks
-                    vmin=head.numpy().min(), vmax=head.numpy().max(),
-                    cmap="viridis")
+                sns.heatmap(head.numpy(),
+                            xticklabels=s_tok,
+                            yticklabels=p_tok,
+                            cmap="viridis")
                 plt.xlabel("source");  plt.ylabel("prediction")
                 plt.title(f"epoch {epoch} – decoder-block {dec_idx} head {h_i}")
 
-                # ---- save + upload ----------------------------------
                 fname = (
                     self.run_dir /
                     f"attn_ep{epoch}_dec{dec_idx}_h{h_i}.png")
@@ -189,14 +188,15 @@ class AttentionLogger(keras.callbacks.Callback):
                 plt.savefig(fname)
                 plt.close()
 
-                wandb.log(
-                    {f"attention/ep{epoch}_dec{dec_idx}_h{h_i}":
-                         wandb.Image(str(fname),
-                                     caption=f"ep{epoch} dec{dec_idx} h{h_i}")},
-                    step=epoch,
-                    commit=False,      # don’t advance the global step
-                )
+                # collect into dict – one wandb.log at the very end
+                key = f"attention/ep{epoch}/dec{dec_idx}_h{h_i}"
+                log_dict[key] = wandb.Image(str(fname),
+                                            caption=f"ep{epoch} dec{dec_idx} h{h_i}")
             dec_idx += 1
+
+        # ── 3. single upload (step = epoch, commit=True) ───────────────
+        if log_dict:                       # only log if something to log
+            wandb.log(log_dict, step=epoch, commit=True)
 
 # ── transformer layers ────────────────────────────────────────────────────
 class MyLayerNorm(layers.Layer):
