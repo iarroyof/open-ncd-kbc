@@ -152,47 +152,67 @@ class AttentionLogger(keras.callbacks.Callback):
         self.run_dir  = run_dir
         self.every_n  = every_n_epochs
 
+    # ──────────────────────────────────────────────────────────────────
+    #  AttentionLogger – new on_epoch_end
+    # ──────────────────────────────────────────────────────────────────
     def on_epoch_end(self, epoch, logs=None):
-        # ── skip epochs we are not supposed to visualise ──────────────
-        if epoch % self.every_n:
+        # ── skip epochs we are not visualising ────────────────────────
+        if epoch % self.every_n:         #  e.g. every 2nd epoch → skip odd ones
             return
 
-        # ── 1. run one forward pass to fill cross-attention buffers ───
-        outs  = self.t.tf_translate(tf.constant(self.src))
-        pred  = outs["text"].numpy().astype(str)[0]           # first sample
-        p_tok = pred.split()                                  # valid tgt toks
-        s_tok = self.src[0].split()                           # valid src toks
+        # ── 1. generate one translation to capture cross-attn scores ─
+        outs = self.t.tf_translate(tf.constant(self.src))
+        pred_tokens = outs["text"].numpy()[0].decode().split()
 
-        # ── 2. iterate over *decoder* blocks and heads ────────────────
-        dec_idx  = 0
-        log_dict = {}                                         # collect imgs
+        # clip at (first) [end] if present
+        if END in pred_tokens:
+            pred_tokens = pred_tokens[: pred_tokens.index(END)]
 
+        true_src_tokens = self.src[0].split()
+
+        imgs_to_log = {}                 # collected {key: wandb.Image}
+
+        # ── 2. iterate over decoder blocks and heads ──────────────────
+        dec_idx = 0
         for layer in self.t.model.layers:
             if not isinstance(layer, DecBlock):
-                continue                                      # skip enc-blocks
+                continue
 
-            scores = layer.cross_scores[0]   # [heads, tgt, src]
-            for h_i, head in enumerate(scores):
+            # shape = [H, T_full, S_full]  (after the last forward pass)
+            cross = layer.cross_scores[0]
+
+            for head_idx, mat in enumerate(cross):
+                # slice to valid T × S
+                mat_valid = mat[: len(pred_tokens), : len(true_src_tokens)]
+
                 plt.figure(figsize=(8, 4))
-                sns.heatmap(head.numpy(),
-                            xticklabels=s_tok,
-                            yticklabels=p_tok,
-                            cmap="viridis")
-                plt.xlabel("source");  plt.ylabel("prediction")
-                plt.title(f"epoch {epoch} – decoder-block {dec_idx} head {h_i}")
+                sns.heatmap(
+                    mat_valid.numpy(),
+                    xticklabels=true_src_tokens,
+                    yticklabels=pred_tokens,
+                    cmap="viridis",
+                )
+                plt.xlabel("source")
+                plt.ylabel("prediction")
+                plt.title(f"epoch {epoch} – block {dec_idx} head {head_idx}")
 
                 fname = (
                     self.run_dir /
-                    f"attn_ep{epoch}_dec{dec_idx}_h{h_i}.png")
+                    f"attn_ep{epoch}_b{dec_idx}_h{head_idx}.png"
+                )
                 plt.tight_layout()
-                plt.savefig(fname)
+                plt.savefig(fname, dpi=120)
                 plt.close()
 
-                # collect into dict – one wandb.log at the very end
-                key = f"attention/ep{epoch}/dec{dec_idx}_h{h_i}"
-                log_dict[key] = wandb.Image(str(fname),
-                                            caption=f"ep{epoch} dec{dec_idx} h{h_i}")
+                key = f"attention/epoch{epoch}/b{dec_idx}_h{head_idx}"
+                imgs_to_log[key] = wandb.Image(str(fname), caption=key)
+
             dec_idx += 1
+
+        # ── 3. upload everything on a *new* step to avoid clashes ─────
+        for k, v in imgs_to_log.items():
+            wandb.log({k: v}, commit=False)   # queue without closing step
+        wandb.log({}, commit=True)            # now close the step
 
         # ── 3. single upload (step = epoch, commit=True) ───────────────
         if log_dict:                       # only log if something to log
