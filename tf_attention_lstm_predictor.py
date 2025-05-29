@@ -535,7 +535,8 @@ def main():
                 test_text = f.readlines()
             pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), test_text))
             inp_, sample_o = zip(*pairs)
-            output_file = os.path.join(os.path.dirname(args.checkpoint_dir), "test_predictions.csv")
+            parent_dir = "/".join(args.checkpoint_dir.rstrip("/").split("/")[:-1])
+            output_file = os.path.join(parent_dir, "test_predictions.csv")
             log_msg = "Test predictions"
         else:
             logging.info("Preparing validation data for inference")
