@@ -496,7 +496,8 @@ def main():
 
     if args.predict:
         logging.info("Loading pre-trained weights for prediction")
-        train_translator.load_weights(os.path.join(args.checkpoint_dir, "cp.weights.h5"))
+        # Load weights without optimizer state to avoid LossScaleOptimizerV3 issue
+        train_translator.load_weights(os.path.join(args.checkpoint_dir, "cp.weights.h5"), by_name=True, skip_mismatch=True)
     else:
         logging.info("Preparing validation data")
         with open(testing_data) as f:
@@ -508,7 +509,7 @@ def main():
         dataset = tf.data.Dataset.from_tensor_slices((train_in, train_out)).shuffle(len(train_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
         test_dataset = tf.data.Dataset.from_tensor_slices((test_in, test_out)).shuffle(len(test_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
 
-        cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
+        cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, save_best_only=False, verbose=1)
         wandb_cb    = wandb.keras.WandbCallback(save_model=False, log_weights=False, log_gradients=False, monitor="val_loss")
         train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
         translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
@@ -549,21 +550,4 @@ def main():
 
         results = []
         logging.info(f"Performing {log_msg.lower()} using the model...")
-        translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-        num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
-        if num_sections:
-            for chunk in np.array_split(list(inp_), num_sections):
-                result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-                results.append(result.tolist())
-            result = sum(results, [])
-            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
-            result_df.to_csv(output_file)
-            print(result_df)
-            logging.info(f"{log_msg} written to {output_file}")
-        else:
-            logging.warning(f"No {log_msg.lower()} samples to process.")
-
-    wandb.finish()
-
-if __name__ == "__main__":
-    main()
+        translator = Translator(train_translator.encoder, train_translator.decoder, input
