@@ -41,9 +41,9 @@ base_directories = find_subdirectories_one_level('results')
 # --- Process each subdirectory once ---
 for csv_item in base_directories: # Looping through each full path
     # Define paths for input and output files
-    csv_file_path = os.path.join(csv_item, 'val_predictions.csv')
-    object_pairs_tsv_file_path = os.path.join(csv_item, 'object_pairs_val.tsv')
-    random_object_pairs_tsv_file_path = os.path.join(csv_item, 'object_pairs_val_random.tsv')
+    csv_file_path = os.path.join(csv_item, 'predictions.csv')
+    object_pairs_tsv_file_path = os.path.join(csv_item, 'object_pairs_predictions.tsv')
+    random_object_pairs_tsv_file_path = os.path.join(csv_item, 'object_pairs_predictions_random.tsv')
 
     # Check if the input CSV file exists
     if not os.path.exists(csv_file_path):
