@@ -534,8 +534,8 @@ def main():
             with open(args.test_path) as f:
                 test_text = f.readlines()
             pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), test_text))
-            inp_, targ_ = zip(*pairs)
-            output_file = f"{out_dir}test_predictions.csv"
+            inp_, sample_o = zip(*pairs)
+            output_file = os.path.join(os.path.dirname(args.checkpoint_dir), "test_predictions.csv")
             log_msg = "Test predictions"
         else:
             logging.info("Preparing validation data for inference")
@@ -543,20 +543,21 @@ def main():
             if n_demo > 0:
                 val_pairs = val_pairs[:n_demo]
             pairs = val_pairs
-            inp_, targ_ = zip(*pairs)
+            inp_, sample_o = zip(*pairs)
             output_file = f"{out_dir}predictions.csv"
-            log_msg = "Validation inferences"
+            log_msg = "Validation predictions"
 
         results = []
         logging.info(f"Performing {log_msg.lower()} using the model...")
         translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
         num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
         if num_sections:
-            for chunk in np.array_split(list(inp_), num_sections):
+            for i in range(num_sections):
+                chunk = inp_[i*batch_size:min(len(inp_), (i+1)*batch_size)]
                 result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
                 results.append(result.tolist())
             result = sum(results, [])
-            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
+            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': sample_o})
             result_df.to_csv(output_file)
             print(result_df)
             logging.info(f"{log_msg} written to {output_file}")
