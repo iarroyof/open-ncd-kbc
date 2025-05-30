@@ -1,17 +1,18 @@
-# combo_final_lstm_configs_sweep.yaml  – call with:
-#   WANDB_SWEEP_VERSION=2 wandb sweep combo_final_lstm_configs_sweep.yaml
-# or simply upgrade to wandb ≥ 0.17.3 and run `wandb sweep …`
-
-sweep_version: v2          # <-- activates Sweeps v2
+sweep_version: v2
 program: tf_attention_lstm.py
-method:  grid              # value is ignored when parameter_sets is present
+method: grid
 name: fixed_combos_demo
 
-# Defaults that EVERY run inherits (can still be overridden per set)
-parameters:
-  batchSize: {value: 64}
-  nEpochs:   {value: 5}
-  seqLen:    {value: 30}
+parameters:                # <-- inherited by all runs
+  batchSize:  {value: 64}
+  nEpochs:    {value: 5}
+  seqLen:     {value: 30}
+
+  #  paths stay constant, so define them once here
+  trainData:  {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv}
+  testData:   {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv}
+  holdoutData:{value: data/ncd/openie5/ncd_oie5_test.tsv}
+  resPath:    {value: ./results}
 
 # ─────────────────────────────────────────────────────────────
 # EXACT hyper-parameter tuples – one dictionary == one run
