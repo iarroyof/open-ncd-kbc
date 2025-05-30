@@ -1,7 +1,7 @@
 sweep_version: v2
 program: tf_attention_lstm.py
 method: grid
-name: fixed_combos_demo
+name: fixed_final_combos_best_groups
 
 parameters:                # <-- inherited by all runs
   batchSize:  {value: 64}
@@ -9,10 +9,10 @@ parameters:                # <-- inherited by all runs
   seqLen:     {value: 30}
 
   #  paths stay constant, so define them once here
-  trainData:  {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv}
-  testData:   {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv}
-  holdoutData:{value: data/ncd/openie5/ncd_oie5_test.tsv}
-  resPath:    {value: ./results}
+  trainData:   {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv}
+  testData:    {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv}
+  holdoutData: {value: data/ncd/openie5/ncd_oie5_test.tsv}
+  resPath:     {value: ./results}
 
 # ─────────────────────────────────────────────────────────────
 # EXACT hyper-parameter tuples – one dictionary == one run
