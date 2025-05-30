@@ -1,61 +1,26 @@
-sweep_version: v2
 program: tf_attention_lstm.py
 method: grid
-name: fixed_final_combos_best_groups
+name: lstm_preset_sweep
 
-parameters:                # <-- inherited by all runs
-  batchSize:  {value: 64}
-  nEpochs:    {value: 5}
-  seqLen:     {value: 30}
-
-  #  paths stay constant, so define them once here
-  trainData:   {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv}
-  testData:    {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv}
+parameters:
+  # common defaults (still overrideable by preset)
+  batchSize:   {value: 64}
+  nEpochs:     {value: 5}
+  seqLen:      {value: 30}
+  trainData:   {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv}
+  testData:    {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv}
   holdoutData: {value: data/ncd/openie5/ncd_oie5_test.tsv}
   resPath:     {value: ./results}
 
-# ─────────────────────────────────────────────────────────────
-# EXACT hyper-parameter tuples – one dictionary == one run
-# ─────────────────────────────────────────────────────────────
-parameter_sets:
-  - name: best2_do-09_E256_S512_L1      # dropout 0.9, 1 layer
-    parameters:
-      nSteps:       512
-      embeddingDim: 256
-      numLayers:    1
-      dropout:      0.9
+  # point to your JSON file of presets:
+  presets_file: {value: presets.json}
 
-  - name: best_do-001_E256_S1024_L1     # dropout 0.01, 1 layer
-    parameters:
-      nSteps:       1024
-      embeddingDim: 256
-      numLayers:    1
-      dropout:      0.01
-
-  - name: best_do-05_E256_S2048_L1      # dropout 0.5, 1 layer
-    parameters:
-      nSteps:       2048
-      embeddingDim: 256
-      numLayers:    1
-      dropout:      0.5
-
-  - name: best_do-001_E512_S2048_L2     # dropout 0.01, 2 layers
-    parameters:
-      nSteps:       2048
-      embeddingDim: 512
-      numLayers:    2
-      dropout:      0.01
-
-  - name: best_do-05_E512_S2048_L2      # dropout 0.5, 2 layers
-    parameters:
-      nSteps:       2048
-      embeddingDim: 512
-      numLayers:    2
-      dropout:      0.5
-
-  - name: best_do-09_E1024_S2048_L2     # dropout 0.9, 2 layers
-    parameters:
-      nSteps:       2048
-      embeddingDim: 1024
-      numLayers:    2
-      dropout:      0.9
+  # one run per preset name:
+  preset:
+    values:
+      - best2_do-09_E256_S512_L1
+      - best_do-001_E256_S1024_L1
+      - best_do-05_E256_S2048_L1
+      - best_do-001_E512_S2048_L2
+      - best_do-05_E512_S2048_L2
+      - best_do-09_E1024_S2048_L2
