@@ -404,6 +404,7 @@ class AttentionLogger(keras.callbacks.Callback):
         plt.close(fig)
 
 # --- Main Execution ---
+
 def main():
     parser = argparse.ArgumentParser(description="Train, evaluate, and predict with a sequence-to-sequence model with attention.")
     parser.add_argument("-s", "--seqLen", type=int, default=50, help="Per-sample sequence length")
@@ -411,9 +412,9 @@ def main():
     parser.add_argument("-f", "--nFeatures", type=int, default=15000, help="Maximum vocabulary size")
     parser.add_argument("-b", "--batchSize", type=int, default=64, help="Batch size")
     parser.add_argument("-e", "--nEpochs", type=int, default=40, help="Number of training epochs")
-    parser.add_argument("-d", "--embeddingDim", type=int, default=256, help="Word embedding dimensionality")
+    parser.add_argument("-d", "--embeddingDim", type=int, default=1024, help="Word embedding dimensionality")
     parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked LSTM layers")
-    parser.add_argument("--dropout", type=float, default=0.01, help="Dropout probability for LSTM layers")
+    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for LSTM layers")
     parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of validation samples to predict; 0 for full validation data")
     parser.add_argument("-T", "--trainData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_train.tsv", help="Training data TSV")
     parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Validation data TSV")
@@ -423,8 +424,11 @@ def main():
     parser.add_argument("--predict", action="store_true", help="Enable predictions (test and/or validation)")
     args = parser.parse_args()
 
-    if args.predict and not args.test_path:
-        parser.error("--test-path is required when --predict is set")
+    if args.predict:
+        if not args.test_path:
+            parser.error("--test-path is required when --predict is set")
+        if not args.checkpoint_dir:
+            logging.warning("--checkpoint-dir not provided; will save new checkpoints but cannot load pre-trained weights")
 
     run = wandb.init(project="ncd_reasoning_tf_GRU", config=vars(args))
     cfg = run.config
@@ -448,6 +452,7 @@ def main():
     dropout_rate = getattr(cfg, "dropout", args.dropout)
     training_data = getattr(cfg, "trainData", args.trainData)
     testing_data = getattr(cfg, "testData", args.testData)
+    results_path = os.path.normpath(getattr(cfg, "resPath", args.resPath)) + os.sep
     n_demo = args.nDemo
 
     gpus = tf.config.list_physical_devices('GPU')
@@ -457,30 +462,14 @@ def main():
 
     dataset_name = parse_dataset_name(training_data)
 
-    # Prepare training data
     logging.info("Preparing train data")
-    try:
-        with open(training_data) as f:
-            train_text = [line.strip() for line in f if line.strip()]
-        if not train_text:
-            raise ValueError(f"Training data {training_data} is empty")
-        train_pairs = [p for p in map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), train_text)
-                       if p and isinstance(p, tuple) and len(p) == 2]
-        if not train_pairs:
-            raise ValueError("No valid training pairs after processing")
-        train_in, train_out = zip(*train_pairs)
-        train_in_texts = [str(pair[0]) for pair in train_pairs]
-        train_out_texts = [str(pair[1]) for pair in train_pairs]
-    except Exception as e:
-        logging.error(f"Failed to prepare training data: {str(e)}")
-        raise
+    with open(training_data) as f:
+        train_text = f.readlines()
+    train_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), train_text))
+    train_in, train_out = zip(*train_pairs)
+    train_in_texts = [str(pair[0]) for pair in train_pairs]
+    train_out_texts = [str(pair[1][0] if CS_LABELS else pair[1]) for pair in train_pairs]
 
-    # Adjust batch_size for small datasets
-    adjusted_batch_size = min(batch_size, len(train_in))
-    if adjusted_batch_size < batch_size:
-        logging.warning(f"Adjusted batch_size to {adjusted_batch_size} due to small dataset size ({len(train_in)} samples)")
-
-    # Train vectorizers
     input_vectorizer = TextVectorization(
         output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length,
         standardize=custom_standardization)
@@ -492,16 +481,16 @@ def main():
     logging.info("Training output text vectorizer")
     output_vectorizer.adapt(train_out_texts)
 
-    # Save vectorizers
     checkpoint_dir = os.path.join(run_root, "checkpoints")
     checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
     os.makedirs(checkpoint_dir, exist_ok=True)
     out_dir = run_root
     os.makedirs(out_dir, exist_ok=True)
+
+    # Save vectorizers for consistency in prediction
     save_vectorizer(input_vectorizer, os.path.join(checkpoint_dir, "input_vectorizer"))
     save_vectorizer(output_vectorizer, os.path.join(checkpoint_dir, "output_vectorizer"))
 
-    # Initialize model
     train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
     train_translator.compile(
         optimizer=tf.keras.optimizers.Adam(),
@@ -509,33 +498,17 @@ def main():
         metrics=[keras.metrics.AUC(from_logits=True, name="auroc")]
     )
 
-    # Prepare validation data
+    # Training and Evaluation
     logging.info("Preparing validation data")
-    try:
-        with open(testing_data) as f:
-            val_text = [line.strip() for line in f if line.strip()]
-        if not val_text:
-            raise ValueError(f"Validation data {testing_data} is empty")
-        val_pairs = [p for p in map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text)
-                     if p and isinstance(p, tuple) and len(p) == 2]
-        if not val_pairs:
-            raise ValueError("No valid validation pairs after processing")
-        test_in, test_out = zip(*val_pairs)
-        test_in = [str(s) for s in test_in]
-        test_out = [str(s) for s in test_out]
-    except Exception as e:
-        logging.error(f"Failed to prepare validation data: {str(e)}")
-        raise
+    with open(testing_data) as f:
+        val_text = f.readlines()
+    val_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text))
+    test_in, test_out = zip(*val_pairs)
+    test_in = [str(s) for s in test_in]
+    test_out = [str(s) for s in test_out]
+    dataset = tf.data.Dataset.from_tensor_slices((train_in, train_out)).shuffle(len(train_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+    test_dataset = tf.data.Dataset.from_tensor_slices((test_in, test_out)).shuffle(len(test_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
 
-    # Create datasets
-    try:
-        dataset = tf.data.Dataset.from_tensor_slices((train_in, train_out)).shuffle(len(train_in)).batch(adjusted_batch_size, drop_remainder=False).prefetch(tf.data.AUTOTUNE)
-        test_dataset = tf.data.Dataset.from_tensor_slices((test_in, test_out)).shuffle(len(test_in)).batch(adjusted_batch_size, drop_remainder=False).prefetch(tf.data.AUTOTUNE)
-    except Exception as e:
-        logging.error(f"Failed to create datasets: {str(e)}")
-        raise
-
-    # Training callbacks
     cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, save_best_only=False, verbose=1)
     wandb_cb = wandb.keras.WandbCallback(save_model=False, log_weights=False, log_gradients=False, monitor="val_loss")
     train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
@@ -544,77 +517,39 @@ def main():
     attn_cb = AttentionLogger(translator, sample_sentence)
     overfit_cb = make_overfit_callback(total_epochs=n_epochs)
 
-    # Train or load weights
-    if args.checkpoint_dir and os.path.exists(os.path.join(args.checkpoint_dir, "cp.weights.h5")):
-        logging.info("Loading pre-trained weights")
+    if args.predict and args.checkpoint_dir and os.path.exists(os.path.join(args.checkpoint_dir, "cp.weights.h5")):
+        logging.info("Loading pre-trained weights for prediction")
         train_translator.load_weights(os.path.join(args.checkpoint_dir, "cp.weights.h5"), by_name=True, skip_mismatch=True)
     else:
-        logging.info("Training neural reasoning model from scratch...")
-        try:
-            history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
-                                           callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
-            logging.info("Training completed successfully")
-            rdf = pd.DataFrame(history.history)
-            rdf.to_csv(f"{out_dir}history.csv")
-            fig, axes = plt.subplots(2, 1)
-            rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
-            rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
-            plt.savefig(f"{out_dir}history_plot.pdf")
-        except Exception as e:
-            logging.error(f"Training failed: {str(e)}")
-            raise
+        logging.info("Training neural reasoning model...")
+        history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
+                                       callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
+        logging.info("Training completed successfully")
+        logging.info("Saving evaluation results...")
+        rdf = pd.DataFrame(history.history)
+        rdf.to_csv(f"{out_dir}history.csv")
+        fig, axes = plt.subplots(2, 1)
+        rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
+        rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
+        plt.savefig(f"{out_dir}history_plot.pdf")
 
-    # Predictions
+    # Predictions (Test and/or Validation)
     if args.predict or n_demo >= 0:
         if args.predict:
             logging.info("Preparing test data for prediction")
-            try:
-                with open(args.test_path) as f:
-                    test_text = [line.strip() for line in f if line.strip()]
-                if not test_text:
-                    raise ValueError(f"Test data {args.test_path} is empty")
-                pairs = [p for p in map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), test_text)
-                         if p and isinstance(p, tuple) and len(p) == 2]
-                if not pairs:
-                    logging.warning("No valid test pairs for prediction")
-                else:
-                    inp_, sample_o = zip(*pairs)
-                    output_file = os.path.join(os.path.dirname(checkpoint_dir), "test_predictions.csv")
-                    log_msg = "Test predictions"
-                    results = []
-                    logging.info(f"Performing {log_msg.lower()} using the model...")
-                    translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-                    num_sections = math.ceil(len(inp_) / adjusted_batch_size)
-                    for i in range(num_sections):
-                        chunk = inp_[i*adjusted_batch_size:min(len(inp_), (i+1)*adjusted_batch_size)]
-                        result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-                        result = [r.decode('utf-8') if isinstance(r, bytes) else r for r in result]
-                        results.append(result)
-                    result = sum(results, [])
-                    result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': sample_o})
-                    result_df.to_csv(output_file)
-                    print(result_df)
-                    logging.info(f"{log_msg} written to {output_file}")
-            except Exception as e:
-                logging.error(f"Test prediction failed: {str(e)}")
-
-        if n_demo >= 0:
-            logging.info("Preparing validation data for inference")
-            if not val_pairs:
-                logging.warning("No validation pairs for prediction")
-            else:
-                random.shuffle(val_pairs)
-                if n_demo > 0:
-                    val_pairs = val_pairs[:n_demo]
-                inp_, sample_o = zip(*val_pairs)
-                output_file = f"{out_dir}predictions.csv"
-                log_msg = "Validation predictions"
-                results = []
-                logging.info(f"Performing {log_msg.lower()} using the model...")
-                translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-                num_sections = math.ceil(len(inp_) / adjusted_batch_size)
+            with open(args.test_path) as f:
+                test_text = f.readlines()
+            pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), test_text))
+            inp_, sample_o = zip(*pairs)
+            output_file = os.path.join(os.path.dirname(checkpoint_dir), "test_predictions.csv")
+            log_msg = "Test predictions"
+            results = []
+            logging.info(f"Performing {log_msg.lower()} using the model...")
+            translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+            num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
+            if num_sections:
                 for i in range(num_sections):
-                    chunk = inp_[i*adjusted_batch_size:min(len(inp_), (i+1)*adjusted_batch_size)]
+                    chunk = inp_[i*batch_size:min(len(inp_), (i+1)*batch_size)]
                     result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
                     result = [r.decode('utf-8') if isinstance(r, bytes) else r for r in result]
                     results.append(result)
@@ -623,6 +558,35 @@ def main():
                 result_df.to_csv(output_file)
                 print(result_df)
                 logging.info(f"{log_msg} written to {output_file}")
+            else:
+                logging.warning(f"No {log_msg.lower()} samples to process.")
+
+        if n_demo >= 0:
+            logging.info("Preparing validation data for inference")
+            random.shuffle(val_pairs)
+            if n_demo > 0:
+                val_pairs = val_pairs[:n_demo]
+            pairs = val_pairs
+            inp_, sample_o = zip(*pairs)
+            output_file = f"{out_dir}predictions.csv"
+            log_msg = "Validation predictions"
+            results = []
+            logging.info(f"Performing {log_msg.lower()} using the model...")
+            translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+            num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
+            if num_sections:
+                for i in range(num_sections):
+                    chunk = inp_[i*batch_size:min(len(inp_), (i+1)*batch_size)]
+                    result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+                    result = [r.decode('utf-8') if isinstance(r, bytes) else r for r in result]
+                    results.append(result)
+                result = sum(results, [])
+                result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': sample_o})
+                result_df.to_csv(output_file)
+                print(result_df)
+                logging.info(f"{log_msg} written to {output_file}")
+            else:
+                logging.warning(f"No {log_msg.lower()} samples to process.")
 
     wandb.finish()
     
