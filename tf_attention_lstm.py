@@ -733,6 +733,7 @@ def main():
     parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of test samples to predict. default is 0, so predict on the full validation data.")
     parser.add_argument("-T", "--trainData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_train.tsv", help="Training data TSV")
     parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Test data TSV")
+    parser.add_argument("-H", "--holdoutData", type=str, default="", help="(Optional) extra test set for final predictions")    
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
     args = parser.parse_args()
 
@@ -774,6 +775,7 @@ def main():
     dropout_rate    = getattr(cfg, "dropout",      args.dropout)
     training_data = getattr(cfg, "trainData", args.trainData)
     testing_data  = getattr(cfg, "testData",  args.testData)
+    holdout_data  = getattr(cfg, "holdoutData", args.holdoutData)
     results_path  = os.path.normpath(
                    getattr(cfg, "resPath",  args.resPath)) + os.sep
     n_demo = args.nDemo
@@ -901,11 +903,53 @@ def main():
                 results.append(result.tolist())
             result = sum(results, [])
             result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
-            result_df.to_csv(f"{out_dir}predictions.csv")
+            result_df.to_csv(f"{out_dir}predictions.tsv",
+                            sep="\t", index=False)
             print(result_df)
-            logging.info(f"Results written to {out_dir}predictions.csv")
+            logging.info(f"Validation predictions written to "
+                         f"{out_dir}predictions.tsv")
         else:
             logging.warning("No inference samples to process.")
+
+    # ────────────────────────────────────────────────────────────────
+    #  OPTIONAL HOLD-OUT / REAL TEST PREDICTIONS
+    # ────────────────────────────────────────────────────────────────
+    if holdout_data:
+        if not os.path.exists(holdout_data):
+            logging.warning(f"Extra test file '{holdout_data}' not found – "
+                            "skipping hold-out predictions.")
+        else:
+            logging.info(f"Performing hold-out inferences on '{holdout_data}'")
+            with open(holdout_data) as f:
+                hold_lines = f.readlines()
+
+            hold_pairs = list(map(
+                functools.partial(prepare_data,
+                                  include_labels=CS_LABELS,
+                                  all_start_end=True),
+                hold_lines))
+
+            hold_inp, hold_targ = zip(*hold_pairs)
+            hold_inp  = [str(s) for s in hold_inp]
+            num_sections = math.ceil(len(hold_inp) / batch_size) if hold_inp else 0
+
+            hold_results = []
+            if num_sections:
+                for chunk in np.array_split(list(hold_inp), num_sections):
+                    preds = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+                    hold_results.extend(preds.tolist())
+
+                hold_df = pd.DataFrame(
+                    {'Subj_Pred': hold_inp,
+                     'Obj':        hold_results,
+                     'Obj_true':   hold_targ})
+
+                hold_df.to_csv(f"{out_dir}test_predictions.tsv",
+                               sep="\t", index=False)
+                logging.info(f"Test predictions written to "
+                             f"{out_dir}test_predictions.tsv")
+            else:
+                logging.warning("Hold-out file is empty – no predictions made.")    
 
     wandb.finish()
 
