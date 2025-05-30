@@ -735,6 +735,10 @@ def main():
     parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Test data TSV")
     parser.add_argument("-H", "--holdoutData", type=str, default="", help="(Optional) extra test set for final predictions")    
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
+    parser.add_argument("--preset", type=str, default=None,
+                        help="Which preset to load from presets_file")
+    parser.add_argument("--presets_file", type=str, default="presets.json",
+                        help="Path to JSON file mapping preset names → hyperparameter dict")    
     args = parser.parse_args()
 
     # ----------  W&B init  --------------------------------
@@ -747,6 +751,17 @@ def main():
     )
     # keep a short alias
     cfg = run.config
+
+    # ─── load and apply preset mapping ─────────────────────────────
+    if cfg.preset:
+        import json
+        with open(cfg.presets_file, "r") as fp:
+            presets = json.load(fp)
+        if cfg.preset not in presets:
+            raise ValueError(f"Unknown preset '{cfg.preset}' in {cfg.presets_file}")
+        # overwrite wandb.config with the preset values
+        wandb.config.update(presets[cfg.preset], allow_val_change=True)
+
     # ────────────────────────────────────────────────────────────────
     #  NEW: derive “run root” = results_path/project[/sweep]/run
     # ────────────────────────────────────────────────────────────────
