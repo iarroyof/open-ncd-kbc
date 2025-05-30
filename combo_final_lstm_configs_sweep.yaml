@@ -1,0 +1,62 @@
+# combo_final_configs_sweep.yaml  ── run:  wandb sweep combo_sweep.yaml
+program: tf_attention_lstm.py     # ← your script
+method: grid                      # method is ignored when sets are explicit
+name:  fixed_combos_demo
+
+# Any default you want every run to inherit
+parameters:
+  batchSize:
+    value: 64
+  nEpochs:
+    value: 5
+  seqLen:
+    value: 30
+# 👇 EXACT tuples go here (one dictionary = one run)
+# 0.9 256 512 1
+parameter_sets:
+  - name: best2_do-09_E256_S512_L1 # best of all; dropout=0.9; EmbeddingDim = 256; nSteps = 512; 1 layer
+    parameters:
+      nSteps:        512
+      embeddingDim:  256
+      numLayers:     1
+      dropout:       0.9
+
+#0.01 256 1024 1
+  - name: best_do-001_E256_S1024_L1 # Best do=0.01
+    parameters:
+      nSteps:        1024
+      embeddingDim:  256
+      numLayers:     1
+      dropout:       0.01
+
+# 0.5 256 2048 1
+- name: best_do-05_E256_S2048_L1 # Best do=0.5
+    parameters:
+      nSteps:        2048
+      embeddingDim:  256
+      numLayers:     1
+      dropout:       0.5
+      
+# 0.01 512 2048 2
+- name: best_do-001_E512_S2048_L2 # Best 2-layer
+    parameters:
+      nSteps:        2048
+      embeddingDim:  512
+      numLayers:     2
+      dropout:       0.01
+
+# 0.5 512 2048 2
+- name: best_do-05_E512_S2048_L2 # Best 2-layer do = 0.5
+    parameters:
+      nSteps:        2048
+      embeddingDim:  512
+      numLayers:     2
+      dropout:       0.5
+
+# 0.9 1024 2048 2
+- name: best_do-09_E1024_S2048_L2 # Best 2-layer do = 0.9
+    parameters:
+      nSteps:        2048
+      embeddingDim:  1024
+      numLayers:     2
+      dropout:       0.9
