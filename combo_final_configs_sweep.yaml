@@ -1,0 +1,37 @@
+# combo_final_configs_sweep.yaml  ── run:  wandb sweep combo_sweep.yaml
+program: tf_attention_lstm.py     # ← your script
+method: grid                      # method is ignored when sets are explicit
+name:  fixed_combos_demo
+
+# Any default you want every run to inherit
+parameters:
+  batchSize:
+    value: 64
+  nEpochs:
+    value: 5
+
+# 👇 EXACT tuples go here (one dictionary = one run)
+parameter_sets:
+  - name: small_fast
+    parameters:
+      seqLen:        30
+      nSteps:        2048
+      embeddingDim:  256
+      numLayers:     1
+      dropout:       0.10
+
+  - name: big_deeper
+    parameters:
+      seqLen:        30
+      nSteps:        4096
+      embeddingDim:  512
+      numLayers:     4
+      dropout:       0.20
+
+  - name: long_sequence_tiny
+    parameters:
+      seqLen:        64
+      nSteps:        1024
+      embeddingDim:  128
+      numLayers:     2
+      dropout:       0.05
