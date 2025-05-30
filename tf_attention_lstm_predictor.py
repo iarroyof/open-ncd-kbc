@@ -406,7 +406,7 @@ class AttentionLogger(keras.callbacks.Callback):
 # --- Main Execution ---
 
 def main():
-    parser = argparse.ArgumentParser(description="Train, evaluate, and predict with a sequence-to-sequence model with attention.")
+    parser = argparse.ArgumentParser(description="Train a sequence-to-sequence model with attention or predict using a pre-trained model.")
     parser.add_argument("-s", "--seqLen", type=int, default=50, help="Per-sample sequence length")
     parser.add_argument("-u", "--nSteps", type=int, default=1024, help="Number of hidden recurrent steps (units)")
     parser.add_argument("-f", "--nFeatures", type=int, default=15000, help="Maximum vocabulary size")
@@ -421,20 +421,20 @@ def main():
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
     parser.add_argument("--test-path", type=str, help="Path to the test dataset file for predictions")
     parser.add_argument("--checkpoint-dir", type=str, help="Directory containing the checkpoint weights")
-    parser.add_argument("--predict", action="store_true", help="Enable predictions (test and/or validation)")
+    parser.add_argument("--predict", action="store_true", help="Load model weights and make predictions instead of training")
     args = parser.parse_args()
 
     if args.predict:
+        if not args.checkpoint_dir:
+            parser.error("--checkpoint-dir is required when --predict is set")
         if not args.test_path:
             parser.error("--test-path is required when --predict is set")
-        if not args.checkpoint_dir:
-            logging.warning("--checkpoint-dir not provided; will save new checkpoints but cannot load pre-trained weights")
 
     run = wandb.init(project="ncd_reasoning_tf_GRU", config=vars(args))
     cfg = run.config
     project_name = run.project or "wandb_project"
-    sweep_id = run.sweep_id
-    run_id = run.id
+    sweep_id     = run.sweep_id
+    run_id       = run.id
     run_parts = [project_name]
     if sweep_id is not None:
         run_parts.append(sweep_id)
@@ -443,17 +443,17 @@ def main():
     os.makedirs(run_root, exist_ok=True)
 
     sequence_length = getattr(cfg, "seqLen", args.seqLen)
-    max_features = getattr(cfg, "nFeatures", args.nFeatures)
-    batch_size = getattr(cfg, "batchSize", args.batchSize)
-    n_epochs = getattr(cfg, "nEpochs", args.nEpochs)
-    embedding_dim = getattr(cfg, "embeddingDim", args.embeddingDim)
-    units = getattr(cfg, "nSteps", args.nSteps)
-    num_layers = getattr(cfg, "numLayers", args.numLayers)
-    dropout_rate = getattr(cfg, "dropout", args.dropout)
-    training_data = getattr(cfg, "trainData", args.trainData)
-    testing_data = getattr(cfg, "testData", args.testData)
-    results_path = os.path.normpath(getattr(cfg, "resPath", args.resPath)) + os.sep
-    n_demo = args.nDemo
+    max_features    = getattr(cfg, "nFeatures", args.nFeatures)
+    batch_size      = getattr(cfg, "batchSize", args.batchSize)
+    n_epochs        = getattr(cfg, "nEpochs", args.nEpochs)
+    embedding_dim   = getattr(cfg, "embeddingDim", args.embeddingDim)
+    units           = getattr(cfg, "nSteps", args.nSteps)
+    num_layers      = getattr(cfg, "numLayers", args.numLayers)
+    dropout_rate    = getattr(cfg, "dropout", args.dropout)
+    training_data   = getattr(cfg, "trainData", args.trainData)
+    testing_data    = getattr(cfg, "testData", args.testData)
+    results_path    = os.path.normpath(getattr(cfg, "resPath", args.resPath)) + os.sep
+    n_demo          = args.nDemo
 
     gpus = tf.config.list_physical_devices('GPU')
     for dev in gpus:
@@ -481,15 +481,11 @@ def main():
     logging.info("Training output text vectorizer")
     output_vectorizer.adapt(train_out_texts)
 
-    checkpoint_dir = os.path.join(run_root, "checkpoints")
+    checkpoint_dir  = os.path.join(run_root, "checkpoints")
     checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
     os.makedirs(checkpoint_dir, exist_ok=True)
     out_dir = run_root
     os.makedirs(out_dir, exist_ok=True)
-
-    # Save vectorizers for consistency in prediction
-    save_vectorizer(input_vectorizer, os.path.join(checkpoint_dir, "input_vectorizer"))
-    save_vectorizer(output_vectorizer, os.path.join(checkpoint_dir, "output_vectorizer"))
 
     train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
     train_translator.compile(
@@ -498,29 +494,28 @@ def main():
         metrics=[keras.metrics.AUC(from_logits=True, name="auroc")]
     )
 
-    # Training and Evaluation
-    logging.info("Preparing validation data")
-    with open(testing_data) as f:
-        val_text = f.readlines()
-    val_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text))
-    test_in, test_out = zip(*val_pairs)
-    test_in = [str(s) for s in test_in]
-    test_out = [str(s) for s in test_out]
-    dataset = tf.data.Dataset.from_tensor_slices((train_in, train_out)).shuffle(len(train_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
-    test_dataset = tf.data.Dataset.from_tensor_slices((test_in, test_out)).shuffle(len(test_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
-
-    cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, save_best_only=False, verbose=1)
-    wandb_cb = wandb.keras.WandbCallback(save_model=False, log_weights=False, log_gradients=False, monitor="val_loss")
-    train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
-    translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-    sample_sentence = val_pairs[0][0] if val_pairs else train_pairs[0][0]
-    attn_cb = AttentionLogger(translator, sample_sentence)
-    overfit_cb = make_overfit_callback(total_epochs=n_epochs)
-
-    if args.predict and args.checkpoint_dir and os.path.exists(os.path.join(args.checkpoint_dir, "cp.weights.h5")):
+    if args.predict:
         logging.info("Loading pre-trained weights for prediction")
         train_translator.load_weights(os.path.join(args.checkpoint_dir, "cp.weights.h5"), by_name=True, skip_mismatch=True)
     else:
+        logging.info("Preparing validation data")
+        with open(testing_data) as f:
+            val_text = f.readlines()
+        val_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text))
+        test_in, test_out = zip(*val_pairs)
+        test_in  = [str(s) for s in test_in]
+        test_out = [str(s) for s in test_out]
+        dataset = tf.data.Dataset.from_tensor_slices((train_in, train_out)).shuffle(len(train_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+        test_dataset = tf.data.Dataset.from_tensor_slices((test_in, test_out)).shuffle(len(test_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+
+        cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, save_best_only=False, verbose=1)
+        wandb_cb    = wandb.keras.WandbCallback(save_model=False, log_weights=False, log_gradients=False, monitor="val_loss")
+        train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
+        translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+        sample_sentence = val_pairs[0][0] if val_pairs else train_pairs[0][0]
+        attn_cb = AttentionLogger(translator, sample_sentence)
+        overfit_cb = make_overfit_callback(total_epochs=n_epochs)
+
         logging.info("Training neural reasoning model...")
         history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
                                        callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
@@ -533,7 +528,6 @@ def main():
         rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
         plt.savefig(f"{out_dir}history_plot.pdf")
 
-    # Predictions (Test and/or Validation)
     if args.predict or n_demo >= 0:
         if args.predict:
             logging.info("Preparing test data for prediction")
@@ -541,27 +535,10 @@ def main():
                 test_text = f.readlines()
             pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), test_text))
             inp_, sample_o = zip(*pairs)
-            output_file = os.path.join(os.path.dirname(checkpoint_dir), "test_predictions.csv")
+            parent_dir = "/".join(args.checkpoint_dir.rstrip("/").split("/")[:-1])
+            output_file = os.path.join(parent_dir, "test_predictions.csv")
             log_msg = "Test predictions"
-            results = []
-            logging.info(f"Performing {log_msg.lower()} using the model...")
-            translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-            num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
-            if num_sections:
-                for i in range(num_sections):
-                    chunk = inp_[i*batch_size:min(len(inp_), (i+1)*batch_size)]
-                    result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-                    result = [r.decode('utf-8') if isinstance(r, bytes) else r for r in result]
-                    results.append(result)
-                result = sum(results, [])
-                result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': sample_o})
-                result_df.to_csv(output_file)
-                print(result_df)
-                logging.info(f"{log_msg} written to {output_file}")
-            else:
-                logging.warning(f"No {log_msg.lower()} samples to process.")
-
-        if n_demo >= 0:
+        else:
             logging.info("Preparing validation data for inference")
             random.shuffle(val_pairs)
             if n_demo > 0:
@@ -570,25 +547,25 @@ def main():
             inp_, sample_o = zip(*pairs)
             output_file = f"{out_dir}predictions.csv"
             log_msg = "Validation predictions"
-            results = []
-            logging.info(f"Performing {log_msg.lower()} using the model...")
-            translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-            num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
-            if num_sections:
-                for i in range(num_sections):
-                    chunk = inp_[i*batch_size:min(len(inp_), (i+1)*batch_size)]
-                    result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-                    result = [r.decode('utf-8') if isinstance(r, bytes) else r for r in result]
-                    results.append(result)
-                result = sum(results, [])
-                result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': sample_o})
-                result_df.to_csv(output_file)
-                print(result_df)
-                logging.info(f"{log_msg} written to {output_file}")
-            else:
-                logging.warning(f"No {log_msg.lower()} samples to process.")
+
+        results = []
+        logging.info(f"Performing {log_msg.lower()} using the model...")
+        translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+        num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
+        if num_sections:
+            for i in range(num_sections):
+                chunk = inp_[i*batch_size:min(len(inp_), (i+1)*batch_size)]
+                result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+                results.append(result.tolist())
+            result = sum(results, [])
+            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': sample_o})
+            result_df.to_csv(output_file)
+            print(result_df)
+            logging.info(f"{log_msg} written to {output_file}")
+        else:
+            logging.warning(f"No {log_msg.lower()} samples to process.")
 
     wandb.finish()
-    
+
 if __name__ == "__main__":
     main()
