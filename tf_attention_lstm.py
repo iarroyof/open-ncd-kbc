@@ -720,189 +720,193 @@ class AttentionLogger(keras.callbacks.Callback):
 # --- Main Execution ---
 
 def main():
-    parser = argparse.ArgumentParser(description="Train, evaluate, and predict with a sequence-to-sequence model with attention.")
+    parser = argparse.ArgumentParser(description="Train a sequence-to-sequence model with attention.")
     parser.add_argument("-s", "--seqLen", type=int, default=50, help="Per-sample sequence length")
     parser.add_argument("-u", "--nSteps", type=int, default=1024, help="Number of hidden recurrent steps (units)")
     parser.add_argument("-f", "--nFeatures", type=int, default=15000, help="Maximum vocabulary size")
     parser.add_argument("-b", "--batchSize", type=int, default=64, help="Batch size")
     parser.add_argument("-e", "--nEpochs", type=int, default=40, help="Number of training epochs")
     parser.add_argument("-d", "--embeddingDim", type=int, default=1024, help="Word embedding dimensionality")
-    parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked LSTM layers")
-    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for LSTM layers")
-    parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of validation samples to predict; 0 for full validation data")
+    parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked GRU layers")
+    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for GRU layers")
+    parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of test samples to predict. default is 0, so predict on the full validation data.")
     parser.add_argument("-T", "--trainData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_train.tsv", help="Training data TSV")
-    parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Validation data TSV")
+    parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Test data TSV")
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
-    parser.add_argument("--test-path", type=str, help="Path to the test dataset file for predictions")
-    parser.add_argument("--checkpoint-dir", type=str, help="Directory containing the checkpoint weights")
-    parser.add_argument("--predict", action="store_true", help="Enable predictions (test and/or validation)")
     args = parser.parse_args()
 
-    if args.predict:
-        if not args.test_path:
-            parser.error("--test-path is required when --predict is set")
-        if not args.checkpoint_dir:
-            logging.warning("--checkpoint-dir not provided; will save new checkpoints but cannot load pre-trained weights")
-
-    run = wandb.init(project="ncd_reasoning_tf_GRU", config=vars(args))
+    # ----------  W&B init  --------------------------------
+    #   • uses argparse values as the initial config
+    #   • allows sweep overrides automatically
+    run = wandb.init(
+            project="ncd_reasoning_tf_GRU",               # change to your project
+            config=vars(args),                     # makes each flag a wandb.config key
+        
+    )
+    # keep a short alias
     cfg = run.config
+    # ────────────────────────────────────────────────────────────────
+    #  NEW: derive “run root” = results_path/project[/sweep]/run
+    # ────────────────────────────────────────────────────────────────
     project_name = run.project or "wandb_project"
-    sweep_id = run.sweep_id
-    run_id = run.id
+    sweep_id     = run.sweep_id            # None if not in a sweep
+    run_id       = run.id                  # always present
+
     run_parts = [project_name]
     if sweep_id is not None:
         run_parts.append(sweep_id)
     run_parts.append(run_id)
-    run_root = os.path.join(os.path.normpath(getattr(cfg, "resPath", args.resPath)), *run_parts) + os.sep
-    os.makedirs(run_root, exist_ok=True)
 
-    sequence_length = getattr(cfg, "seqLen", args.seqLen)
-    max_features = getattr(cfg, "nFeatures", args.nFeatures)
-    batch_size = getattr(cfg, "batchSize", args.batchSize)
-    n_epochs = getattr(cfg, "nEpochs", args.nEpochs)
-    embedding_dim = getattr(cfg, "embeddingDim", args.embeddingDim)
-    units = getattr(cfg, "nSteps", args.nSteps)
-    num_layers = getattr(cfg, "numLayers", args.numLayers)
-    dropout_rate = getattr(cfg, "dropout", args.dropout)
+    run_root = os.path.join(
+        os.path.normpath(getattr(cfg, "resPath", args.resPath)),
+        *run_parts) + os.sep           # final “/” for convenience
+    os.makedirs(run_root, exist_ok=True)    
+    # replace *all* reads of argparse fields with cfg.*
+# ── hyper‑parameters (prefer sweep‑supplied values, else CLI defaults) ─────────
+    sequence_length = getattr(cfg, "seqLen",       args.seqLen)
+    max_features    = getattr(cfg, "nFeatures",    args.nFeatures)
+    batch_size      = getattr(cfg, "batchSize",    args.batchSize)
+    n_epochs        = getattr(cfg, "nEpochs",      args.nEpochs)
+    embedding_dim   = getattr(cfg, "embeddingDim", args.embeddingDim)
+    units           = getattr(cfg, "nSteps",       args.nSteps)
+    num_layers      = getattr(cfg, "numLayers",    args.numLayers)
+    dropout_rate    = getattr(cfg, "dropout",      args.dropout)
     training_data = getattr(cfg, "trainData", args.trainData)
-    testing_data = getattr(cfg, "testData", args.testData)
-    results_path = os.path.normpath(getattr(cfg, "resPath", args.resPath)) + os.sep
+    testing_data  = getattr(cfg, "testData",  args.testData)
+    results_path  = os.path.normpath(
+                   getattr(cfg, "resPath",  args.resPath)) + os.sep
     n_demo = args.nDemo
-
+    # --- GPU runtime init ---------------------------------------------
     gpus = tf.config.list_physical_devices('GPU')
-    for dev in gpus:
+    for dev in gpus:                                 # make TF allocate as‑needed
         tf.config.experimental.set_memory_growth(dev, True)
-    mixed_precision.set_global_policy("mixed_float16")
+    mixed_precision.set_global_policy("mixed_float16")   # enable Tensor‑Cores
 
     dataset_name = parse_dataset_name(training_data)
 
-    logging.info("Preparing train data")
+    # Load and prepare data
+    logging.info("Preparing train and test data")
     with open(training_data) as f:
         train_text = f.readlines()
+    with open(testing_data) as f:
+        val_text = f.readlines()
     train_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), train_text))
-    train_in, train_out = zip(*train_pairs)
-    train_in_texts = [str(pair[0]) for pair in train_pairs]
-    train_out_texts = [str(pair[1][0] if CS_LABELS else pair[1]) for pair in train_pairs]
+    val_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text))
 
+    # Create datasets
+    train_in, train_out = zip(*train_pairs)
+    test_in, test_out = zip(*val_pairs)
+    # force both lists to be plain strings
+    train_in  = [str(s) for s in train_in]
+    train_out = [str(s) for s in train_out]
+    dataset = (
+        tf.data.Dataset.from_tensor_slices((train_in, train_out))
+          .shuffle(len(train_in))
+          .batch(batch_size, drop_remainder=True)        # better for GPU :contentReference[oaicite:2]{index=2}
+          .prefetch(tf.data.AUTOTUNE)                    # overlap I/O‑compute :contentReference[oaicite:3]{index=3}
+    )
+    test_in  = [str(s) for s in test_in]
+    test_out = [str(s) for s in test_out]
+
+    test_dataset = (
+        tf.data.Dataset.from_tensor_slices((test_in, test_out))
+          .shuffle(len(test_in))
+          .batch(batch_size, drop_remainder=True)
+          .prefetch(tf.data.AUTOTUNE)
+    )
+    # Initialize and train vectorizers
+    # Updated TextVectorization usage for TF 2.10+
     input_vectorizer = TextVectorization(
         output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length,
         standardize=custom_standardization)
     output_vectorizer = TextVectorization(
         output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length + 1,
         standardize=custom_standardization)
+    
+    train_in_texts = [pair[0] for pair in train_pairs]
+    train_out_texts = [pair[1][0] if CS_LABELS else pair[1] for pair in train_pairs]
     logging.info("Training input text vectorizer")
     input_vectorizer.adapt(train_in_texts)
     logging.info("Training output text vectorizer")
     output_vectorizer.adapt(train_out_texts)
+    
+    # Create directory if it doesn't exist
+    vectorizer_path = os.path.join(run_root, "vectorizer") + os.sep
+    os.makedirs(vectorizer_path, exist_ok=True)
+    save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model.keras")
+    save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model.keras")
+    logging.info(f"Saved text vectorizers to {vectorizer_path}")
+    max_features = max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary()))
 
-    checkpoint_dir = os.path.join(run_root, "checkpoints")
+    # Setup model and training
+    checkpoint_dir  = os.path.join(run_root, "checkpoints")
     checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
+    # Create checkpoint directory if it doesn't exist
     os.makedirs(checkpoint_dir, exist_ok=True)
     out_dir = run_root
+    # Create output directory if it doesn't exist
     os.makedirs(out_dir, exist_ok=True)
-
-    # Save vectorizers for consistency in prediction
-    save_vectorizer(input_vectorizer, os.path.join(checkpoint_dir, "input_vectorizer"))
-    save_vectorizer(output_vectorizer, os.path.join(checkpoint_dir, "output_vectorizer"))
+    
+    cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
+    # default W&B callback logs loss/accuracy per step+epoch,
+    # system metrics, configurable plots, … :contentReference[oaicite:3]{index=3}
+    wandb_cb    = wandb.keras.WandbCallback(
+        save_model       = False,          # we already use ModelCheckpoint
+        log_weights      = False,
+        log_gradients    = False,
+        monitor          = "val_loss")    
+    train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
 
     train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
+    # Using Adam with default learning rate for TF 2.10+ compatibility
     train_translator.compile(
         optimizer=tf.keras.optimizers.Adam(),
-        loss=MaskedLoss(),
+        loss=MaskedLoss(), 
         metrics=[keras.metrics.AUC(from_logits=True, name="auroc")]
     )
-
-    # Training and Evaluation
-    logging.info("Preparing validation data")
-    with open(testing_data) as f:
-        val_text = f.readlines()
-    val_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text))
-    test_in, test_out = zip(*val_pairs)
-    test_in = [str(s) for s in test_in]
-    test_out = [str(s) for s in test_out]
-    dataset = tf.data.Dataset.from_tensor_slices((train_in, train_out)).shuffle(len(train_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
-    test_dataset = tf.data.Dataset.from_tensor_slices((test_in, test_out)).shuffle(len(test_in)).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
-
-    cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, save_best_only=False, verbose=1)
-    wandb_cb = wandb.keras.WandbCallback(save_model=False, log_weights=False, log_gradients=False, monitor="val_loss")
-    train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
+    
+    logging.info("Training neural reasoning model...")
     translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+    # fixed example = first validation sentence
     sample_sentence = val_pairs[0][0] if val_pairs else train_pairs[0][0]
     attn_cb = AttentionLogger(translator, sample_sentence)
     overfit_cb = make_overfit_callback(total_epochs=n_epochs)
+    history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
+                                   callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
+    logging.info("Training completed successfully")
+    # ── store one‑number‑per‑run so sweeps can plot them ───────────
+    # Save training history
+    logging.info("Saving evaluation results...")
+    rdf = pd.DataFrame(history.history)
+    rdf.to_csv(f"{out_dir}history.csv")
+    fig, axes = plt.subplots(2, 1)
+    rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
+    rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
+    plt.savefig(f"{out_dir}history_plot.pdf")
 
-    if args.predict and args.checkpoint_dir and os.path.exists(os.path.join(args.checkpoint_dir, "cp.weights.h5")):
-        logging.info("Loading pre-trained weights for prediction")
-        train_translator.load_weights(os.path.join(args.checkpoint_dir, "cp.weights.h5"), by_name=True, skip_mismatch=True)
-    else:
-        logging.info("Training neural reasoning model...")
-        history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
-                                       callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
-        logging.info("Training completed successfully")
-        logging.info("Saving evaluation results...")
-        rdf = pd.DataFrame(history.history)
-        rdf.to_csv(f"{out_dir}history.csv")
-        fig, axes = plt.subplots(2, 1)
-        rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
-        rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
-        plt.savefig(f"{out_dir}history_plot.pdf")
-
-    # Predictions (Test and/or Validation)
-    if args.predict or n_demo >= 0:
-        if args.predict:
-            logging.info("Preparing test data for prediction")
-            with open(args.test_path) as f:
-                test_text = f.readlines()
-            pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), test_text))
-            inp_, sample_o = zip(*pairs)
-            output_file = os.path.join(os.path.dirname(checkpoint_dir), "test_predictions.csv")
-            log_msg = "Test predictions"
-            results = []
-            logging.info(f"Performing {log_msg.lower()} using the model...")
-            translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-            num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
-            if num_sections:
-                for i in range(num_sections):
-                    chunk = inp_[i*batch_size:min(len(inp_), (i+1)*batch_size)]
-                    result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-                    result = [r.decode('utf-8') if isinstance(r, bytes) else r for r in result]
-                    results.append(result)
-                result = sum(results, [])
-                result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': sample_o})
-                result_df.to_csv(output_file)
-                print(result_df)
-                logging.info(f"{log_msg} written to {output_file}")
-            else:
-                logging.warning(f"No {log_msg.lower()} samples to process.")
-
-        if n_demo >= 0:
-            logging.info("Preparing validation data for inference")
-            random.shuffle(val_pairs)
-            if n_demo > 0:
-                val_pairs = val_pairs[:n_demo]
-            pairs = val_pairs
-            inp_, sample_o = zip(*pairs)
-            output_file = f"{out_dir}predictions.csv"
-            log_msg = "Validation predictions"
-            results = []
-            logging.info(f"Performing {log_msg.lower()} using the model...")
-            translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
-            num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
-            if num_sections:
-                for i in range(num_sections):
-                    chunk = inp_[i*batch_size:min(len(inp_), (i+1)*batch_size)]
-                    result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
-                    result = [r.decode('utf-8') if isinstance(r, bytes) else r for r in result]
-                    results.append(result)
-                result = sum(results, [])
-                result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': sample_o})
-                result_df.to_csv(output_file)
-                print(result_df)
-                logging.info(f"{log_msg} written to {output_file}")
-            else:
-                logging.warning(f"No {log_msg.lower()} samples to process.")
+    # Perform inferences n_demo = 0 for doing so for the full validation data.
+    if n_demo >= 0:
+        random.shuffle(val_pairs)
+        if n_demo > 0:
+            val_pairs = val_pairs[:n_demo]
+        inp_, targ_ = zip(*val_pairs)
+        results = []
+        logging.info("Performing inferences using the trained model...")
+        translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+        num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
+        if num_sections:
+            for chunk in np.array_split(list(inp_), num_sections):
+                result = translator.tf_translate(tf.constant(chunk))['text'].numpy()
+                results.append(result.tolist())
+            result = sum(results, [])
+            result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
+            result_df.to_csv(f"{out_dir}predictions.csv")
+            print(result_df)
+            logging.info(f"Results written to {out_dir}predictions.csv")
+        else:
+            logging.warning("No inference samples to process.")
 
     wandb.finish()
-    
+
 if __name__ == "__main__":
     main()
