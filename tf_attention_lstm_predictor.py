@@ -404,7 +404,6 @@ class AttentionLogger(keras.callbacks.Callback):
         plt.close(fig)
 
 # --- Main Execution ---
-
 def main():
     parser = argparse.ArgumentParser(description="Train, evaluate, and predict with a sequence-to-sequence model with attention.")
     parser.add_argument("-s", "--seqLen", type=int, default=50, help="Per-sample sequence length")
@@ -424,11 +423,8 @@ def main():
     parser.add_argument("--predict", action="store_true", help="Enable predictions (test and/or validation)")
     args = parser.parse_args()
 
-    if args.predict:
-        if not args.test_path:
-            parser.error("--test-path is required when --predict is set")
-        if not args.checkpoint_dir:
-            logging.warning("--checkpoint-dir not provided; will save new checkpoints but cannot load pre-trained weights")
+    if args.predict and not args.test_path:
+        parser.error("--test-path is required when --predict is set")
 
     run = wandb.init(project="ncd_reasoning_tf_GRU", config=vars(args))
     cfg = run.config
@@ -452,7 +448,6 @@ def main():
     dropout_rate = getattr(cfg, "dropout", args.dropout)
     training_data = getattr(cfg, "trainData", args.trainData)
     testing_data = getattr(cfg, "testData", args.testData)
-    results_path = os.path.normpath(getattr(cfg, "resPath", args.resPath)) + os.sep
     n_demo = args.nDemo
 
     gpus = tf.config.list_physical_devices('GPU')
@@ -487,7 +482,7 @@ def main():
     out_dir = run_root
     os.makedirs(out_dir, exist_ok=True)
 
-    # Save vectorizers for consistency in prediction
+    # Save vectorizers for consistency
     save_vectorizer(input_vectorizer, os.path.join(checkpoint_dir, "input_vectorizer"))
     save_vectorizer(output_vectorizer, os.path.join(checkpoint_dir, "output_vectorizer"))
 
@@ -517,11 +512,11 @@ def main():
     attn_cb = AttentionLogger(translator, sample_sentence)
     overfit_cb = make_overfit_callback(total_epochs=n_epochs)
 
-    if args.predict and args.checkpoint_dir and os.path.exists(os.path.join(args.checkpoint_dir, "cp.weights.h5")):
-        logging.info("Loading pre-trained weights for prediction")
+    if args.checkpoint_dir and os.path.exists(os.path.join(args.checkpoint_dir, "cp.weights.h5")):
+        logging.info("Loading pre-trained weights")
         train_translator.load_weights(os.path.join(args.checkpoint_dir, "cp.weights.h5"), by_name=True, skip_mismatch=True)
     else:
-        logging.info("Training neural reasoning model...")
+        logging.info("Training neural reasoning model from scratch...")
         history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
                                        callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
         logging.info("Training completed successfully")
