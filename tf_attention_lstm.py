@@ -51,7 +51,7 @@ STRIP_CHARS = string.punctuation.replace("[", "").replace("]", "")
 
 # ── wandb_helper.py ──────────────────────────────────────────────────────────
 
-def make_overfit_callback(total_epochs: int, a=6.0, b=4.0, c=-2.0):
+def make_overfit_callback(total_epochs: int, a=4.0, b=3.0, c=-1.5):
     class OverfitLogger(keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
             logs = logs or {}
