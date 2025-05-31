@@ -605,7 +605,7 @@ def main():
     parser.add_argument("-d", "--embeddingDim", type=int, default=1024, help="Word embedding dimensionality")
     parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked GRU layers")
     parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for GRU layers")
-    parser.add_argument("-D", "--nDemo", type=int, default=20, help="Number of test samples to predict")
+    parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of test samples to predict")
     parser.add_argument("-T", "--trainData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_train.tsv", help="Training data TSV")
     parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Validation data TSV")
     parser.add_argument("-H", "--holdoutData", type=str, default="", help="(Optional) extra test set for final predictions")
