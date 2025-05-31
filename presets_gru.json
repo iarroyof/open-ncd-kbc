@@ -1,0 +1,8 @@
+{
+  "best2_do-0765_E512_S512_L1":  {"nSteps":512,  "embeddingDim":512,  "numLayers":1, "dropout":0.765}, # Best of all
+  "best_do-0613_E1024_S512_L1": {"nSteps":512, "embeddingDim":1024,  "numLayers":1, "dropout":0.613}, # Best mid drop
+  "best_do-0271_E256_S1024_L1":  {"nSteps":1024, "embeddingDim":256,  "numLayers":1, "dropout":0.271}, # Best low drop
+  "best_do-0834_E256_S2048_L1": {"nSteps":2048, "embeddingDim":256,  "numLayers":1, "dropout":0.834}, # Best GRU-W
+  "best_do-0084_E256_S2048_L1":  {"nSteps":2048, "embeddingDim":256,  "numLayers":1, "dropout":0.084}, # Best GRU-W low drop
+  "best_do-0577_E256_S2048_L1": {"nSteps":2048, "embeddingDim":256, "numLayers":1, "dropout":0.577}  # Best GRU-W mid drop
+}
