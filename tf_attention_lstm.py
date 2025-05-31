@@ -741,6 +741,17 @@ def main():
                         help="Path to JSON file mapping preset names → hyperparameter dict")    
     args = parser.parse_args()
 
+    # ─── Apply presets to args BEFORE wandb.init ────────────────────
+    if args.preset:
+        import json
+        with open(args.presets_file, "r") as fp:
+            all_presets = json.load(fp)
+        if args.preset not in all_presets:
+            raise ValueError(f"Unknown preset '{args.preset}' in {args.presets_file}")
+        # overwrite the CLI defaults in args
+        for key, val in all_presets[args.preset].items():
+            setattr(args, key, val)
+        logging.info(f"✔ args updated from preset {args.preset}: {all_presets[args.preset]}")
     # ----------  W&B init  --------------------------------
     #   • uses argparse values as the initial config
     #   • allows sweep overrides automatically
