@@ -47,8 +47,7 @@ def run_sts_script(input_file_path):
     """
     embed_model_path = "../sentence_embedding/fstx_300d_indexed/"
     output_format = "wisse"
-    idf_model = "none" # This was 'none' but your example output filename shows 'tfidf_none_idf'.
-                       # Assuming 'none' as specified in your command.
+    idf_model = "none" 
     sts_script_path = "../sentence_embedding/sts.py"
 
     command = [
@@ -67,35 +66,12 @@ def run_sts_script(input_file_path):
         subprocess.run(command, capture_output=True, text=True, check=True)
         # Note: We are no longer printing STS stdout/stderr here as per your request
         # to rely on filename only. If debugging, uncomment print(result.stdout/stderr).
-
-        # Construct the expected output file path based on sts.py's naming convention
-        # Example: input.tsv -> input.tsv.output_fstx_300d_indexed_sum_local_local (if format is wisse, idfmodel is none)
-        # If your sts.py outputs _tfidf_none_idf, the internal logic of sts.py determines that suffix.
-        # For 'wisse' format and 'none' idfmodel, it commonly appends '_sum_local_local' for sum embeddings.
         
         # Let's use a more direct convention based on your example and previous knowledge:
         embed_model_base_name = os.path.basename(os.path.normpath(embed_model_path))
-        
-        # This suffix can vary depending on internal STS implementation (e.g., if it uses TF-IDF or other aggregations)
-        # Based on your prompt example "output_fstx_300d_indexed_sum_tfidf_none_idf"
-        # and previous "output_fstx_300d_indexed_sum_local_local"
-        # Let's construct it more flexibly.
-        # Assuming the suffix is fixed to _sum_local_local as per previous iterations for 'wisse' and 'none'
-        # If your actual sts.py output is different, this part might need a minor adjustment.
-        expected_output_filename = f"{input_file_path}.output_{embed_model_base_name}_sum_local_local"
-        
-        # If the sts.py output filename strictly follows your example "output_fstx_300d_indexed_sum_tfidf_none_idf",
-        # you would need to know the 'sum_tfidf_none_idf' part.
-        # For consistency with the provided command: --embedmodel fstx_300d_indexed/ --format wisse --idfmodel none
-        # The 'wisse' format with 'none' idfmodel usually leads to '_sum_local_local'.
-        # If the output really is '_sum_tfidf_none_idf', your sts.py might be doing something different internally
-        # or the 'idfmodel none' argument doesn't result in 'none' in the filename.
-        
+                
         # For safety and given the prompt "object_pairs_predictions_random.tsv.output_fstx_300d_indexed_sum_tfidf_none_idf"
         # Let's prioritize the most specific example you gave in this prompt,
-        # acknowledging it might conflict with the `idfmodel none` setting.
-        # If `sts.py` *always* appends '_sum_tfidf_none_idf' when `idfmodel` is `none`, then this is fine.
-        # Otherwise, the `_sum_local_local` based on 'wisse' and 'none' idfmodel is more typical.
         
         # Let's stick to your example's exact suffix for `output_fstx_300d_indexed_sum_tfidf_none_idf`
         # for `fstx_300d_indexed` and `idfmodel none`:
@@ -124,16 +100,19 @@ def run_sts_script(input_file_path):
 
 # --- Main script execution ---
 # Adjust this to 'results' if that's your main directory
-#base_directories = find_subdirectories_one_level('results_test')
+
+# base_directories = find_subdirectories_one_level('results_test')
+
+# testing directories to validate with a small set of results
 base_directories  = [
-    'results/ncd-gp-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+    # 'results/ncd-gp-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
     'results/ncd-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    'results/ncd-gp-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    'results/ncd-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    'results/ncd-gp-conceptnet-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+    # 'results/ncd-gp-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+    # 'results/ncd-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+    # 'results/ncd-gp-conceptnet-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
     'results/ncd-conceptnet-transformer_epochs-40_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    'results/ncd-gp-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    'results/ncd-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8'
+    # 'results/ncd-gp-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+    # 'results/ncd-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8'
 ]
 
 # Prepare for collecting results to print in a table
@@ -143,101 +122,186 @@ results_for_table = []
 for csv_item in base_directories: # Looping through each full path
     # Define paths for input and output files
     # Changed 'val_predictions.csv' to 'predictions.csv' if that's the common name
-    csv_file_path = os.path.join(csv_item, 'val_predictions.csv') # Assuming val_predictions.csv
-    object_pairs_tsv_file_path = os.path.join(csv_item, 'object_pairs_predictions.tsv')
-    random_object_pairs_tsv_file_path = os.path.join(csv_item, 'object_pairs_predictions_random.tsv')
+    val_csv_file_path = os.path.join(csv_item, 'val_predictions.csv') # Assuming val_predictions.csv
+    val_object_pairs_tsv_file_path = os.path.join(csv_item, 'val_object_pairs_predictions.tsv')
+    val_random_object_pairs_tsv_file_path = os.path.join(csv_item, 'val_object_pairs_predictions_random.tsv')
+
+    # Also do the same for the test predictons:
+    test_csv_file_path = os.path.join(csv_item, 'test_predictions.csv') # Assuming val_predictions.csv
+    test_object_pairs_tsv_file_path = os.path.join(csv_item, 'test_object_pairs_predictions.tsv')
+    test_random_object_pairs_tsv_file_path = os.path.join(csv_item, 'test_object_pairs_predictions_random.tsv')
 
     # Check if the input CSV file exists
-    if not os.path.exists(csv_file_path):
-        print(f"Warning: '{csv_file_path}' not found. Skipping processing for this directory.")
+    if not os.path.exists(val_csv_file_path) or not os.path.exists(test_csv_file_path):
+        print(f"Warning: '{val_csv_file_path}' or '{test_csv_file_path}' not found. Skipping processing for this directory.")
         continue # Move to the next directory if the file is missing
     else:
-        print(f"Info: '{csv_file_path}' found. Starting processing for this directory.")
+        print(f"Info: '{val_csv_file_path}' and '{test_csv_file_path}' found. Starting processing for this directory.")
 
-    # Variables to store STS output file paths
-    sts_output_predictions = None
-    sts_output_predictions_random = None
+    # Variables to store STS output file paths for validation predictions
+    sts_output_val_predictions = None
+    sts_output_val_predictions_random = None
+
+    # Variables to store STS output file paths for validation predictions
+    sts_output_test_predictions = None
+    sts_output_test_predictions_random = None
 
     try:
-        # Read the CSV file once
-        inferences_item = pd.read_csv(csv_file_path,
+        # Read the val CSV file once
+        val_inferences_item = pd.read_csv(val_csv_file_path, # TODO: Need to change to tsv after testing
                                       header=0,
                                       index_col=0)
-        print(f"Info: '{csv_file_path}' loaded.")
-        object_pairs = []
-        obj_list = []
-        obj_true_list = []
+        
+        # Read the test CSV file once
+        test_inferences_item = pd.read_csv(test_csv_file_path, # TODO: Need to change to tsv after testing
+                                      header=0,
+                                      index_col=0)
+        
+        print(f"Info: '{val_csv_file_path}' and '{test_csv_file_path}' loaded.")
+        
+        val_object_pairs = []
+        val_obj_list = []
+        val_obj_true_list = []
+
+        test_object_pairs = []
+        test_obj_list = []
+        test_obj_true_list = []
 
         # Iterate through rows to extract and clean data for both tasks
-        for idx, inference in inferences_item.iterrows():
+        for idx, inference in val_inferences_item.iterrows():
             inference_obj = str(inference['Obj']).replace('[start] ','').replace(' [end]','')
             inference_obj_true = str(inference['Obj_true']).replace('[start] ','').replace(' [end]','')
 
             if len(inference_obj) > 0 and len(inference_obj_true) > 0:
-                # For the first TSV (original pairs)
-                object_pairs.append((inference_obj, inference_obj_true))
-                # For the second TSV (shuffled true objects)
-                obj_list.append(inference_obj)
-                obj_true_list.append(inference_obj_true)
+                # For the first TSV (original val pairs)
+                val_object_pairs.append((inference_obj, inference_obj_true))
+                # For the second TSV (shuffled true val objects)
+                val_obj_list.append(inference_obj)
+                val_obj_true_list.append(inference_obj_true)
+        
+        # Iterate through rows to extract and clean data for both tasks
+        for idx, inference in test_inferences_item.iterrows():
+            inference_obj = str(inference['Obj']).replace('[start] ','').replace(' [end]','')
+            inference_obj_true = str(inference['Obj_true']).replace('[start] ','').replace(' [end]','')
 
-        # --- Save the first TSV file (original object pairs) ---
-        print(f"Saving object pairs to: {object_pairs_tsv_file_path}")
-        pd.DataFrame(object_pairs).to_csv(object_pairs_tsv_file_path, sep='\t', header=None, index=None)
+            if len(inference_obj) > 0 and len(inference_obj_true) > 0:
+                # For the first TSV (original test pairs)
+                test_object_pairs.append((inference_obj, inference_obj_true))
+                # For the second TSV (shuffled true test objects)
+                test_obj_list.append(inference_obj)
+                test_obj_true_list.append(inference_obj_true)
 
-        # --- Save the second TSV file (randomized object pairs) ---
-        random.shuffle(obj_true_list) # Shuffle the true objects list
-        print(f"Saving random object pairs to: {random_object_pairs_tsv_file_path}")
-        pd.DataFrame(zip(obj_list, obj_true_list)).to_csv(random_object_pairs_tsv_file_path, sep='\t', header=None, index=None)
+        # --- Save the first val TSV file (original object pairs) ---
+        print(f"Saving object pairs to: {val_object_pairs_tsv_file_path}")
+        pd.DataFrame(val_object_pairs).to_csv(val_object_pairs_tsv_file_path, sep='\t', header=None, index=None)
 
-        # --- Execute sts.py for the newly generated TSV files ---
-        print("\n--- Running STS scripts ---")
-        sts_output_predictions = run_sts_script(object_pairs_tsv_file_path)
-        sts_output_predictions_random = run_sts_script(random_object_pairs_tsv_file_path)
+        # --- Save the second val TSV file (randomized object pairs) ---
+        random.shuffle(val_obj_true_list) # Shuffle the true objects list
+        print(f"Saving random object pairs to: {val_random_object_pairs_tsv_file_path}")
+        pd.DataFrame(zip(val_obj_list, val_obj_true_list)).to_csv(val_random_object_pairs_tsv_file_path, sep='\t', header=None, index=None)
+
+        # --- Save the first test TSV file (original object pairs) ---
+        print(f"Saving object pairs to: {test_object_pairs_tsv_file_path}")
+        pd.DataFrame(val_object_pairs).to_csv(test_object_pairs_tsv_file_path, sep='\t', header=None, index=None)
+
+        # --- Save the second test TSV file (randomized object pairs) ---
+        random.shuffle(test_obj_true_list) # Shuffle the true objects list
+        print(f"Saving random object pairs to: {test_random_object_pairs_tsv_file_path}")
+        pd.DataFrame(zip(test_obj_list, test_obj_true_list)).to_csv(test_random_object_pairs_tsv_file_path, sep='\t', header=None, index=None)
+
+        # --- Execute sts.py for the newly generated val TSV files ---
+        print("\n--- Running STS scripts for val set ---")
+        sts_output_val_predictions = run_sts_script(val_object_pairs_tsv_file_path)
+        sts_output_val_predictions_random = run_sts_script(val_random_object_pairs_tsv_file_path)
+
+        # --- Execute sts.py for the newly generated val TSV files ---
+        print("\n--- Running STS scripts for test set ---")
+        sts_output_test_predictions = run_sts_script(test_object_pairs_tsv_file_path)
+        sts_output_test_predictions_random = run_sts_script(test_random_object_pairs_tsv_file_path)
+       
+
         print("--- STS scripts finished ---\n")
 
         # --- Calculate p-value if STS outputs are available ---
-        if sts_output_predictions and os.path.exists(sts_output_predictions) and \
-           sts_output_predictions_random and os.path.exists(sts_output_predictions_random):
+        if sts_output_val_predictions and os.path.exists(sts_output_val_predictions) and \
+           sts_output_val_predictions_random and os.path.exists(sts_output_val_predictions_random) and \
+            sts_output_test_predictions and os.path.exists(sts_output_test_predictions) and \
+            sts_output_test_predictions_random and os.path.exists(sts_output_test_predictions_random):
 
             try:
-                scores_predictions = pd.read_csv(sts_output_predictions, header=None, index_col=None, names=['scores'])
-                scores_predictions_random = pd.read_csv(sts_output_predictions_random, header=None, index_col=None, names=['scores_random'])
+                scores_val_predictions = pd.read_csv(sts_output_val_predictions, header=None, index_col=None, names=['scores'])
+                scores_val_predictions_random = pd.read_csv(sts_output_val_predictions_random, header=None, index_col=None, names=['scores_random'])
+
+                scores_test_predictions = pd.read_csv(sts_output_test_predictions, header=None, index_col=None, names=['scores'])
+                scores_test_predictions_random = pd.read_csv(sts_output_test_predictions_random, header=None, index_col=None, names=['scores_random'])
 
                 # Drop NaNs to ensure t-test works correctly
-                scores_predictions_cleaned = scores_predictions.dropna()['scores']
-                scores_predictions_random_cleaned = scores_predictions_random.dropna()['scores_random']
+                scores_val_predictions_cleaned = scores_val_predictions.dropna()['scores']
+                scores_val_predictions_random_cleaned = scores_val_predictions_random.dropna()['scores_random']
+                
+                scores_test_predictions_cleaned = scores_test_predictions.dropna()['scores']
+                scores_test_predictions_random_cleaned = scores_test_predictions_random.dropna()['scores_random']
 
-                if not scores_predictions_cleaned.empty and not scores_predictions_random_cleaned.empty:
+                if not scores_val_predictions_cleaned.empty and not scores_val_predictions_random_cleaned.empty and \
+                    not scores_test_predictions_cleaned.empty and not scores_test_predictions_random_cleaned.empty:
                     # Perform independent t-test
-                    statistic, pvalue = stats.ttest_ind(
-                        scores_predictions_cleaned,
-                        scores_predictions_random_cleaned
+                    val_statistic, val_pvalue = stats.ttest_ind(
+                        scores_val_predictions_cleaned,
+                        scores_val_predictions_random_cleaned
                     )
 
-                    mean_predictions = np.mean(scores_predictions_cleaned)
-                    mean_predictions_random = np.mean(scores_predictions_random_cleaned)
+                    test_statistic, test_pvalue = stats.ttest_ind(
+                        scores_test_predictions_cleaned,
+                        scores_test_predictions_random_cleaned
+                    )
+
+                    mean_val_predictions = np.mean(scores_val_predictions_cleaned)
+                    mean_val_predictions_random = np.mean(scores_val_predictions_random_cleaned)
+
+                    mean_test_predictions = np.mean(scores_test_predictions_cleaned)
+                    mean_test_predictions_random = np.mean(scores_test_predictions_random_cleaned)
 
                     # Extract the directory name for the table output
                     dir_name = os.path.basename(csv_item)
-
-                    results_for_table.append({
+                    current_result = {
                         'directory': dir_name,
-                        'mean_predictions': mean_predictions,
-                        'mean_random': mean_predictions_random,
-                        'pvalue': pvalue
-                    })
-                    print(f"P-value for {dir_name}: {pvalue:.2e}")
+                        'mean_val_predictions': mean_val_predictions,
+                        'mean_val_random': mean_val_predictions_random,
+                        'val_pvalue': val_pvalue,
+                        'mean_test_predictions': mean_test_predictions,
+                        'mean_test_random': mean_test_predictions_random,
+                        'test_pvalue': test_pvalue
+                    }
+
+                    results_for_table.append(current_result)
+
+                    print(f"Directory: {dir_name}, "
+                        f"Val Pred Mean: {mean_val_predictions:.3f}, "
+                        f"Val Random Mean: {mean_val_predictions_random:.3f}, "
+                        f"Val P-value: {val_pvalue:.2e}, "
+                        f"Test Pred Mean: {mean_test_predictions:.3f}, "
+                        f"Test Random Mean: {mean_test_predictions_random:.3f}, "
+                        f"Test P-value: {test_pvalue:.2e}")
+                    # --- Save ONLY THE CURRENT result to CSV ---
+                    # Create a DataFrame with just the current result
+                    current_df = pd.DataFrame([current_result])
+                    output_csv_path = os.path.join(csv_item, 'sts_pvalues_results.csv') #
+                    # Save the current DataFrame to CSV
+                    current_df.to_csv(output_csv_path, index=False)
+                    print(f"Current result saved to: {output_csv_path}")
                 else:
                     print(f"Warning: No valid scores found after cleaning for {csv_item}. Skipping p-value calculation.")
+
+                print(f"\nResults successfully saved to {output_csv_path}")
             except Exception as e:
                 print(f"Error reading STS output files or calculating p-value for {csv_item}: {e}")
         else:
             print(f"Skipping p-value calculation for {csv_item} due to missing or failed STS output files.")
 
     except KeyError as ke:
-        print(f"Error: Missing expected column in '{csv_file_path}': {ke}. Skipping this directory.")
+        print(f"Error: Missing expected column in '{val_csv_file_path}': {ke}. Skipping this directory.")
     except Exception as e:
-        print(f"An unexpected error occurred while processing '{csv_file_path}': {e}. Skipping this directory.")
+        print(f"An unexpected error occurred while processing '{val_csv_file_path}': {e}. Skipping this directory.")
 
 # --- Print results table ---
 print("\n" + "="*80)
@@ -249,9 +313,12 @@ print("\\hline")
 for res in results_for_table:
     line = ''.join((
         res['directory'], ' & ',
-        f"{res['mean_predictions']:.3f}", ' / ',
-        f"{res['mean_random']:.3f}", ' & ',
-        f"{res['pvalue']:.2e}", ' \\\\ '
+        f"{res['mean_val_predictions']:.3f}", ' / ',
+        f"{res['mean_val_random']:.3f}", ' & ',
+        f"{res['val_pvalue']:.2e}", ' & ',
+        f"{res['mean_test_predictions']:.3f}", ' / ',
+        f"{res['mean_test_random']:.3f}", ' & ',
+        f"{res['test_pvalue']:.2e}", ' \\\\ '
     ))
     print(line)
 print("\\hline")
