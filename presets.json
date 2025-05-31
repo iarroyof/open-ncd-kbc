@@ -1,0 +1,8 @@
+{
+  "best2_do-09_E256_S512_L1":  {"nSteps":512,  "embeddingDim":256,  "numLayers":1, "dropout":0.9},
+  "best_do-001_E256_S1024_L1": {"nSteps":1024, "embeddingDim":256,  "numLayers":1, "dropout":0.01},
+  "best_do-05_E256_S2048_L1":  {"nSteps":2048, "embeddingDim":256,  "numLayers":1, "dropout":0.5},
+  "best_do-001_E512_S2048_L2": {"nSteps":2048, "embeddingDim":512,  "numLayers":2, "dropout":0.01},
+  "best_do-05_E512_S2048_L2":  {"nSteps":2048, "embeddingDim":512,  "numLayers":2, "dropout":0.5},
+  "best_do-09_E1024_S2048_L2": {"nSteps":2048, "embeddingDim":1024, "numLayers":2, "dropout":0.9}
+}
