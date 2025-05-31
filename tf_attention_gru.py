@@ -50,8 +50,6 @@ STRIP_CHARS = string.punctuation.replace("[", "").replace("]", "")
 
 # --- Utility Functions ---
 
-# ── wandb_helper.py ──────────────────────────────────────────────────────────
-
 def make_overfit_callback(total_epochs: int, a: float = 6.0, b: float = 4.0, c: float = -2.0):
     """
     Returns a Keras Callback that, every epoch,
@@ -83,23 +81,19 @@ def make_overfit_callback(total_epochs: int, a: float = 6.0, b: float = 4.0, c: 
 
             # fetch AUROC if the metric is present
             auroc = logs.get("val_auroc")
-            # drop the hard‐coded step so we don't get “dropping entry” warnings
-            wandb.log(
-                {
-                    "epoch": epoch + 1,
-                    "rel_gap": rel_gap,
-                    "epoch_ratio": epoch_ratio,
-                    "p_overfit": p_overfit,
-                    "val_auroc": auroc,
-                }
-            )
+            wandb.log({
+                "epoch": epoch + 1,
+                "rel_gap": rel_gap,
+                "epoch_ratio": epoch_ratio,
+                "p_overfit": p_overfit,
+                "val_auroc": auroc,
+            })
 
     return OverfitLogger()
 
 
 class ShapeChecker:
     """Utility class to check tensor shapes during execution."""
-
     def __init__(self):
         self.shapes = {}
 
@@ -195,9 +189,8 @@ def load_vectorizer(from_file):
     """
     Load a saved TextVectorization layer from disk.
     Ensure loading uses the new .keras filenames:
-    # When loading vectorizers, use:
-    #   input_vectorizer = load_vectorizer(f"{vectorizer_path}in_vect_model.keras")
-    #   output_vectorizer = load_vectorizer(f"{vectorizer_path}out_vect_model.keras")
+        input_vectorizer = load_vectorizer(f"{vectorizer_path}in_vect_model.keras")
+        output_vectorizer = load_vectorizer(f"{vectorizer_path}out_vect_model.keras")
     """
     model = tf.keras.models.load_model(from_file)
     vocab = model.layers[0].get_vocabulary()
@@ -228,7 +221,6 @@ def parse_dataset_name(training_data):
 
 class BahdanauAttention(tf.keras.layers.Layer):
     """Bahdanau attention mechanism for sequence-to-sequence models."""
-
     def __init__(self, units):
         super().__init__()
         self.W1 = layers.Dense(units, use_bias=False)
@@ -251,7 +243,6 @@ class BahdanauAttention(tf.keras.layers.Layer):
         shape_checker(attention_weights, ("batch", "t", "s"))
         return context_vector, attention_weights
 
-    # Add get_config method for serialization compatibility
     def get_config(self):
         config = super().get_config()
         return config
@@ -259,7 +250,6 @@ class BahdanauAttention(tf.keras.layers.Layer):
 
 class Encoder(tf.keras.layers.Layer):
     """Encoder for sequence-to-sequence model using stacked GRUs."""
-
     def __init__(self, input_vocab_size: int, embedding_dim: int, enc_units: int, num_layers: int = 1, dropout: float = 0.0):
         super().__init__()
         self.enc_units = enc_units
@@ -274,10 +264,9 @@ class Encoder(tf.keras.layers.Layer):
     def call(self, tokens, state=None):
         vectors = self.embedding(tokens)
         outputs_and_states = self.gru(vectors, initial_state=state)
-        seq, *states = outputs_and_states  # list of tensors
+        seq, *states = outputs_and_states
         return seq, states
 
-    # Add get_config method for serialization compatibility
     def get_config(self):
         config = super().get_config()
         config.update({"enc_units": self.enc_units, "num_layers": self.num_layers})
@@ -286,7 +275,6 @@ class Encoder(tf.keras.layers.Layer):
 
 class Decoder(tf.keras.layers.Layer):
     """Decoder with attention for sequence-to-sequence model."""
-
     def __init__(self, output_vocab_size: int, embedding_dim: int, dec_units: int, num_layers: int = 1, dropout: float = 0.0):
         super().__init__()
         self.dec_units = dec_units
@@ -310,19 +298,19 @@ class Decoder(tf.keras.layers.Layer):
             state = [state] * self.num_layers
         vectors = self.embedding(new_tokens)
         outputs_and_states = self.gru(vectors, initial_state=state)
-        rnn_output, *dec_state = outputs_and_states  # list out
+        rnn_output, *dec_state = outputs_and_states
         context_vector, attention_weights = self.attention(rnn_output, enc_output, mask)
 
         # Use the *last* decoder step instead of squeezing
-        rnn_step = rnn_output[:, -1, :]  # (B, U)
-        context_step = context_vector[:, -1, :]  # (B, U)
+        rnn_step = rnn_output[:, -1, :]
+        context_step = context_vector[:, -1, :]
 
         # Fuse context and decoder state
-        concat = tf.concat([context_step, rnn_step], axis=-1)  # (B, 2U)
-        attention_vector = self.Wc(concat)  # (B, U)
+        concat = tf.concat([context_step, rnn_step], axis=-1)
+        attention_vector = self.Wc(concat)
 
         # Restore a time dimension of 1 for the Dense projection
-        attention_vector = tf.expand_dims(attention_vector, 1)  # (B, 1, U)
+        attention_vector = tf.expand_dims(attention_vector, 1)
         logits = self.fc(attention_vector)
 
         class DecoderOutput:
@@ -332,7 +320,6 @@ class Decoder(tf.keras.layers.Layer):
 
         return DecoderOutput(logits, attention_weights), dec_state
 
-    # Add get_config method for serialization compatibility
     def get_config(self):
         config = super().get_config()
         config.update({"dec_units": self.dec_units, "num_layers": self.num_layers})
@@ -341,42 +328,20 @@ class Decoder(tf.keras.layers.Layer):
 
 class MaskedLoss(tf.keras.losses.Loss):
     """Custom loss function that masks padding tokens."""
-
     def __init__(self):
         super().__init__(name="masked_loss")
         self.loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction="none")
 
     def __call__(self, y_true, y_pred):
-        # 1. Up-cast logits to float32—recommended for stability when the
-        #    model runs in mixed-precision (policy "mixed_float16").
-        y_pred = tf.cast(y_pred, tf.float32)
-
-        # 2. Compute per-token cross-entropy.
+        y_pred = tf.cast(y_pred, tf.float32)  # up-cast to float32
         loss = self.loss(y_true, y_pred)  # (B, T) float32
-
-        # 3. Create mask **in the same dtype** as `loss` to avoid the
-        #    “type float32 vs float16” multiply error.
-        mask = tf.cast(y_true != 0, loss.dtype)  # float32
-
+        mask = tf.cast(y_true != 0, loss.dtype)  # float32 mask
         return tf.reduce_sum(loss * mask)
-
-
-# --- Training and Translation Classes ---
 
 
 class TrainTranslator(tf.keras.Model):
     """Model for training a sequence-to-sequence translator with attention."""
-
-    def __init__(
-        self,
-        embedding_dim: int,
-        units: int,
-        input_text_processor,
-        output_text_processor,
-        num_layers: int = 1,
-        dropout: float = 0.0,
-        use_tf_function: bool = True,
-    ):
+    def __init__(self, embedding_dim: int, units: int, input_text_processor, output_text_processor, num_layers: int = 1, dropout: float = 0.0, use_tf_function: bool = True):
         super().__init__()
         self.encoder = Encoder(input_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
         self.decoder = Decoder(output_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
@@ -389,7 +354,6 @@ class TrainTranslator(tf.keras.Model):
 
     def get_config(self):
         return {
-            # only hyper-parameters here
             "embedding_dim": self.encoder.embedding.output_dim,
             "units": self.encoder.enc_units,
             "num_layers": self.encoder.num_layers,
@@ -411,60 +375,40 @@ class TrainTranslator(tf.keras.Model):
         dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
         return target_token, dec_result.logits, dec_state
 
-    # ------------------------------------------------------------------
     def _train_step(self, inputs):
-        """
-        One training iteration that
-        • keeps the loss in fp32 (numerical stability under mixed-precision)
-        • uses loss-scaling for back-prop
-        • updates SparseCategoricalAccuracy with squeezed labels/logits
-        """
         input_text, target_text = inputs
-
-        # --- tokenize ---------------------------------------------------
         (input_tokens, input_mask, target_tokens, target_mask) = self._preprocess(input_text, target_text)
         max_t = tf.shape(target_tokens)[1]
 
         with tf.GradientTape() as tape:
-            # --- forward ------------------------------------------------
             enc_output, enc_state = self.encoder(input_tokens)
             dec_state = enc_state
             total_loss = tf.constant(0.0, tf.float32)
 
             for t in tf.range(max_t - 1):
-                new_tokens = target_tokens[:, t : t + 2]  # (B, 2)
+                new_tokens = target_tokens[:, t : t + 2]
                 y_true, y_pred, dec_state = self._loop_step(new_tokens, input_mask, enc_output, dec_state)
 
-                y_pred = tf.cast(y_pred, tf.float32)  # fp32 logits
+                y_pred = tf.cast(y_pred, tf.float32)
                 total_loss += self.loss(y_true, y_pred)
 
-                # ---- metric (expects 1-D ids & 2-D logits) -------------
                 mask = tf.cast(tf.squeeze(y_true, 1) != 0, tf.float32)
                 self.train_metric.update_state(
-                    tf.squeeze(y_true, 1),  # (B,)
+                    tf.squeeze(y_true, 1),
                     tf.squeeze(y_pred, 1),
-                    sample_weight=mask,  # (B, vocab)
+                    sample_weight=mask,
                 )
 
-            # average over non-pad tokens
             average_loss = total_loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
-
-            # scale loss for mixed-precision
             scaled_loss = self.optimizer.get_scaled_loss(average_loss)
 
-        # --- backward ---------------------------------------------------
         scaled_grads = tape.gradient(scaled_loss, self.trainable_variables)
         grads = self.optimizer.get_unscaled_gradients(scaled_grads)
         self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
 
         return {"loss": average_loss, "accuracy": self.train_metric.result()}
 
-    # ------------------------------------------------------------------
     def _test_step(self, inputs):
-        """
-        Validation step – identical logic to _train_step, but without
-        gradient calculations or loss scaling.
-        """
         input_text, target_text = inputs
         (input_tokens, input_mask, target_tokens, target_mask) = self._preprocess(input_text, target_text)
         max_t = tf.shape(target_tokens)[1]
@@ -480,21 +424,19 @@ class TrainTranslator(tf.keras.Model):
             y_pred = tf.cast(y_pred, tf.float32)
             total_loss += self.loss(y_true, y_pred)
 
-            # metric update
             self.test_metric.update_state(
                 tf.squeeze(y_true, 1),
-                tf.squeeze(y_pred, 1),  # logits (B, vocab)
+                tf.squeeze(y_pred, 1),
                 sample_weight=tf.cast(tf.squeeze(y_true, 1) != 0, tf.float32),
             )
 
         average_loss = total_loss / tf.reduce_sum(tf.cast(target_mask, tf.float32))
-
         return {"loss": average_loss, "accuracy": self.test_metric.result()}
 
     @tf.function(
         input_signature=(
-            tf.TensorSpec(shape=(None,), dtype=tf.string),  # input batch
-            tf.TensorSpec(shape=(None,), dtype=tf.string),  # target batch
+            tf.TensorSpec(shape=(None,), dtype=tf.string),
+            tf.TensorSpec(shape=(None,), dtype=tf.string),
         )
     )
     def _tf_train_step(self, input_batch, target_batch):
@@ -510,7 +452,7 @@ class TrainTranslator(tf.keras.Model):
         return self._test_step((input_batch, target_batch))
 
     def train_step(self, data):
-        input_batch, target_batch = data  # data is a tuple
+        input_batch, target_batch = data
         return self._tf_train_step(input_batch, target_batch)
 
     def test_step(self, data):
@@ -520,7 +462,6 @@ class TrainTranslator(tf.keras.Model):
 
 class Translator(tf.Module):
     """Inference class for translating input sequences using a trained model."""
-
     def __init__(self, encoder, decoder, input_text_processor, output_text_processor):
         super().__init__()
         self.encoder = encoder
@@ -528,7 +469,6 @@ class Translator(tf.Module):
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
 
-        # Updated StringLookup usage for TF 2.10+
         self.output_token_string_from_index = tf.keras.layers.StringLookup(
             vocabulary=output_text_processor.get_vocabulary(), mask_token="", invert=True
         )
@@ -550,21 +490,15 @@ class Translator(tf.Module):
         return tf.strings.strip(result_text)
 
     def sample(self, logits, temperature):
-        """
-        Apply the vocabulary mask and (optionally) temperature sampling.
-        The logits are up-cast to float32 for numerical stability.
-        Returns int64 ids shaped (B, 1).
-        """
-        logits = tf.cast(logits, tf.float32)  # (B,1,V) fp32
-        mask = self.token_mask[tf.newaxis, tf.newaxis, :]  # (1,1,V) bool
+        logits = tf.cast(logits, tf.float32)
+        mask = self.token_mask[tf.newaxis, tf.newaxis, :]
         logits = tf.where(mask, tf.constant(-np.inf, dtype=tf.float32), logits)
 
-        if temperature == 0.0:  # greedy
-            return tf.argmax(logits, axis=-1, output_type=tf.int64)  # (B,1)
+        if temperature == 0.0:
+            return tf.argmax(logits, axis=-1, output_type=tf.int64)
 
-        # categorical requires 2-D [batch, classes]
-        logits = tf.squeeze(logits, axis=1)  # (B,V)
-        return tf.random.categorical(logits / temperature, num_samples=1, dtype=tf.int64)  # (B,1)
+        logits = tf.squeeze(logits, axis=1)
+        return tf.random.categorical(logits / temperature, num_samples=1, dtype=tf.int64)
 
     def translate(self, input_text, *, max_length=50, return_attention=True, temperature=1.0):
         batch_size = tf.shape(input_text)[0]
@@ -600,7 +534,6 @@ class Translator(tf.Module):
 
 class BatchLogs(tf.keras.callbacks.Callback):
     """Callback to log batch metrics during training."""
-
     def __init__(self, key):
         super().__init__()
         self.key = key
@@ -610,27 +543,16 @@ class BatchLogs(tf.keras.callbacks.Callback):
         self.logs.append(logs[self.key])
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-#  Callback: log one attention heat-map per epoch
-# ──────────────────────────────────────────────────────────────────────────────
-
-
 class AttentionLogger(keras.callbacks.Callback):
     """
     Logs a heat-map of the attention matrix for one fixed validation sample,
     *without* padded columns/rows and with the **real words** on the axes.
     """
-
     def __init__(self, translator, sample_sentence: str):
-        """
-        translator : instance of the `Translator` class above
-        sample_sentence : the source sentence that will be fed every epoch
-        """
         super().__init__()
         self.translator = translator
         self.sample = tf.constant([sample_sentence])
 
-        # 1⃣  build two inverse look-ups once – cheap & re-usable
         self.src_lookup = tf.keras.layers.StringLookup(
             vocabulary=translator.input_text_processor.get_vocabulary(), mask_token="", invert=True
         )
@@ -638,38 +560,25 @@ class AttentionLogger(keras.callbacks.Callback):
             vocabulary=translator.output_text_processor.get_vocabulary(), mask_token="", invert=True
         )
 
-    # ------------------------------------------------------------------
     def on_epoch_end(self, epoch, logs=None):
-        """
-        • runs the model  
-        • trims pads  
-        • converts token ids → strings  
-        • logs a single W&B image
-        """
         out = self.translator.translate(self.sample, return_attention=True)
-        attn = tf.squeeze(out["attention"], 0)  # (dec_T, enc_T)
+        attn = tf.squeeze(out["attention"], 0)
 
-        # ---------- original token ids ---------------------------------
         src_ids = self.translator.input_text_processor(self.sample)[0].numpy()
         tgt_ids = self.translator.output_text_processor(out["text"])[0].numpy()
 
-        # ---------- trim padding ---------------------------------------
         enc_len = int((src_ids != 0).sum())
         dec_len = int((tgt_ids != 0).sum())
         attn = attn[:dec_len, :enc_len]
         src_ids = src_ids[:enc_len]
         tgt_ids = tgt_ids[:dec_len]
 
-        # ---------- ids → strings --------------------------------------
         src_words = self.src_lookup(src_ids).numpy().astype(str)
         tgt_words = self.tgt_lookup(tgt_ids).numpy().astype(str)
 
-        # ---------- plot -----------------------------------------------
         import matplotlib.pyplot as plt
-
         fig, ax = plt.subplots(figsize=(enc_len * 0.4 + 1, dec_len * 0.4 + 1))
         im = ax.imshow(attn.numpy(), aspect="auto", cmap="viridis")
-
         ax.set_xticks(range(enc_len))
         ax.set_xticklabels(src_words, rotation=90, fontsize=8)
         ax.set_yticks(range(dec_len))
@@ -679,14 +588,12 @@ class AttentionLogger(keras.callbacks.Callback):
         fig.colorbar(im, ax=ax, fraction=0.046)
         fig.tight_layout()
 
-        # ---------- log to W&B -----------------------------------------
-        step = int(self.model.optimizer.iterations.numpy())  # plain int
+        step = int(self.model.optimizer.iterations.numpy())
         wandb.log({"attention_matrix": wandb.Image(fig)}, step=step)
         plt.close(fig)
 
 
 # --- Main Execution ---
-
 
 def main():
     parser = argparse.ArgumentParser(description="Train a sequence-to-sequence GRU model with attention.")
@@ -704,35 +611,44 @@ def main():
     parser.add_argument("-H", "--holdoutData", type=str, default="", help="(Optional) extra test set for final predictions")
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
 
-    # ─── Stage 1 of “presets” integration (override `args` before wandb.init) ────────────────────
+    # ─── “Presets” integration (override `args` before wandb.init) ───
     parser.add_argument("--preset", type=str, default=None, help="Which preset to load from presets_file")
     parser.add_argument("--presets_file", type=str, default="presets.json", help="Path to JSON file mapping preset names → hyperparameter dict")
 
     args = parser.parse_args()
 
-    # ─── Apply presets to args BEFORE wandb.init ────────────────────────────
+    # ─── Apply presets to args BEFORE wandb.init ───────────────────────
     if args.preset:
         import json
-
         with open(args.presets_file, "r") as fp:
             all_presets = json.load(fp)
         if args.preset not in all_presets:
             raise ValueError(f"Unknown preset '{args.preset}' in {args.presets_file}")
-        # Overwrite CLI defaults in `args`:
         for key, val in all_presets[args.preset].items():
             setattr(args, key, val)
         logging.info(f"✔ args updated from preset {args.preset}: {all_presets[args.preset]}")
-    # ──────────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────
 
-    # ----------  W&B init  --------------------------------
+    # ---------- W&B init  --------------------------------------------
     run = wandb.init(project="ncd_reasoning_tf_GRU", config=vars(args))
     cfg = run.config
 
-    # ─── (No longer need post‐wandb.config.update, because we applied presets above) ──
+    # ──────────────────────────────────────────────────────────────────
+    #  DERIVE run_root exactly as in the LSTM script
+    project_name = run.project or "wandb_project"
+    sweep_id = run.sweep_id   # None if not in a sweep
+    run_id = run.id          # always present
 
-    # ────────────────────────────────────────────────────────────────
-    #  Replace *all* reads of argparse fields with cfg.*
-    # ────────────────────────────────────────────────────────────────
+    run_parts = [project_name]
+    if sweep_id is not None:
+        run_parts.append(sweep_id)
+    run_parts.append(run_id)
+
+    run_root = os.path.join(os.path.normpath(getattr(cfg, "resPath", args.resPath)), *run_parts) + os.sep
+    os.makedirs(run_root, exist_ok=True)
+    # ──────────────────────────────────────────────────────────────────
+
+    # Now replace every "results/attentionGRU_..." directory with run_root/…
     sequence_length = getattr(cfg, "seqLen", args.seqLen)
     max_features = getattr(cfg, "nFeatures", args.nFeatures)
     batch_size = getattr(cfg, "batchSize", args.batchSize)
@@ -744,15 +660,13 @@ def main():
     training_data = getattr(cfg, "trainData", args.trainData)
     testing_data = getattr(cfg, "testData", args.testData)
     holdout_data = getattr(cfg, "holdoutData", args.holdoutData)
-    results_path = os.path.normpath(getattr(cfg, "resPath", args.resPath)) + os.sep
     n_demo = args.nDemo
 
     # --- GPU runtime init ---------------------------------------------
     gpus = tf.config.list_physical_devices("GPU")
     for dev in gpus:
-        # make TF allocate as‐needed
         tf.config.experimental.set_memory_growth(dev, True)
-    mixed_precision.set_global_policy("mixed_float16")  # enable Tensor-Cores
+    mixed_precision.set_global_policy("mixed_float16")
 
     dataset_name = parse_dataset_name(training_data)
 
@@ -772,7 +686,6 @@ def main():
     # Create datasets
     train_in, train_out = zip(*train_pairs)
     test_in, test_out = zip(*val_pairs)
-    # force both lists to be plain strings
     train_in = [str(s) for s in train_in]
     train_out = [str(s) for s in train_out]
     dataset = (
@@ -783,7 +696,6 @@ def main():
     )
     test_in = [str(s) for s in test_in]
     test_out = [str(s) for s in test_out]
-
     test_dataset = (
         tf.data.Dataset.from_tensor_slices((test_in, test_out))
         .shuffle(len(test_in))
@@ -812,28 +724,22 @@ def main():
     logging.info("Training output text vectorizer")
     output_vectorizer.adapt(train_out_texts)
 
-    # Create directory if it doesn't exist
-    vectorizer_path = f"{results_path}results{os.sep}attentionGRU_{dataset_name}_seqlen-{sequence_length}_vectorizer{os.sep}"
+    # ── NEW: put vectorizers under run_root/vectorizer/ ──
+    vectorizer_path = os.path.join(run_root, "vectorizer") + os.sep
     os.makedirs(vectorizer_path, exist_ok=True)
     save_vectorizer(input_vectorizer, f"{vectorizer_path}in_vect_model.keras")
     save_vectorizer(output_vectorizer, f"{vectorizer_path}out_vect_model.keras")
     logging.info(f"Saved text vectorizers to {vectorizer_path}")
     max_features = max(len(input_vectorizer.get_vocabulary()), len(output_vectorizer.get_vocabulary()))
 
-    # Setup model and training
-    checkpoint_path = (
-        f"results{os.sep}attentionGRU_{dataset_name}_epochs-{n_epochs}_seqlen-{sequence_length}_"
-        f"maxfeat-{max_features}_batch-{batch_size}_embdim-{embedding_dim}_steps-{units}{os.sep}cp.weights.h5"
-    )
-    checkpoint_dir = os.path.dirname(checkpoint_path)
+    # ── NEW: put checkpoints under run_root/checkpoints/ ──
+    checkpoint_dir = os.path.join(run_root, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
-
-    out_dir = results_path + os.sep.join(checkpoint_path.split(os.sep)[:2]) + os.sep
-    os.makedirs(out_dir, exist_ok=True)
+    checkpoint_path = os.path.join(checkpoint_dir, "cp.weights.h5")
 
     cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
     wandb_cb = wandb.keras.WandbCallback(
-        save_model=False,  # we already use ModelCheckpoint
+        save_model=False,
         log_weights=False,
         log_gradients=False,
         monitor="val_loss",
@@ -842,7 +748,9 @@ def main():
 
     train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
     train_translator.compile(
-        optimizer=tf.keras.optimizers.Adam(), loss=MaskedLoss(), metrics=[keras.metrics.AUC(from_logits=True, name="auroc")]
+        optimizer=tf.keras.optimizers.Adam(),
+        loss=MaskedLoss(),
+        metrics=[keras.metrics.AUC(from_logits=True, name="auroc")],
     )
 
     logging.info("Training neural reasoning model...")
@@ -851,20 +759,23 @@ def main():
     attn_cb = AttentionLogger(translator, sample_sentence)
     overfit_cb = make_overfit_callback(total_epochs=n_epochs)
     history = train_translator.fit(
-        dataset, validation_data=test_dataset, epochs=n_epochs, callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb]
+        dataset,
+        validation_data=test_dataset,
+        epochs=n_epochs,
+        callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb],
     )
     logging.info("Training completed successfully")
 
-    # ── store one-number-per-run so sweeps can plot them ───────────
+    # Save training history
     logging.info("Saving evaluation results...")
     rdf = pd.DataFrame(history.history)
-    rdf.to_csv(f"{out_dir}history.csv")
+    rdf.to_csv(os.path.join(run_root, "history.csv"))
     fig, axes = plt.subplots(2, 1)
     rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
     rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
-    plt.savefig(f"{out_dir}history_plot.pdf")
+    plt.savefig(os.path.join(run_root, "history_plot.pdf"))
 
-    # Perform validation inference (always full set when nDemo = 0, otherwise random sample)
+    # Perform validation inference (write to run_root/predictions.tsv)
     if n_demo >= 0:
         random.shuffle(val_pairs)
         if n_demo > 0:
@@ -879,17 +790,14 @@ def main():
                 result = translator.tf_translate(tf.constant(chunk))["text"].numpy()
                 results.append(result.tolist())
             result = sum(results, [])
-            # Write validation predictions as TSV
             result_df = pd.DataFrame({"Subj_Pred": inp_, "Obj": result, "Obj_true": targ_})
-            result_df.to_csv(f"{out_dir}predictions.tsv", sep="\t", index=False)
+            result_df.to_csv(os.path.join(run_root, "predictions.tsv"), sep="\t", index=False)
             print(result_df)
-            logging.info(f"Validation predictions written to {out_dir}predictions.tsv")
+            logging.info(f"Validation predictions written to {os.path.join(run_root, 'predictions.tsv')}")
         else:
             logging.warning("No inference samples to process.")
 
-    # ────────────────────────────────────────────────────────────────
-    #  OPTIONAL HOLD-OUT / REAL TEST PREDICTIONS
-    # ────────────────────────────────────────────────────────────────
+    # OPTIONAL HOLD-OUT / REAL TEST PREDICTIONS (write to run_root/test_predictions.tsv)
     if holdout_data:
         if not os.path.exists(holdout_data):
             logging.warning(f"Extra test file '{holdout_data}' not found – skipping hold-out predictions.")
@@ -911,9 +819,11 @@ def main():
                     preds = translator.tf_translate(tf.constant(chunk))["text"].numpy()
                     hold_results.extend(preds.tolist())
 
-                hold_df = pd.DataFrame({"Subj_Pred": hold_inp, "Obj": hold_results, "Obj_true": hold_targ})
-                hold_df.to_csv(f"{out_dir}test_predictions.tsv", sep="\t", index=False)
-                logging.info(f"Test predictions written to {out_dir}test_predictions.tsv")
+                hold_df = pd.DataFrame(
+                    {"Subj_Pred": hold_inp, "Obj": hold_results, "Obj_true": hold_targ}
+                )
+                hold_df.to_csv(os.path.join(run_root, "test_predictions.tsv"), sep="\t", index=False)
+                logging.info(f"Test predictions written to {os.path.join(run_root, 'test_predictions.tsv')}")
             else:
                 logging.warning("Hold-out file is empty – no predictions made.")
 
