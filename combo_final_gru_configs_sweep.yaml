@@ -5,10 +5,10 @@ name: gru_preset_sweep
 parameters:
   # common defaults (still overrideable by preset)
   batchSize:   {value: 64}
-  nEpochs:     {value: 2}
+  nEpochs:     {value: 5}
   seqLen:      {value: 30}
-  trainData:   {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv}
-  testData:    {value: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv}
+  trainData:   {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv}
+  testData:    {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv}
   holdoutData: {value: data/ncd/openie5/ncd_oie5_test.tsv}
   resPath:     {value: ./results}
 
