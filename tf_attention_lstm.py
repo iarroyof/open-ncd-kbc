@@ -51,49 +51,32 @@ STRIP_CHARS = string.punctuation.replace("[", "").replace("]", "")
 
 # ── wandb_helper.py ──────────────────────────────────────────────────────────
 
-def make_overfit_callback(total_epochs: int,
-                          a: float = 12.,
-                          b: float = 8.,
-                          c: float = -4.):
-    """
-    Returns a Keras Callback that, every epoch,
-      • computes rel_gap, epoch_ratio, p_overfit
-      • reads AUROC from logs (added via model.compile)
-      • logs everything to Weights & Biases.
-
-    Parameters
-    ----------
-    total_epochs : int
-        The number of training epochs you passed to `model.fit(...)`
-        so epoch_ratio = (epoch + 1) / total_epochs is in [0, 1].
-    a, b, c : float
-        Coefficients of the logistic formula.
-        p_overfit = sigmoid(a*rel_gap + b*epoch_ratio + c).
-    """
+def make_overfit_callback(total_epochs: int, a=6.0, b=4.0, c=-2.0):
     class OverfitLogger(keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
             logs = logs or {}
             train_loss = logs.get("loss")
             val_loss   = logs.get("val_loss")
             if train_loss is None or val_loss is None:
-                return                                  # can’t compute
+                return
 
+            # compute relative gap and epoch ratio
             rel_gap     = (val_loss - train_loss) / max(train_loss, 1e-8)
             epoch_ratio = (epoch + 1) / total_epochs
             z           = a * rel_gap + b * epoch_ratio + c
-            p_overfit   = 1. / (1. + math.exp(-z))
+            p_overfit   = 1.0 / (1.0 + math.exp(-z))
 
-            # fetch AUROC if the metric is present
-            auroc = logs.get("val_auroc")              # name in `compile(...)`
+            auroc = logs.get("val_auroc")
+            # remove hard-coded 'step'; let W&B auto-increment
             wandb.log({
-                "epoch":        epoch + 1,
-                "rel_gap":      rel_gap,
-                "epoch_ratio":  epoch_ratio,
-                "p_overfit":    p_overfit,
-                "val_auroc":    auroc
-            }, step=epoch)                             # 1 log per epoch
-
+                "epoch":       epoch + 1,
+                "rel_gap":     rel_gap,
+                "epoch_ratio": epoch_ratio,
+                "p_overfit":   p_overfit,
+                "val_auroc":   auroc
+            })
     return OverfitLogger()
+
 
 class ShapeChecker:
     """Utility class to check tensor shapes during execution."""
