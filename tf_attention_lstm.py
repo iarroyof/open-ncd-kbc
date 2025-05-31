@@ -745,23 +745,21 @@ def main():
     #   • uses argparse values as the initial config
     #   • allows sweep overrides automatically
     run = wandb.init(
-            project="ncd_reasoning_tf_GRU",               # change to your project
-            config=vars(args),                     # makes each flag a wandb.config key
-        
+            project="ncd_reasoning_tf_LSTM",
+            config=vars(args),
     )
     # keep a short alias
     cfg = run.config
 
-    # ─── load and apply preset mapping ─────────────────────────────
+    # ─── Load & apply preset BEFORE we read any hyper-params ─────────
     if cfg.preset:
         import json
-        with open(cfg.presets_file, "r") as fp:
-            presets = json.load(fp)
+        with open(cfg.presets_file, 'r') as f:
+            presets = json.load(f)
         if cfg.preset not in presets:
             raise ValueError(f"Unknown preset '{cfg.preset}' in {cfg.presets_file}")
-        # overwrite wandb.config with the preset values
         wandb.config.update(presets[cfg.preset], allow_val_change=True)
-
+        logging.info(f"✔ Applied preset {cfg.preset}: {presets[cfg.preset]}")
     # ────────────────────────────────────────────────────────────────
     #  NEW: derive “run root” = results_path/project[/sweep]/run
     # ────────────────────────────────────────────────────────────────
