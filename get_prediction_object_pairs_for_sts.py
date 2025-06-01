@@ -101,19 +101,20 @@ def run_sts_script(input_file_path):
 # --- Main script execution ---
 # Adjust this to 'results' if that's your main directory
 
-# base_directories = find_subdirectories_one_level('results_test')
+# base_directories = find_subdirectories_one_level('results/baseline_att_lstm/vi0mllw3')
+base_directories = find_subdirectories_one_level('results/open-ncd-kbc')
 
 # testing directories to validate with a small set of results
-base_directories  = [
-    # 'results/ncd-gp-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    'results/ncd-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    # 'results/ncd-gp-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    # 'results/ncd-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    # 'results/ncd-gp-conceptnet-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    'results/ncd-conceptnet-transformer_epochs-40_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    # 'results/ncd-gp-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
-    # 'results/ncd-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8'
-]
+# base_directories  = [
+#     'results/ncd-gp-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+#     'results/ncd-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+#     'results/ncd-gp-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+#     'results/ncd-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+#     'results/ncd-gp-conceptnet-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+#     'results/ncd-conceptnet-transformer_epochs-40_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+#     'results/ncd-gp-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
+#     'results/ncd-transformer_epochs-100_stackSize-2_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8'
+# ]
 
 # Prepare for collecting results to print in a table
 results_for_table = []
@@ -122,12 +123,12 @@ results_for_table = []
 for csv_item in base_directories: # Looping through each full path
     # Define paths for input and output files
     # Changed 'val_predictions.csv' to 'predictions.csv' if that's the common name
-    val_csv_file_path = os.path.join(csv_item, 'val_predictions.csv') # Assuming val_predictions.csv
+    val_csv_file_path = os.path.join(csv_item, 'predictions.tsv') # Assuming val_predictions.csv # TODO: CHANGE TO PROPER FILE!!!
     val_object_pairs_tsv_file_path = os.path.join(csv_item, 'val_object_pairs_predictions.tsv')
     val_random_object_pairs_tsv_file_path = os.path.join(csv_item, 'val_object_pairs_predictions_random.tsv')
 
     # Also do the same for the test predictons:
-    test_csv_file_path = os.path.join(csv_item, 'test_predictions.csv') # Assuming val_predictions.csv
+    test_csv_file_path = os.path.join(csv_item, 'test_predictions.tsv') # Assuming val_predictions.csv # TODO: CHANGE TO PROPER FILE!!!
     test_object_pairs_tsv_file_path = os.path.join(csv_item, 'test_object_pairs_predictions.tsv')
     test_random_object_pairs_tsv_file_path = os.path.join(csv_item, 'test_object_pairs_predictions_random.tsv')
 
@@ -148,15 +149,26 @@ for csv_item in base_directories: # Looping through each full path
 
     try:
         # Read the val CSV file once
-        val_inferences_item = pd.read_csv(val_csv_file_path, # TODO: Need to change to tsv after testing
-                                      header=0,
-                                      index_col=0)
+        # val_inferences_item = pd.read_csv(val_csv_file_path,
+        #                               header=0,
+        #                               index_col=0)
         
-        # Read the test CSV file once
-        test_inferences_item = pd.read_csv(test_csv_file_path, # TODO: Need to change to tsv after testing
-                                      header=0,
-                                      index_col=0)
+        # # Read the test CSV file once
+        # test_inferences_item = pd.read_csv(test_csv_file_path,
+        #                               header=0,
+        #                               index_col=0)
         
+        # Read the val TSV file once
+        val_inferences_item = pd.read_csv(val_csv_file_path,
+                                        sep='\t',       # Specify tab as the separator
+                                        header=0,       # Your TSV has a header row
+                                        )
+        # Read the test TSV file
+        test_inferences_item = pd.read_csv(test_csv_file_path,
+                                        sep='\t',       # Specify tab as the separator
+                                        header=0,       # Your TSV has a header row
+                                        )
+            
         print(f"Info: '{val_csv_file_path}' and '{test_csv_file_path}' loaded.")
         
         val_object_pairs = []
@@ -202,7 +214,7 @@ for csv_item in base_directories: # Looping through each full path
 
         # --- Save the first test TSV file (original object pairs) ---
         print(f"Saving object pairs to: {test_object_pairs_tsv_file_path}")
-        pd.DataFrame(val_object_pairs).to_csv(test_object_pairs_tsv_file_path, sep='\t', header=None, index=None)
+        pd.DataFrame(test_object_pairs).to_csv(test_object_pairs_tsv_file_path, sep='\t', header=None, index=None)
 
         # --- Save the second test TSV file (randomized object pairs) ---
         random.shuffle(test_obj_true_list) # Shuffle the true objects list
@@ -214,7 +226,7 @@ for csv_item in base_directories: # Looping through each full path
         sts_output_val_predictions = run_sts_script(val_object_pairs_tsv_file_path)
         sts_output_val_predictions_random = run_sts_script(val_random_object_pairs_tsv_file_path)
 
-        # --- Execute sts.py for the newly generated val TSV files ---
+        # --- Execute sts.py for the newly generated test TSV files ---
         print("\n--- Running STS scripts for test set ---")
         sts_output_test_predictions = run_sts_script(test_object_pairs_tsv_file_path)
         sts_output_test_predictions_random = run_sts_script(test_random_object_pairs_tsv_file_path)
@@ -265,23 +277,24 @@ for csv_item in base_directories: # Looping through each full path
                     dir_name = os.path.basename(csv_item)
                     current_result = {
                         'directory': dir_name,
-                        'mean_val_predictions': mean_val_predictions,
-                        'mean_val_random': mean_val_predictions_random,
-                        'val_pvalue': val_pvalue,
                         'mean_test_predictions': mean_test_predictions,
                         'mean_test_random': mean_test_predictions_random,
-                        'test_pvalue': test_pvalue
+                        'test_pvalue': test_pvalue,
+                        'mean_val_predictions': mean_val_predictions,
+                        'mean_val_random': mean_val_predictions_random,
+                        'val_pvalue': val_pvalue
                     }
 
                     results_for_table.append(current_result)
 
                     print(f"Directory: {dir_name}, "
-                        f"Val Pred Mean: {mean_val_predictions:.3f}, "
-                        f"Val Random Mean: {mean_val_predictions_random:.3f}, "
-                        f"Val P-value: {val_pvalue:.2e}, "
                         f"Test Pred Mean: {mean_test_predictions:.3f}, "
                         f"Test Random Mean: {mean_test_predictions_random:.3f}, "
-                        f"Test P-value: {test_pvalue:.2e}")
+                        f"Test P-value: {test_pvalue:.2e}, "
+                        f"Val Pred Mean: {mean_val_predictions:.3f}, "
+                        f"Val Random Mean: {mean_val_predictions_random:.3f}, "
+                        f"Val P-value: {val_pvalue:.2e}"
+                    )
                     # --- Save ONLY THE CURRENT result to CSV ---
                     # Create a DataFrame with just the current result
                     current_df = pd.DataFrame([current_result])
@@ -313,12 +326,12 @@ print("\\hline")
 for res in results_for_table:
     line = ''.join((
         res['directory'], ' & ',
-        f"{res['mean_val_predictions']:.3f}", ' / ',
-        f"{res['mean_val_random']:.3f}", ' & ',
-        f"{res['val_pvalue']:.2e}", ' & ',
         f"{res['mean_test_predictions']:.3f}", ' / ',
         f"{res['mean_test_random']:.3f}", ' & ',
-        f"{res['test_pvalue']:.2e}", ' \\\\ '
+        f"{res['test_pvalue']:.2e}", ' & '
+        f"{res['mean_val_predictions']:.3f}", ' / ',
+        f"{res['mean_val_random']:.3f}", ' & ',
+        f"{res['val_pvalue']:.2e}", ' \\\\ ',
     ))
     print(line)
 print("\\hline")
