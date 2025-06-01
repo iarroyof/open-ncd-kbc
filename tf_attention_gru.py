@@ -219,6 +219,7 @@ def parse_dataset_name(training_data):
 
 # --- Model Architecture ---
 
+
 class BahdanauAttention(tf.keras.layers.Layer):
     """Bahdanau attention mechanism for sequence-to-sequence models."""
     def __init__(self, units):
@@ -273,8 +274,10 @@ class Encoder(tf.keras.layers.Layer):
         return config
 
 
-class Decoder(tf.keras.layers.Layer):
-    """Decoder with attention for sequence-to-sequence model."""
+class AttentionDecoder(tf.keras.layers.Layer):
+    """
+    Existing decoder that uses Bahdanau attention.
+    """
     def __init__(self, output_vocab_size: int, embedding_dim: int, dec_units: int, num_layers: int = 1, dropout: float = 0.0):
         super().__init__()
         self.dec_units = dec_units
@@ -326,6 +329,50 @@ class Decoder(tf.keras.layers.Layer):
         return config
 
 
+class Seq2SeqDecoder(tf.keras.layers.Layer):
+    """
+    Simplified decoder WITHOUT attention: just a stacked GRU + Dense to vocab.
+    """
+    def __init__(self, output_vocab_size: int, embedding_dim: int, dec_units: int, num_layers: int = 1, dropout: float = 0.0):
+        super().__init__()
+        self.dec_units = dec_units
+        self.num_layers = num_layers
+        self.embedding = layers.Embedding(output_vocab_size, embedding_dim)
+        cells = [
+            layers.GRUCell(dec_units, dropout=dropout, recurrent_dropout=dropout, recurrent_initializer="glorot_uniform")
+            for _ in range(num_layers)
+        ]
+        self.gru = layers.RNN(cells, return_sequences=True, return_state=True)
+        # No attention layers here:
+        self.fc = layers.Dense(output_vocab_size)
+
+    def call(self, inputs, state=None):
+        """
+        inputs = (new_tokens, _ignored_enc_output, _ignored_mask)
+        We simply run the GRU and project to vocab.
+        """
+        new_tokens, _, _ = inputs
+        if state is not None and not isinstance(state, (list, tuple)):
+            state = [state] * self.num_layers
+        vectors = self.embedding(new_tokens)                   # (B, 1, E)
+        outputs_and_states = self.gru(vectors, initial_state=state)
+        rnn_output, *dec_state = outputs_and_states             # (B, 1, U), states
+        logits = self.fc(rnn_output)                            # (B, 1, V)
+
+        # No attention_weights to return:
+        class DecoderOutput:
+            def __init__(self, logits):
+                self.logits = logits
+                self.attention_weights = None
+
+        return DecoderOutput(logits), dec_state
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"dec_units": self.dec_units, "num_layers": self.num_layers})
+        return config
+
+
 class MaskedLoss(tf.keras.losses.Loss):
     """Custom loss function that masks padding tokens."""
     def __init__(self):
@@ -334,23 +381,41 @@ class MaskedLoss(tf.keras.losses.Loss):
 
     def __call__(self, y_true, y_pred):
         y_pred = tf.cast(y_pred, tf.float32)  # up-cast to float32
-        loss = self.loss(y_true, y_pred)  # (B, T) float32
-        mask = tf.cast(y_true != 0, loss.dtype)  # float32 mask
+        loss = self.loss(y_true, y_pred)     # (B, T) float32
+        mask = tf.cast(y_true != 0, loss.dtype)
         return tf.reduce_sum(loss * mask)
 
 
 class TrainTranslator(tf.keras.Model):
-    """Model for training a sequence-to-sequence translator with attention."""
-    def __init__(self, embedding_dim: int, units: int, input_text_processor, output_text_processor, num_layers: int = 1, dropout: float = 0.0, use_tf_function: bool = True):
+    """Model for training a sequence-to-sequence translator with optional attention."""
+    def __init__(
+        self,
+        embedding_dim: int,
+        units: int,
+        input_text_processor,
+        output_text_processor,
+        num_layers: int = 1,
+        dropout: float = 0.0,
+        use_attention: bool = True,
+        use_tf_function: bool = True
+    ):
         super().__init__()
+        # Encoder is always the same
         self.encoder = Encoder(input_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
-        self.decoder = Decoder(output_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
+
+        # Decoder class depends on use_attention flag
+        if use_attention:
+            self.decoder = AttentionDecoder(output_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
+        else:
+            self.decoder = Seq2SeqDecoder(output_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
+
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
         self.use_tf_function = use_tf_function
         self.shape_checker = ShapeChecker()
         self.train_metric = keras.metrics.SparseCategoricalAccuracy()
         self.test_metric = keras.metrics.SparseCategoricalAccuracy()
+        self.use_attention = use_attention
 
     def get_config(self):
         return {
@@ -358,6 +423,7 @@ class TrainTranslator(tf.keras.Model):
             "units": self.encoder.enc_units,
             "num_layers": self.encoder.num_layers,
             "dropout": self.encoder.gru.cell.dropout,
+            "use_attention": self.use_attention,
         }
 
     def _preprocess(self, input_text, target_text):
@@ -370,9 +436,16 @@ class TrainTranslator(tf.keras.Model):
         return input_tokens, input_mask, target_tokens, target_mask
 
     def _loop_step(self, new_tokens, input_mask, enc_output, dec_state):
+        # new_tokens shape = (B, 2): [prev_token, next_token]
         input_token, target_token = new_tokens[:, 0:1], new_tokens[:, 1:2]
-        decoder_input = (input_token, enc_output, input_mask)
-        dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
+        # If use_attention, we pass (input_token, enc_output, input_mask)
+        # If no attention, we pass (input_token, dummy, dummy)
+        if self.use_attention:
+            decoder_input = (input_token, enc_output, input_mask)
+            dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
+        else:
+            decoder_input = (input_token, None, None)
+            dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
         return target_token, dec_result.logits, dec_state
 
     def _train_step(self, inputs):
@@ -386,7 +459,7 @@ class TrainTranslator(tf.keras.Model):
             total_loss = tf.constant(0.0, tf.float32)
 
             for t in tf.range(max_t - 1):
-                new_tokens = target_tokens[:, t : t + 2]
+                new_tokens = target_tokens[:, t : t + 2]  # (B, 2)
                 y_true, y_pred, dec_state = self._loop_step(new_tokens, input_mask, enc_output, dec_state)
 
                 y_pred = tf.cast(y_pred, tf.float32)
@@ -462,12 +535,13 @@ class TrainTranslator(tf.keras.Model):
 
 class Translator(tf.Module):
     """Inference class for translating input sequences using a trained model."""
-    def __init__(self, encoder, decoder, input_text_processor, output_text_processor):
+    def __init__(self, encoder, decoder, input_text_processor, output_text_processor, use_attention: bool = True):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
+        self.use_attention = use_attention
 
         self.output_token_string_from_index = tf.keras.layers.StringLookup(
             vocabulary=output_text_processor.get_vocabulary(), mask_token="", invert=True
@@ -510,11 +584,19 @@ class Translator(tf.Module):
         done = tf.zeros([batch_size, 1], dtype=tf.bool)
 
         for _ in range(max_length):
-            dec_input = (new_tokens, enc_output, input_tokens != 0)
+            # If use_attention, pass (new_tokens, enc_output, input_tokens!=0)
+            # else pass (new_tokens, None, None)
+            if self.use_attention:
+                dec_input = (new_tokens, enc_output, input_tokens != 0)
+            else:
+                dec_input = (new_tokens, None, None)
+
             dec_result, dec_state = self.decoder(dec_input, state=dec_state)
-            attention.append(dec_result.attention_weights)
+            if self.use_attention:
+                attention.append(dec_result.attention_weights)
+
             new_tokens = self.sample(dec_result.logits, temperature)
-            done |= new_tokens == self.end_token
+            done |= (new_tokens == self.end_token)
             new_tokens = tf.where(done, tf.constant(0, dtype=tf.int64), new_tokens)
             result_tokens.append(new_tokens)
             if tf.executing_eagerly() and tf.reduce_all(done):
@@ -522,7 +604,7 @@ class Translator(tf.Module):
 
         result_tokens = tf.concat(result_tokens, axis=-1)
         result_text = self.tokens_to_text(result_tokens)
-        if return_attention:
+        if return_attention and self.use_attention:
             return {"text": result_text, "attention": tf.concat(attention, axis=1)}
         else:
             return {"text": result_text}
@@ -596,7 +678,7 @@ class AttentionLogger(keras.callbacks.Callback):
 # --- Main Execution ---
 
 def main():
-    parser = argparse.ArgumentParser(description="Train a sequence-to-sequence GRU model with attention.")
+    parser = argparse.ArgumentParser(description="Train a sequence-to-sequence GRU model (with optional attention).")
     parser.add_argument("-s", "--seqLen", type=int, default=50, help="Per-sample sequence length")
     parser.add_argument("-u", "--nSteps", type=int, default=1024, help="Number of hidden recurrent steps (units)")
     parser.add_argument("-f", "--nFeatures", type=int, default=15000, help="Maximum vocabulary size")
@@ -614,6 +696,9 @@ def main():
     # ─── “Presets” integration (override `args` before wandb.init) ───
     parser.add_argument("--preset", type=str, default=None, help="Which preset to load from presets_file")
     parser.add_argument("--presets_file", type=str, default="presets.json", help="Path to JSON file mapping preset names → hyperparameter dict")
+
+    # ─── NEW: turn off attention if desired ─────────────────────────
+    parser.add_argument("--noAttention", action="store_true", help="If set, decodes without attention (pure GRU‐seq2seq).")
 
     args = parser.parse_args()
 
@@ -661,6 +746,7 @@ def main():
     testing_data = getattr(cfg, "testData", args.testData)
     holdout_data = getattr(cfg, "holdoutData", args.holdoutData)
     n_demo = args.nDemo
+    use_attention = not args.noAttention
 
     # --- GPU runtime init ---------------------------------------------
     gpus = tf.config.list_physical_devices("GPU")
@@ -746,7 +832,15 @@ def main():
     )
     train_loss, train_accu = BatchLogs("loss"), BatchLogs("accuracy")
 
-    train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
+    train_translator = TrainTranslator(
+        embedding_dim=embedding_dim,
+        units=units,
+        input_text_processor=input_vectorizer,
+        output_text_processor=output_vectorizer,
+        num_layers=num_layers,
+        dropout=dropout_rate,
+        use_attention=use_attention,
+    )
     train_translator.compile(
         optimizer=tf.keras.optimizers.Adam(),
         loss=MaskedLoss(),
@@ -754,15 +848,26 @@ def main():
     )
 
     logging.info("Training neural reasoning model...")
-    translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+    translator = Translator(
+        train_translator.encoder,
+        train_translator.decoder,
+        input_vectorizer,
+        output_vectorizer,
+        use_attention=use_attention
+    )
     sample_sentence = val_pairs[0][0] if val_pairs else train_pairs[0][0]
-    attn_cb = AttentionLogger(translator, sample_sentence)
+    attn_cb = AttentionLogger(translator, sample_sentence) if use_attention else None
     overfit_cb = make_overfit_callback(total_epochs=n_epochs)
+
+    callbacks_list = [train_loss, train_accu, cp_callback, wandb_cb, overfit_cb]
+    if use_attention:
+        callbacks_list.append(attn_cb)
+
     history = train_translator.fit(
         dataset,
         validation_data=test_dataset,
         epochs=n_epochs,
-        callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb],
+        callbacks=callbacks_list,
     )
     logging.info("Training completed successfully")
 
@@ -783,7 +888,13 @@ def main():
         inp_, targ_ = zip(*val_pairs)
         results = []
         logging.info("Performing inferences using the trained model...")
-        translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+        translator = Translator(
+            train_translator.encoder,
+            train_translator.decoder,
+            input_vectorizer,
+            output_vectorizer,
+            use_attention=use_attention
+        )
         num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
         if num_sections:
             for chunk in np.array_split(list(inp_), num_sections):
