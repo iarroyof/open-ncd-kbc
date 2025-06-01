@@ -1,4 +1,5 @@
 # tf_attention_lstm.py
+
 # Standard library imports
 import os
 import time
@@ -48,8 +49,6 @@ STRIP_CHARS = string.punctuation.replace("[", "").replace("]", "")
 
 
 # --- Utility Functions ---
-
-# ── wandb_helper.py ──────────────────────────────────────────────────────────
 
 def make_overfit_callback(total_epochs: int, a=4.0, b=3.0, c=-1.5):
     class OverfitLogger(keras.callbacks.Callback):
@@ -279,7 +278,7 @@ class Encoder(tf.keras.layers.Layer):
         return cfg
 
 
-class Decoder(tf.keras.layers.Layer):
+class AttentionDecoder(tf.keras.layers.Layer):
     """Decoder with Bahdanau attention using stacked *LSTMs*."""
     def __init__(self,
                  output_vocab_size: int,
@@ -355,6 +354,65 @@ class Decoder(tf.keras.layers.Layer):
         return cfg
 
 
+class Seq2SeqDecoderLSTM(tf.keras.layers.Layer):
+    """
+    Simplified LSTM decoder WITHOUT attention: just a stacked LSTM + Dense to vocab.
+    """
+    def __init__(self,
+                 output_vocab_size: int,
+                 embedding_dim:     int,
+                 dec_units:         int,
+                 num_layers:        int = 1,
+                 dropout:           float = 0.0):
+        super().__init__()
+        self.dec_units  = dec_units
+        self.num_layers = num_layers
+        self.embedding  = layers.Embedding(output_vocab_size, embedding_dim)
+
+        cells = [
+            layers.LSTMCell(
+                dec_units,
+                dropout=dropout,
+                recurrent_dropout=dropout,
+                recurrent_initializer="glorot_uniform")
+            for _ in range(num_layers)
+        ]
+        self.lstm = layers.RNN(
+            cells,
+            return_sequences=True,
+            return_state=True
+        )
+        self.fc   = layers.Dense(output_vocab_size)
+
+    def call(self, inputs, state=None):
+        """
+        inputs = (new_tokens, _, _)
+        We simply run the LSTM on new_tokens, ignore enc_output and enc_mask.
+        """
+        new_tokens, _, _ = inputs
+        if state is not None and not isinstance(state, (list, tuple)):
+            state = [state] * self.num_layers * 2  # for LSTM, state = [h1,c1,h2,c2,...]
+        vectors = self.embedding(new_tokens)                   # (B,1,E)
+        outputs_and_states = self.lstm(vectors, initial_state=state)
+        rnn_output, *dec_state = outputs_and_states             # rnn_output shape: (B,1,U)
+        logits = self.fc(rnn_output)                            # (B,1,V)
+
+        class DecoderOutput:
+            def __init__(self, logits):
+                self.logits = logits
+                self.attention_weights = None
+
+        return DecoderOutput(logits), dec_state
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg.update({
+            "dec_units":  self.dec_units,
+            "num_layers": self.num_layers,
+        })
+        return cfg
+
+
 class MaskedLoss(tf.keras.losses.Loss):
     """Custom loss function that masks padding tokens."""
     def __init__(self):
@@ -362,63 +420,95 @@ class MaskedLoss(tf.keras.losses.Loss):
         self.loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction='none')
 
     def __call__(self, y_true, y_pred):
-        # 1. Up‑cast logits to float32—recommended for stability when the
-        #    model runs in mixed‑precision (policy "mixed_float16").
+        # 1. Up-cast logits to float32—recommended for stability when the
+        #    model runs in mixed-precision (policy "mixed_float16").
         y_pred = tf.cast(y_pred, tf.float32)
 
-        # 2. Compute per‑token cross‑entropy.
-        loss = self.loss(y_true, y_pred)                # (B, T) float32
+        # 2. Compute per-token cross-entropy.
+        loss = self.loss(y_true, y_pred)                # (B, T) float32
 
-        # 3. Create mask **in the same dtype** as `loss` to avoid the
+        # 3. Create mask **in the same dtype** as `loss` to avoid the
         #    “type float32 vs float16” multiply error.
         mask = tf.cast(y_true != 0, loss.dtype)         # float32
 
         return tf.reduce_sum(loss * mask)
-        
-# --- Training and Translation Classes ---
+
 
 class TrainTranslator(tf.keras.Model):
-    """Model for training a sequence-to-sequence translator with attention."""
-    def __init__(self, embedding_dim: int, units: int, input_text_processor,
-                 output_text_processor, num_layers: int = 1, dropout: float = 0.0,
+    """Model for training a sequence-to-sequence translator with optional attention."""
+    def __init__(self,
+                 embedding_dim: int,
+                 units:         int,
+                 input_text_processor,
+                 output_text_processor,
+                 num_layers:    int = 1,
+                 dropout:       float = 0.0,
+                 use_attention: bool = True,
                  use_tf_function: bool = True):
         super().__init__()
         self.encoder = Encoder(input_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
-        self.decoder = Decoder(output_text_processor.vocabulary_size(), embedding_dim, units, num_layers, dropout)
-        self.input_text_processor = input_text_processor
-        self.output_text_processor = output_text_processor
-        self.use_tf_function = use_tf_function
-        self.shape_checker = ShapeChecker()
-        self.train_metric = keras.metrics.SparseCategoricalAccuracy()
-        self.test_metric = keras.metrics.SparseCategoricalAccuracy()
 
-        
+        # Choose attention vs. no-attention decoder
+        if use_attention:
+            self.decoder = AttentionDecoder(output_text_processor.vocabulary_size(),
+                                            embedding_dim,
+                                            units,
+                                            num_layers,
+                                            dropout)
+        else:
+            self.decoder = Seq2SeqDecoderLSTM(output_text_processor.vocabulary_size(),
+                                              embedding_dim,
+                                              units,
+                                              num_layers,
+                                              dropout)
+
+        self.input_text_processor  = input_text_processor
+        self.output_text_processor = output_text_processor
+        self.use_tf_function       = use_tf_function
+        self.shape_checker         = ShapeChecker()
+        self.train_metric          = keras.metrics.SparseCategoricalAccuracy()
+        self.test_metric           = keras.metrics.SparseCategoricalAccuracy()
+        self.use_attention         = use_attention
+
+    def get_config(self):
+        return {
+            "embedding_dim": self.encoder.embedding.output_dim,
+            "units":         self.encoder.enc_units,
+            "num_layers":    self.encoder.num_layers,
+            "dropout":       self.encoder.dropout,
+            "use_attention": self.use_attention,
+        }
+
     def _preprocess(self, input_text, target_text):
         self.shape_checker(input_text, ('batch',))
         self.shape_checker(target_text, ('batch',))
-        input_tokens = self.input_text_processor(input_text)
+        input_tokens  = self.input_text_processor(input_text)
         target_tokens = self.output_text_processor(target_text)
-        input_mask = input_tokens != 0
-        target_mask = target_tokens != 0
+        input_mask    = input_tokens != 0
+        target_mask   = target_tokens != 0
         return input_tokens, input_mask, target_tokens, target_mask
 
     def _loop_step(self, new_tokens, input_mask, enc_output, dec_state):
         input_token, target_token = new_tokens[:, 0:1], new_tokens[:, 1:2]
-        decoder_input = (input_token, enc_output, input_mask)
-        dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
+        if self.use_attention:
+            decoder_input = (input_token, enc_output, input_mask)
+            dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
+        else:
+            decoder_input = (input_token, None, None)
+            dec_result, dec_state = self.decoder(decoder_input, state=dec_state)
         return target_token, dec_result.logits, dec_state
 
     # ------------------------------------------------------------------  
     def _train_step(self, inputs):
         """
         One training iteration that
-        • keeps the loss in fp32 (numerical stability under mixed‑precision)
-        • uses loss‑scaling for back‑prop
-        • updates SparseCategoricalAccuracy with squeezed labels / logits
+        • keeps the loss in fp32 (numerical stability under mixed-precision)
+        • uses loss-scaling for back-prop
+        • updates SparseCategoricalAccuracy with squeezed labels / logits
         """
         input_text, target_text = inputs
 
-        # --- tokenise ---------------------------------------------------
+        # --- tokenize ---------------------------------------------------
         (input_tokens, input_mask,
          target_tokens, target_mask) = self._preprocess(input_text, target_text)
         max_t = tf.shape(target_tokens)[1]
@@ -437,18 +527,18 @@ class TrainTranslator(tf.keras.Model):
                 y_pred = tf.cast(y_pred, tf.float32)            # fp32 logits
                 total_loss += self.loss(y_true, y_pred)
 
-                # ---- metric (expects 1‑D ids & 2‑D logits) -------------
+                # ---- metric (expects 1-D ids & 2-D logits) -------------
                 mask = tf.cast(tf.squeeze(y_true, 1) != 0, tf.float32)
                 self.train_metric.update_state(
                     tf.squeeze(y_true, 1),       # (B,)
                     tf.squeeze(y_pred, 1),
-                    sample_weight=mask)       # (B, vocab)
+                    sample_weight=mask)          # (B, vocab)
 
-            # average over non‑pad tokens
+            # average over non-pad tokens
             average_loss = total_loss / tf.reduce_sum(
                 tf.cast(target_mask, tf.float32))
 
-            # scale loss for mixed‑precision
+            # scale loss for mixed-precision
             scaled_loss = self.optimizer.get_scaled_loss(average_loss)
 
         # --- backward ---------------------------------------------------
@@ -525,25 +615,21 @@ class TrainTranslator(tf.keras.Model):
         input_batch, target_batch = data
         return self._tf_test_step(input_batch, target_batch)
 
-    def get_config(self):
-        return {
-            "embedding_dim": self.encoder.embedding.output_dim,
-            "units":         self.encoder.enc_units,
-            "num_layers":    self.encoder.num_layers,
-            "dropout":       self.encoder.dropout,   # ← changed
-        }
-
-
-
 
 class Translator(tf.Module):
     """Inference class for translating input sequences using a trained model."""
-    def __init__(self, encoder, decoder, input_text_processor, output_text_processor):
+    def __init__(self,
+                 encoder,
+                 decoder,
+                 input_text_processor,
+                 output_text_processor,
+                 use_attention: bool = True):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.input_text_processor = input_text_processor
         self.output_text_processor = output_text_processor
+        self.use_attention = use_attention
         
         # Updated StringLookup usage for TF 2.10+
         self.output_token_string_from_index = tf.keras.layers.StringLookup(
@@ -567,10 +653,9 @@ class Translator(tf.Module):
     def sample(self, logits, temperature):
         """
         Apply the vocabulary mask and (optionally) temperature sampling.
-        The logits are up‑cast to float32 for numerical stability.
-        Returns int64 ids shaped (B, 1).
+        The logits are up-cast to float32 for numerical stability.
+        Returns int64 ids shaped (B, 1).
         """
-        # ── make dtypes consistent ────────────────────────────────────
         logits = tf.cast(logits, tf.float32)             # (B,1,V) fp32
         mask   = self.token_mask[tf.newaxis, tf.newaxis, :]  # (1,1,V) bool
         logits = tf.where(mask,
@@ -581,7 +666,7 @@ class Translator(tf.Module):
             return tf.argmax(logits, axis=-1,
                              output_type=tf.int64)       # (B,1)
 
-        # categorical requires 2‑D [batch, classes]
+        # categorical requires 2-D [batch, classes]
         logits = tf.squeeze(logits, axis=1)              # (B,V)
         return tf.random.categorical(logits / temperature,
                                      num_samples=1,
@@ -598,20 +683,28 @@ class Translator(tf.Module):
         done = tf.zeros([batch_size, 1], dtype=tf.bool)
         
         for _ in range(max_length):
-            # tuple = (new_tokens, encoder_out, src_mask)  → exactly what
-            # Decoder.call() is written to unpack
-            dec_input = (new_tokens, enc_output, input_tokens != 0)
+            if self.use_attention:
+                dec_input = (new_tokens, enc_output, input_tokens != 0)
+            else:
+                dec_input = (new_tokens, None, None)
+
             dec_result, dec_state = self.decoder(dec_input, state=dec_state)
-            attention.append(dec_result.attention_weights)
+            if self.use_attention:
+                attention.append(dec_result.attention_weights)
+
             new_tokens = self.sample(dec_result.logits, temperature)
             done |= (new_tokens == self.end_token)
             new_tokens = tf.where(done, tf.constant(0, dtype=tf.int64), new_tokens)
             result_tokens.append(new_tokens)
             if tf.executing_eagerly() and tf.reduce_all(done):
                 break
+
         result_tokens = tf.concat(result_tokens, axis=-1)
         result_text = self.tokens_to_text(result_tokens)
-        return {'text': result_text, 'attention': tf.concat(attention, axis=1)} if return_attention else {'text': result_text}
+        if return_attention and self.use_attention:
+            return {'text': result_text, 'attention': tf.concat(attention, axis=1)}
+        else:
+            return {'text': result_text}
 
     @tf.function(input_signature=[tf.TensorSpec(dtype=tf.string, shape=[None])])
     def tf_translate(self, input_text):
@@ -628,24 +721,18 @@ class BatchLogs(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, n, logs):
         self.logs.append(logs[self.key])
 
-# ──────────────────────────────────────────────────────────────────────────────
-#  Callback: log one attention heat‑map per epoch
-# ──────────────────────────────────────────────────────────────────────────────
+
 class AttentionLogger(keras.callbacks.Callback):
     """
-    Logs a heat‑map of the attention matrix for one fixed validation sample,
+    Logs a heat-map of the attention matrix for one fixed validation sample,
     *without* padded columns / rows and with the **real words** on the axes.
     """
     def __init__(self, translator, sample_sentence: str):
-        """
-        translator : instance of the `Translator` class above  
-        sample_sentence : the source sentence that will be fed every epoch
-        """
         super().__init__()
         self.translator = translator
         self.sample     = tf.constant([sample_sentence])
 
-        # 1⃣  build two inverse look‑ups once – cheap & re‑usable
+        # 1⃣  build two inverse look-ups once – cheap & re-usable
         self.src_lookup = tf.keras.layers.StringLookup(
             vocabulary=translator.input_text_processor.get_vocabulary(),
             mask_token='', invert=True)
@@ -654,7 +741,6 @@ class AttentionLogger(keras.callbacks.Callback):
             vocabulary=translator.output_text_processor.get_vocabulary(),
             mask_token='', invert=True)
 
-    # ------------------------------------------------------------------  
     def on_epoch_end(self, epoch, logs=None):
         """
         • runs the model  
@@ -700,28 +786,33 @@ class AttentionLogger(keras.callbacks.Callback):
         plt.close(fig)
 
 
-
 # --- Main Execution ---
 
 def main():
-    parser = argparse.ArgumentParser(description="Train a sequence-to-sequence model with attention.")
+    parser = argparse.ArgumentParser(description="Train a sequence-to-sequence model with optional attention.")
     parser.add_argument("-s", "--seqLen", type=int, default=50, help="Per-sample sequence length")
     parser.add_argument("-u", "--nSteps", type=int, default=1024, help="Number of hidden recurrent steps (units)")
     parser.add_argument("-f", "--nFeatures", type=int, default=15000, help="Maximum vocabulary size")
     parser.add_argument("-b", "--batchSize", type=int, default=64, help="Batch size")
     parser.add_argument("-e", "--nEpochs", type=int, default=40, help="Number of training epochs")
     parser.add_argument("-d", "--embeddingDim", type=int, default=1024, help="Word embedding dimensionality")
-    parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked GRU layers")
-    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for GRU layers")
-    parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of test samples to predict. default is 0, so predict on the full validation data.")
+    parser.add_argument("-l", "--numLayers", type=int, default=1, help="Number of stacked LSTM layers")
+    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability for LSTM layers")
+    parser.add_argument("-D", "--nDemo", type=int, default=0, help="Number of test samples to predict; 0→full validation set.")
     parser.add_argument("-T", "--trainData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_train.tsv", help="Training data TSV")
-    parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Test data TSV")
-    parser.add_argument("-H", "--holdoutData", type=str, default="", help="(Optional) extra test set for final predictions")    
+    parser.add_argument("-t", "--testData", type=str, default="data/ncd_conceptnet/ncd_conceptnet_valid.tsv", help="Validation data TSV")
+    parser.add_argument("-H", "--holdoutData", type=str, default="", help="(Optional) extra test set for final predictions")
     parser.add_argument("-rp", "--resPath", type=str, default=os.getcwd(), help="Path for results and models")
+
     parser.add_argument("--preset", type=str, default=None,
                         help="Which preset to load from presets_file")
     parser.add_argument("--presets_file", type=str, default="presets.json",
-                        help="Path to JSON file mapping preset names → hyperparameter dict")    
+                        help="Path to JSON file mapping preset names → hyperparameter dict")
+
+    # ─── NEW: option to turn attention off ─────────────────────────────────
+    parser.add_argument("--noAttention", action="store_true",
+                        help="If set, use a plain LSTM seq2seq decoder without attention.")
+
     args = parser.parse_args()
 
     # ─── Apply presets to args BEFORE wandb.init ────────────────────
@@ -739,8 +830,8 @@ def main():
     #   • uses argparse values as the initial config
     #   • allows sweep overrides automatically
     run = wandb.init(
-            project="ncd_reasoning_tf_LSTM",
-            config=vars(args),
+        project="ncd_reasoning_tf_LSTM",
+        config=vars(args),
     )
     # keep a short alias
     cfg = run.config
@@ -755,8 +846,8 @@ def main():
         wandb.config.update(presets[cfg.preset], allow_val_change=True)
         logging.info(f"✔ Applied preset {cfg.preset}: {presets[cfg.preset]}")
     # ────────────────────────────────────────────────────────────────
+
     #  NEW: derive “run root” = results_path/project[/sweep]/run
-    # ────────────────────────────────────────────────────────────────
     project_name = run.project or "wandb_project"
     sweep_id     = run.sweep_id            # None if not in a sweep
     run_id       = run.id                  # always present
@@ -769,9 +860,10 @@ def main():
     run_root = os.path.join(
         os.path.normpath(getattr(cfg, "resPath", args.resPath)),
         *run_parts) + os.sep           # final “/” for convenience
-    os.makedirs(run_root, exist_ok=True)    
+    os.makedirs(run_root, exist_ok=True)
+
+    # ──────────────────────────────────────────────────────────────────
     # replace *all* reads of argparse fields with cfg.*
-# ── hyper‑parameters (prefer sweep‑supplied values, else CLI defaults) ─────────
     sequence_length = getattr(cfg, "seqLen",       args.seqLen)
     max_features    = getattr(cfg, "nFeatures",    args.nFeatures)
     batch_size      = getattr(cfg, "batchSize",    args.batchSize)
@@ -780,17 +872,17 @@ def main():
     units           = getattr(cfg, "nSteps",       args.nSteps)
     num_layers      = getattr(cfg, "numLayers",    args.numLayers)
     dropout_rate    = getattr(cfg, "dropout",      args.dropout)
-    training_data = getattr(cfg, "trainData", args.trainData)
-    testing_data  = getattr(cfg, "testData",  args.testData)
-    holdout_data  = getattr(cfg, "holdoutData", args.holdoutData)
-    results_path  = os.path.normpath(
-                   getattr(cfg, "resPath",  args.resPath)) + os.sep
-    n_demo = args.nDemo
+    training_data   = getattr(cfg, "trainData",    args.trainData)
+    testing_data    = getattr(cfg, "testData",     args.testData)
+    holdout_data    = getattr(cfg, "holdoutData",  args.holdoutData)
+    n_demo          = args.nDemo
+    use_attention   = not args.noAttention
+
     # --- GPU runtime init ---------------------------------------------
     gpus = tf.config.list_physical_devices('GPU')
-    for dev in gpus:                                 # make TF allocate as‑needed
+    for dev in gpus:                                 # make TF allocate as-needed
         tf.config.experimental.set_memory_growth(dev, True)
-    mixed_precision.set_global_policy("mixed_float16")   # enable Tensor‑Cores
+    mixed_precision.set_global_policy("mixed_float16")   # enable Tensor-Cores
 
     dataset_name = parse_dataset_name(training_data)
 
@@ -800,20 +892,24 @@ def main():
         train_text = f.readlines()
     with open(testing_data) as f:
         val_text = f.readlines()
-    train_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), train_text))
-    val_pairs = list(map(functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True), val_text))
+    train_pairs = list(map(
+        functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True),
+        train_text))
+    val_pairs = list(map(
+        functools.partial(prepare_data, include_labels=CS_LABELS, all_start_end=True),
+        val_text))
 
     # Create datasets
     train_in, train_out = zip(*train_pairs)
-    test_in, test_out = zip(*val_pairs)
+    test_in, test_out   = zip(*val_pairs)
     # force both lists to be plain strings
     train_in  = [str(s) for s in train_in]
     train_out = [str(s) for s in train_out]
     dataset = (
         tf.data.Dataset.from_tensor_slices((train_in, train_out))
           .shuffle(len(train_in))
-          .batch(batch_size, drop_remainder=True)        # better for GPU :contentReference[oaicite:2]{index=2}
-          .prefetch(tf.data.AUTOTUNE)                    # overlap I/O‑compute :contentReference[oaicite:3]{index=3}
+          .batch(batch_size, drop_remainder=True)        # better for GPU
+          .prefetch(tf.data.AUTOTUNE)                    # overlap I/O-compute
     )
     test_in  = [str(s) for s in test_in]
     test_out = [str(s) for s in test_out]
@@ -824,16 +920,23 @@ def main():
           .batch(batch_size, drop_remainder=True)
           .prefetch(tf.data.AUTOTUNE)
     )
+
     # Initialize and train vectorizers
     # Updated TextVectorization usage for TF 2.10+
     input_vectorizer = TextVectorization(
-        output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length,
-        standardize=custom_standardization)
+        output_mode="int",
+        max_tokens=max_features,
+        output_sequence_length=sequence_length,
+        standardize=custom_standardization
+    )
     output_vectorizer = TextVectorization(
-        output_mode="int", max_tokens=max_features, output_sequence_length=sequence_length + 1,
-        standardize=custom_standardization)
+        output_mode="int",
+        max_tokens=max_features,
+        output_sequence_length=sequence_length + 1,
+        standardize=custom_standardization
+    )
     
-    train_in_texts = [pair[0] for pair in train_pairs]
+    train_in_texts  = [pair[0] for pair in train_pairs]
     train_out_texts = [pair[1][0] if CS_LABELS else pair[1] for pair in train_pairs]
     logging.info("Training input text vectorizer")
     input_vectorizer.adapt(train_in_texts)
@@ -857,17 +960,30 @@ def main():
     # Create output directory if it doesn't exist
     os.makedirs(out_dir, exist_ok=True)
     
-    cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
+    cp_callback = keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_path,
+        save_weights_only=True,
+        verbose=1
+    )
     # default W&B callback logs loss/accuracy per step+epoch,
-    # system metrics, configurable plots, … :contentReference[oaicite:3]{index=3}
+    # system metrics, configurable plots, … 
     wandb_cb    = wandb.keras.WandbCallback(
         save_model       = False,          # we already use ModelCheckpoint
         log_weights      = False,
         log_gradients    = False,
-        monitor          = "val_loss")    
+        monitor          = "val_loss"
+    )    
     train_loss, train_accu = BatchLogs('loss'), BatchLogs('accuracy')
 
-    train_translator = TrainTranslator(embedding_dim, units, input_vectorizer, output_vectorizer, num_layers, dropout_rate)
+    train_translator = TrainTranslator(
+        embedding_dim=embedding_dim,
+        units=units,
+        input_text_processor=input_vectorizer,
+        output_text_processor=output_vectorizer,
+        num_layers=num_layers,
+        dropout=dropout_rate,
+        use_attention=use_attention
+    )
     # Using Adam with default learning rate for TF 2.10+ compatibility
     train_translator.compile(
         optimizer=tf.keras.optimizers.Adam(),
@@ -876,23 +992,39 @@ def main():
     )
     
     logging.info("Training neural reasoning model...")
-    translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+    translator = Translator(
+        train_translator.encoder,
+        train_translator.decoder,
+        input_vectorizer,
+        output_vectorizer,
+        use_attention=use_attention
+    )
     # fixed example = first validation sentence
     sample_sentence = val_pairs[0][0] if val_pairs else train_pairs[0][0]
-    attn_cb = AttentionLogger(translator, sample_sentence)
+    attn_cb = AttentionLogger(translator, sample_sentence) if use_attention else None
     overfit_cb = make_overfit_callback(total_epochs=n_epochs)
-    history = train_translator.fit(dataset, validation_data=test_dataset, epochs=n_epochs,
-                                   callbacks=[train_loss, train_accu, cp_callback, wandb_cb, attn_cb, overfit_cb])
+
+    callbacks_list = [train_loss, train_accu, cp_callback, wandb_cb, overfit_cb]
+    if use_attention:
+        callbacks_list.append(attn_cb)
+
+    history = train_translator.fit(
+        dataset,
+        validation_data=test_dataset,
+        epochs=n_epochs,
+        callbacks=callbacks_list
+    )
     logging.info("Training completed successfully")
-    # ── store one‑number‑per‑run so sweeps can plot them ───────────
+
+    # ── store one-number-per-run so sweeps can plot them ───────────
     # Save training history
     logging.info("Saving evaluation results...")
     rdf = pd.DataFrame(history.history)
-    rdf.to_csv(f"{out_dir}history.csv")
+    rdf.to_csv(os.path.join(out_dir, "history.csv"))
     fig, axes = plt.subplots(2, 1)
     rdf[sort_cols(rdf.columns)].iloc[:, :2].plot(ax=axes[0])
     rdf[sort_cols(rdf.columns)].iloc[:, 2:].plot(ax=axes[1])
-    plt.savefig(f"{out_dir}history_plot.pdf")
+    plt.savefig(os.path.join(out_dir, "history_plot.pdf"))
 
     # Perform inferences n_demo = 0 for doing so for the full validation data.
     if n_demo >= 0:
@@ -902,7 +1034,13 @@ def main():
         inp_, targ_ = zip(*val_pairs)
         results = []
         logging.info("Performing inferences using the trained model...")
-        translator = Translator(train_translator.encoder, train_translator.decoder, input_vectorizer, output_vectorizer)
+        translator = Translator(
+            train_translator.encoder,
+            train_translator.decoder,
+            input_vectorizer,
+            output_vectorizer,
+            use_attention=use_attention
+        )
         num_sections = math.ceil(len(inp_) / batch_size) if inp_ else 0
         if num_sections:
             for chunk in np.array_split(list(inp_), num_sections):
@@ -910,11 +1048,9 @@ def main():
                 results.append(result.tolist())
             result = sum(results, [])
             result_df = pd.DataFrame({'Subj_Pred': inp_, 'Obj': result, 'Obj_true': targ_})
-            result_df.to_csv(f"{out_dir}predictions.tsv",
-                            sep="\t", index=False)
+            result_df.to_csv(f"{out_dir}predictions.tsv", sep="\t", index=False)
             print(result_df)
-            logging.info(f"Validation predictions written to "
-                         f"{out_dir}predictions.tsv")
+            logging.info(f"Validation predictions written to {out_dir}predictions.tsv")
         else:
             logging.warning("No inference samples to process.")
 
@@ -923,8 +1059,7 @@ def main():
     # ────────────────────────────────────────────────────────────────
     if holdout_data:
         if not os.path.exists(holdout_data):
-            logging.warning(f"Extra test file '{holdout_data}' not found – "
-                            "skipping hold-out predictions.")
+            logging.warning(f"Extra test file '{holdout_data}' not found – skipping hold-out predictions.")
         else:
             logging.info(f"Performing hold-out inferences on '{holdout_data}'")
             with open(holdout_data) as f:
@@ -951,14 +1086,13 @@ def main():
                      'Obj':        hold_results,
                      'Obj_true':   hold_targ})
 
-                hold_df.to_csv(f"{out_dir}test_predictions.tsv",
-                               sep="\t", index=False)
-                logging.info(f"Test predictions written to "
-                             f"{out_dir}test_predictions.tsv")
+                hold_df.to_csv(f"{out_dir}test_predictions.tsv", sep="\t", index=False)
+                logging.info(f"Test predictions written to {out_dir}test_predictions.tsv")
             else:
                 logging.warning("Hold-out file is empty – no predictions made.")    
 
     wandb.finish()
+
 
 if __name__ == "__main__":
     main()
