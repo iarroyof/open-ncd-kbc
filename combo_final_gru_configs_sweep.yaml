@@ -7,6 +7,7 @@ parameters:
   batchSize:   {value: 64}
   nEpochs:     {value: 5}
   seqLen:      {value: 30}
+  noAttention: {value: true}
   trainData:   {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv}
   testData:    {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv}
   holdoutData: {value: data/ncd/openie5/ncd_oie5_test.tsv}
@@ -19,8 +20,8 @@ parameters:
   preset:
     values:
       - best2_do-0765_E512_S512_L1   # Best of all
-      - best_do-0613_E1024_S512_L1   # Best mid drop
-      - best_do-0271_E256_S1024_L1   # Best low drop
-      - best_do-0834_E256_S2048_L1   # Best GRU-W
-      - best_do-0084_E256_S2048_L1   # Best GRU-W low drop
-      - best_do-0577_E256_S2048_L1   # Best GRU-W mid drop
+      - best_do-0613_E1024_S512_L1   # Best mid drop (now best MSPT)
+      #- best_do-0271_E256_S1024_L1   # Best low drop (now best Loss)
+      #- best_do-0834_E256_S2048_L1   # Best GRU-W
+      #- best_do-0084_E256_S2048_L1   # Best GRU-W low drop
+      #- best_do-0577_E256_S2048_L1   # Best GRU-W mid drop
