@@ -29,7 +29,7 @@ from tensorflow.keras import mixed_precision
 # ── experiment tracking ───────────────────────────────────────────────────
 import wandb
 
-# In TF 2.10+, preprocessing is no longer in experimental
+# In TF 2.10+ (TF 2.17 at this moment), preprocessing is no longer in experimental
 from tensorflow.keras.layers import TextVectorization
 
 # Visualization imports
