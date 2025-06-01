@@ -7,20 +7,21 @@ parameters:
   batchSize:   {value: 64}
   nEpochs:     {value: 5}
   seqLen:      {value: 30}
+  noAttention: {value: true}
   trainData:   {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_train.tsv}
   testData:    {value: data/ncd_gp_conceptnet/ncd_gp_conceptnet_valid.tsv}
   holdoutData: {value: data/ncd/openie5/ncd_oie5_test.tsv}
   resPath:     {value: ./results}
 
   # point to your JSON file of presets:
-  presets_file: {value: presets.json}
+  presets_file: {value: presets_lstm.json}
 
   # one run per preset name:
   preset:
     values:
-      - best2_do-09_E256_S512_L1
-      - best_do-001_E256_S1024_L1
-      - best_do-05_E256_S2048_L1
-      - best_do-001_E512_S2048_L2
-      - best_do-05_E512_S2048_L2
-      - best_do-09_E1024_S2048_L2
+      - best2_do-09_E256_S512_L1 # Best of all
+      #- best_do-001_E256_S1024_L1
+      - best_do-05_E256_S2048_L1 # Best mid drop (Now best MSPT)
+      #- best_do-001_E512_S2048_L2
+      #- best_do-05_E512_S2048_L2
+      #- best_do-09_E1024_S2048_L2
