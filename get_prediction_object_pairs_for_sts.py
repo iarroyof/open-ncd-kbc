@@ -101,8 +101,8 @@ def run_sts_script(input_file_path):
 # --- Main script execution ---
 # Adjust this to 'results' if that's your main directory
 
-# base_directories = find_subdirectories_one_level('results/baseline_att_lstm/vi0mllw3')
-base_directories = find_subdirectories_one_level('results/open-ncd-kbc')
+base_directories = find_subdirectories_one_level('results/baseline_att_lstm/vi0mllw3')
+# base_directories = find_subdirectories_one_level('results/open-ncd-kbc')
 
 # testing directories to validate with a small set of results
 # base_directories  = [
@@ -273,15 +273,31 @@ for csv_item in base_directories: # Looping through each full path
                     mean_test_predictions = np.mean(scores_test_predictions_cleaned)
                     mean_test_predictions_random = np.mean(scores_test_predictions_random_cleaned)
 
+                    # Calculate percentage differences
+                    # Test predictions % difference
+                    # Handle potential division by zero for random means, though unlikely with these values
+                    if mean_test_predictions_random != 0:
+                        test_percent_difference = ((mean_test_predictions - mean_test_predictions_random) / mean_test_predictions_random) * 100
+                    else:
+                        test_percent_difference = float('inf') # Or handle as appropriate, e.g., 0 or NaN
+
+                    # Validation predictions % difference
+                    if mean_val_predictions_random != 0:
+                        val_percent_difference = ((mean_val_predictions - mean_val_predictions_random) / mean_val_predictions_random) * 100
+                    else:
+                        val_percent_difference = float('inf') # Or handle as appropriate
+
                     # Extract the directory name for the table output
                     dir_name = os.path.basename(csv_item)
                     current_result = {
                         'directory': dir_name,
                         'mean_test_predictions': mean_test_predictions,
                         'mean_test_random': mean_test_predictions_random,
+                        'test_percent_difference': test_percent_difference, # Added
                         'test_pvalue': test_pvalue,
                         'mean_val_predictions': mean_val_predictions,
                         'mean_val_random': mean_val_predictions_random,
+                        'val_percent_difference': val_percent_difference,   # Added
                         'val_pvalue': val_pvalue
                     }
 
@@ -290,9 +306,11 @@ for csv_item in base_directories: # Looping through each full path
                     print(f"Directory: {dir_name}, "
                         f"Test Pred Mean: {mean_test_predictions:.3f}, "
                         f"Test Random Mean: {mean_test_predictions_random:.3f}, "
+                        f"Test % Diff: {test_percent_difference:.2f}%, " # Added test % difference
                         f"Test P-value: {test_pvalue:.2e}, "
                         f"Val Pred Mean: {mean_val_predictions:.3f}, "
                         f"Val Random Mean: {mean_val_predictions_random:.3f}, "
+                        f"Val % Diff: {val_percent_difference:.2f}%, " # Added validation % difference
                         f"Val P-value: {val_pvalue:.2e}"
                     )
                     # --- Save ONLY THE CURRENT result to CSV ---
@@ -321,17 +339,20 @@ print("\n" + "="*80)
 print("                       STS Similarity and P-value Results")
 print("="*80)
 print("\\hline")
-print("Directory & Mean Predictions / Random Mean & P-value \\\\")
+# Updated header to exactly match your request:
+print("Directory & Test $\\mu_{sts}$ (pred/rdn) & Gap \\% & Test p & Val. $\\mu_{sts}$ (pred/rdn) & Gap \\% & Val. p \\\\")
 print("\\hline")
 for res in results_for_table:
     line = ''.join((
         res['directory'], ' & ',
         f"{res['mean_test_predictions']:.3f}", ' / ',
-        f"{res['mean_test_random']:.3f}", ' & ',
-        f"{res['test_pvalue']:.2e}", ' & '
+        f"{res['mean_test_random']:.3f}", ' & ', # Combines pred/rdn for test
+        f"{res['test_percent_difference']:.2f}\\%", ' & ', # Test % Diff
+        f"{res['test_pvalue']:.2e}", ' & ', # Test p-value
         f"{res['mean_val_predictions']:.3f}", ' / ',
-        f"{res['mean_val_random']:.3f}", ' & ',
-        f"{res['val_pvalue']:.2e}", ' \\\\ ',
+        f"{res['mean_val_random']:.3f}", ' & ', # Combines pred/rdn for validation
+        f"{res['val_percent_difference']:.2f}\\%", ' & ', # Val % Diff
+        f"{res['val_pvalue']:.2e}", ' \\\\ ' # Val p-value
     ))
     print(line)
 print("\\hline")
