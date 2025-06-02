@@ -698,7 +698,14 @@ def main():
     parser.add_argument("--presets_file", type=str, default="presets.json", help="Path to JSON file mapping preset names → hyperparameter dict")
 
     # ─── NEW: turn off attention if desired ─────────────────────────
-    parser.add_argument("--noAttention", action="store_true", help="If set, decodes without attention (pure GRU‐seq2seq).")
+    parser.add_argument(
+        "--noAttention",
+        type=lambda x: str(x).lower() in ("true", "1", "yes", "True"),
+        default=False,
+        nargs="?",
+        const=True,
+        help="If true (or passed without value), disable attention and run plain seq2seq GRU."
+    )
 
     args = parser.parse_args()
 
