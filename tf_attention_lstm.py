@@ -810,8 +810,14 @@ def main():
                         help="Path to JSON file mapping preset names → hyperparameter dict")
 
     # ─── NEW: option to turn attention off ─────────────────────────────────
-    parser.add_argument("--noAttention", action="store_true",
-                        help="If set, use a plain LSTM seq2seq decoder without attention.")
+    parser.add_argument(
+        "--noAttention",
+        type=lambda x: str(x).lower() in ("true", "1", "yes", "True"),
+        default=False,
+        nargs="?",
+        const=True,
+        help="If true (or passed without value), disable attention and run plain seq2seq LSTM."
+    )
 
     args = parser.parse_args()
 
