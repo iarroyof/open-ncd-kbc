@@ -101,9 +101,22 @@ def run_sts_script(input_file_path):
 # --- Main script execution ---
 # Adjust this to 'results' if that's your main directory
 
-base_directories = find_subdirectories_one_level('results/baseline_att_lstm/vi0mllw3')
-# base_directories = find_subdirectories_one_level('results/open-ncd-kbc')
+#docker exec interesting_kapitsa sh -c "cd /workspace/open-ncd-kbc/results/open-ncd-kbc/ushzkb2o/ && find . -name '*.tsv' -print0 | tar -czf /tmp/ushzkb2o_tsv_files.tar.gz --null -T -"
+#docker cp interesting_kapitsa:/tmp/ushzkb2o_tsv_files.tar.gz ./
 
+#docker exec interesting_kapitsa sh -c "cd /workspace/open-ncd-kbc/results/baseline_att_lstm/vi0mllw3/ && find . -name '*.tsv' -print0 | tar -czf /tmp/vi0mllw3_tsv_files.tar.gz --null -T -"
+
+#docker exec nostalgic_robinson sh -c "cd /workspace/open-ncd-kbc/results/open-ncd-kbc/r2rtc3jo/ && find . -name '*.tsv' -print0 | tar -czf /tmp/r2rtc3jo_tsv_files.tar.gz --null -T -"
+
+#docker exec nostalgic_robinson sh -c "cd /workspace/open-ncd-kbc/results/baseline_att_lstm/brn82uha/ && find . -name '*.tsv' -print0 | tar -czf /tmp/brn82uha_tsv_files.tar.gz --null -T -"
+#docker cp nostalgic_robinson:/tmp/r2rtc3jo_tsv_files.tar.gz ./
+#docker cp nostalgic_robinson:/tmp/brn82uha_tsv_files.tar.gz ./
+
+# base_directories = find_subdirectories_one_level('results/baseline_att_lstm/vi0mllw3') #
+# base_directories = find_subdirectories_one_level('results/open-ncd-kbc')
+# base_directories = find_subdirectories_one_level('results/baseline_att_lstm/brn82uha') # blue demon
+base_directories = find_subdirectories_one_level('results/open-ncd-kbc/r2rtc3jo') # blue demon
+results_for_table_file_name = os.path.join(base_directories, 'mean_sts_results_blue_demon.txt')
 # testing directories to validate with a small set of results
 # base_directories  = [
 #     'results/ncd-gp-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
@@ -357,3 +370,43 @@ for res in results_for_table:
     print(line)
 print("\\hline")
 print("="*80)
+
+def save_sts_results_to_txt(results_for_table, filename="sts_results.txt"):
+    """
+    Saves STS similarity and p-value results in LaTeX formatting to a text file.
+
+    Args:
+        results_for_table (list of dict): A list of dictionaries, where each dictionary
+                                          contains the results for a specific directory.
+                                          Expected keys: 'directory',
+                                          'mean_test_predictions', 'mean_test_random',
+                                          'test_percent_difference', 'test_pvalue',
+                                          'mean_val_predictions', 'mean_val_random',
+                                          'val_percent_difference', 'val_pvalue'.
+        filename (str): The name of the file to save the results to.
+    """
+    with open(filename, 'w') as f:
+        f.write("="*80 + "\n")
+        f.write("                       STS Similarity and P-value Results\n")
+        f.write("="*80 + "\n")
+        f.write("\\hline\n")
+        f.write("Directory & Test $\\mu_{sts}$ (pred/rdn) & Gap \\% & Test p & Val. $\\mu_{sts}$ (pred/rdn) & Gap \\% & Val. p \\\\\n")
+        f.write("\\hline\n")
+
+        for res in results_for_table:
+            line = ''.join((
+                res['directory'], ' & ',
+                f"{res['mean_test_predictions']:.3f}", ' / ',
+                f"{res['mean_test_random']:.3f}", ' & ',
+                f"{res['test_percent_difference']:.2f}\\%", ' & ',
+                f"{res['test_pvalue']:.2e}", ' & ',
+                f"{res['mean_val_predictions']:.3f}", ' / ',
+                f"{res['mean_val_random']:.3f}", ' & ',
+                f"{res['val_percent_difference']:.2f}\\%", ' & ',
+                f"{res['val_pvalue']:.2e}", ' \\\\ \n'  # Added \n for newline in file
+            ))
+            f.write(line)
+        f.write("\\hline\n")
+        f.write("="*80 + "\n")
+
+save_sts_results_to_txt(results_for_table, results_for_table_file_name)
