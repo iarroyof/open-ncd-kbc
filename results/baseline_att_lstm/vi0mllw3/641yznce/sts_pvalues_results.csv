@@ -1,0 +1,2 @@
+directory,mean_test_predictions,mean_test_random,test_percent_difference,test_pvalue,mean_val_predictions,mean_val_random,val_percent_difference,val_pvalue
+641yznce,0.5758556338533262,0.5325165407341091,4.333909311921702,5.2415237899846886e-45,0.440130504698364,0.34438409078316523,9.574641391519878,0.0
