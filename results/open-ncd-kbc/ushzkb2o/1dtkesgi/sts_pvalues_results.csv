@@ -1,0 +1,2 @@
+directory,mean_test_predictions,mean_test_random,test_percent_difference,test_pvalue,mean_val_predictions,mean_val_random,val_percent_difference,val_pvalue
+1dtkesgi,0.5529784636070275,0.5108039427036706,4.217452090335694,1.7076785720898628e-40,0.430507746901587,0.33627509596211547,9.423265093947153,0.0

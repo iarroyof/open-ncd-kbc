@@ -1,0 +1,2 @@
+directory,mean_test_predictions,mean_test_random,test_percent_difference,test_pvalue,mean_val_predictions,mean_val_random,val_percent_difference,val_pvalue
+4gapm60g,0.5608960656031546,0.5393880014326647,2.1508064170489893,1.0187725078943829e-12,0.41493812804617447,0.3407119273122236,7.422620073395087,0.0
