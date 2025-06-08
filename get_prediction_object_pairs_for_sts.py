@@ -112,11 +112,16 @@ def run_sts_script(input_file_path):
 #docker cp nostalgic_robinson:/tmp/r2rtc3jo_tsv_files.tar.gz ./
 #docker cp nostalgic_robinson:/tmp/brn82uha_tsv_files.tar.gz ./
 
-# base_directories = find_subdirectories_one_level('results/baseline_att_lstm/vi0mllw3') #
-# base_directories = find_subdirectories_one_level('results/open-ncd-kbc')
-# base_directories = find_subdirectories_one_level('results/baseline_att_lstm/brn82uha') # blue demon
-base_directories = find_subdirectories_one_level('results/open-ncd-kbc/r2rtc3jo') # blue demon
-results_for_table_file_name = os.path.join(base_directories, 'mean_sts_results_blue_demon.txt')
+# path_to_predictions = 'results/baseline_att_lstm/vi0mllw3' # santo
+# path_to_predictions = 'results/open-ncd-kbc/ushzkb2o' # santo
+path_to_predictions = 'results/baseline_att_lstm/brn82uha' # blue demon
+# path_to_predictions = 'results/open-ncd-kbc/r2rtc3jo' # blue demon
+
+base_directories = find_subdirectories_one_level(path_to_predictions)
+
+directory_name = os.path.basename(path_to_predictions)
+file_name = f"mean_sts_results_{directory_name}.txt"
+results_for_table_file_name = os.path.join(path_to_predictions, file_name)
 # testing directories to validate with a small set of results
 # base_directories  = [
 #     'results/ncd-gp-conceptnet-transformer_epochs-40_stackSize-1_seqlen-30_maxfeat-15000_batch-64_keydim-64_modeldim-512_latent-2048_heads-8',
@@ -287,18 +292,8 @@ for csv_item in base_directories: # Looping through each full path
                     mean_test_predictions_random = np.mean(scores_test_predictions_random_cleaned)
 
                     # Calculate percentage differences
-                    # Test predictions % difference
-                    # Handle potential division by zero for random means, though unlikely with these values
-                    if mean_test_predictions_random != 0:
-                        test_percent_difference = ((mean_test_predictions - mean_test_predictions_random) / mean_test_predictions_random) * 100
-                    else:
-                        test_percent_difference = float('inf') # Or handle as appropriate, e.g., 0 or NaN
-
-                    # Validation predictions % difference
-                    if mean_val_predictions_random != 0:
-                        val_percent_difference = ((mean_val_predictions - mean_val_predictions_random) / mean_val_predictions_random) * 100
-                    else:
-                        val_percent_difference = float('inf') # Or handle as appropriate
+                    test_percent_difference = abs((mean_test_predictions - mean_test_predictions_random)) * 100
+                    val_percent_difference = abs((mean_val_predictions - mean_val_predictions_random)) * 100
 
                     # Extract the directory name for the table output
                     dir_name = os.path.basename(csv_item)
