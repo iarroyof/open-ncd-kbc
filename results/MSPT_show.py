@@ -104,7 +104,6 @@ def build_plot(s1: np.ndarray, s2: np.ndarray,
         fig.add_scatter(x=x_vals, y=kde(x_vals), mode="lines",
                         line=dict(color=color, width=2), name=label)
 
-    # ─── Mean lines & adaptive label rows ──────────────────────────────
     # maximum density for positioning
     y_max = max(gaussian_kde(s1)(x_vals).max(),
                 gaussian_kde(s2)(x_vals).max())
