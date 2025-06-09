@@ -1,26 +1,10 @@
-#!/usr/bin/env python3
-"""
-Compare two cosine-similarity samples, plot histograms + KDE, run a t-test.
 
-Gap-percentage options
-----------------------
-    symmetric  : 2·|μ₁-μ₂| / (μ₁+μ₂)  ×100   ← default (scale-free, symmetric)
-    absolute   : |μ₁-μ₂|              ×100   ← simple “percentage points”
-
-Example
--------
-python script.py --file1 sample1.txt --file2 sample2.txt \
-                 --gap-mode absolute \
-                 --name1 "Method A" --name2 "Method B" --bins 25
-"""
 import numpy as np
 import argparse, os, sys
 import plotly.graph_objects as go
 from scipy import stats
 from scipy.stats import gaussian_kde
 
-
-# ─────────────────────────── helpers ────────────────────────────
 def format_p(p: float) -> str:
     """Format p-value in fixed-point if ≥1e-4 else scientific notation."""
     return f"{p:.4f}" if p >= 1e-4 else f"{p:.2e}"
@@ -67,11 +51,10 @@ def calc_gap(mu1: float, mu2: float, mode: str = "symmetric") -> float:
     diff = abs(mu1 - mu2)
     if mode == "absolute":
         return diff * 100.0
-    # symmetric default: 2·diff/(mu1+mu2)×100
+
     return diff / ((mu1 + mu2) / 2) * 100.0
 
 
-# ─────────────────────────── plotting ───────────────────────────
 def build_plot(s1: np.ndarray, s2: np.ndarray,
                name1: str, name2: str,
                bins: int, gap_mode: str) -> go.Figure:
@@ -114,7 +97,7 @@ def build_plot(s1: np.ndarray, s2: np.ndarray,
     row_fracs = [0.95, 0.85] if close else [0.90, 0.90]
     row_y = [y_max * f for f in row_fracs]
 
-    # μ₁ line + label
+
     fig.add_vline(x=mu1,
                   line=dict(color=line_colors[0], width=2, dash="dot"))
     fig.add_annotation(
@@ -126,7 +109,7 @@ def build_plot(s1: np.ndarray, s2: np.ndarray,
         font=dict(size=10), yanchor="bottom"
     )
 
-    # μ₂ line + label
+
     fig.add_vline(x=mu2,
                   line=dict(color=line_colors[1], width=2, dash="dot"))
     fig.add_annotation(
@@ -138,7 +121,7 @@ def build_plot(s1: np.ndarray, s2: np.ndarray,
         font=dict(size=10), yanchor="bottom"
     )
 
-    # gap & p-value annotation
+
     fig.add_annotation(
         x=(mu1 + mu2) / 2, y=y_max * 0.5,
         text=f"Gap: {gap:.2f}%<br>p-value: {format_p(p_val)}",
@@ -176,7 +159,6 @@ def build_plot(s1: np.ndarray, s2: np.ndarray,
     return fig
 
 
-# ─────────────────────────── main ─────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
         description="Generate comparative histogram + KDE and run t-test"
