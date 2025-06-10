@@ -135,3 +135,9 @@ cp.ckpt.data-*
 *.pb
 *.data-*
 ncd-conceptnet-transformer_epochs-*heads-*.pdf
+*.h5
+*.keras
+# Wandb logs
+wandb/
+*.tsv
+*.log
