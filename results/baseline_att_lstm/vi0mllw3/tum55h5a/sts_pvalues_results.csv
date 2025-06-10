@@ -1,0 +1,2 @@
+directory,mean_test_predictions,mean_test_random,test_percent_difference,test_pvalue,mean_val_predictions,mean_val_random,val_percent_difference,val_pvalue
+tum55h5a,0.5753813550815559,0.5407854494985673,3.459590558298853,4.2785411344877324e-30,0.42997628040918784,0.34364547454291744,8.63308058662704,0.0

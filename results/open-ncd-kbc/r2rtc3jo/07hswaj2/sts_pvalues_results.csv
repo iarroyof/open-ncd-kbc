@@ -1,0 +1,2 @@
+directory,mean_test_predictions,mean_test_random,test_percent_difference,test_pvalue,mean_val_predictions,mean_val_random,val_percent_difference,val_pvalue
+07hswaj2,0.5689143448646711,0.5351712014324083,3.374314343226281,1.1330048357004254e-27,0.42798368602029596,0.3414626089385476,8.652107708174839,0.0

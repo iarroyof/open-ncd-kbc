@@ -1,0 +1,2 @@
+directory,mean_test_predictions,mean_test_random,test_percent_difference,test_pvalue,mean_val_predictions,mean_val_random,val_percent_difference,val_pvalue
+tgkmhszm,0.5836370355093257,0.5367224207699194,4.6914614739406275,5.269892794732402e-50,0.44150757391748885,0.34190788487480006,9.959968904268878,0.0

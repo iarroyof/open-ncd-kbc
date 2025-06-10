@@ -1,0 +1,2 @@
+directory,mean_test_predictions,mean_test_random,test_percent_difference,test_pvalue,mean_val_predictions,mean_val_random,val_percent_difference,val_pvalue
+p6kcprag,0.5446399140401146,0.5315915183527306,1.304839568738403,1.4266684540973875e-05,0.4006876274951821,0.34261713114125664,5.807049635392547,0.0
