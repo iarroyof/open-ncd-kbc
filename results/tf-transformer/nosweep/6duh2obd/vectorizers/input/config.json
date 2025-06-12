@@ -1,0 +1,1 @@
+{"name": "text_vectorization", "trainable": true, "dtype": "string", "batch_input_shape": [null], "max_tokens": 15000, "standardize": 

@@ -1,0 +1,13 @@
+batch: 64
+epochs: 2
+heads: 8
+key_dim: 64
+latent_dim: 2048
+model_dim: 512
+out_dir: results/tf-transformer/nosweep/4j49frxc
+seed: 42
+seq_len: 30
+stacks: 1
+train_path: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_train.tsv
+valid_path: data/ncd_gp_conceptnet_toy/ncd_gp_conceptnet_valid.tsv
+vocab_size: 15000

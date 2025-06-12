@@ -1,0 +1,3 @@
+loss,masked_accuracy,val_loss,val_masked_accuracy,val_rougeL,val_bleu4,val_meteor
+2.3143937587738037,0.0,2.2176876068115234,0.0,0.0,0,0.0
+2.2122843265533447,0.0,2.219437599182129,0.0,0.0,0,0.0
