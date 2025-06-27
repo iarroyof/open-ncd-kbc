@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+DefinedAs obesity will,next American ep ide mic,key to,"[2, 606, 123, 3]"
+UsedFor mouse,surf,eat,"[2, 310, 3]"
+UsedFor a parking structure,providing parking for customers,parking cars,"[2, 1947, 2394, 3]"
+HasLastSubevent sit quietly,speak,stop,"[2, 740, 3]"
+shut those roads in the forest service,the winter,the roads,"[2, 119, 6565, 3]"
+AtLocation storage pan,garage,store,"[2, 460, 3]"
+CapableOf something,fer ment,be,"[2, 112, 3]"
+UsedFor an airplane seat,sitting in,sitting,"[2, 2412, 3]"
+AtLocation menu,in restaurant,in,"[2, 92, 3]"
+ReceivesAction one object,attached to another,use by physical,"[2, 156, 347, 945, 3]"

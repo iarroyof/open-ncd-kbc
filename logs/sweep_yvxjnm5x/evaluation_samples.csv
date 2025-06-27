@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+CapableOf person,jump over,ticket,"[2, 1057, 3]"
+IsA hot and cold,measure of,"[EMPTY] [2, 3]","[2, 3]"
+UsedFor a desk,putting your,make,"[2, 325, 3]"
+DefinedAs bon te bo k,D am,"[EMPTY] [2, 3]","[2, 3]"
+Causes playing games,fatig ue,"[EMPTY] [2, 3]","[2, 3]"
+ReceivesAction che ers,set in,"[EMPTY] [2, 3]","[2, 3]"
+CapableOf humans,taste with,ticket,"[2, 1057, 3]"
+HasLastSubevent play ball,go home,"[EMPTY] [2, 3]","[2, 3]"
+UsedFor take bus,poor person,"[EMPTY] [2, 3]","[2, 3]"
+AtLocation french restaurant,many city,"[EMPTY] [2, 3]","[2, 3]"

@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+ed ere,unk ner i see ane,Z,"[2, 62, 3]"
+Has ric ot icy,army en ck ack compet,Z,"[2, 62, 3]"
+th Z market,sword oo pre z ø,Z,"[2, 62, 3]"
+ine lung la ive d,? Of ö ː chan net cons ow diagnosed hamburger,Z,"[2, 62, 3]"
+IsA might modern,orm not,Z,"[2, 62, 3]"
+thing gh do,computer x showing steel,Z,"[2, 62, 3]"
+ed bicycle,smoke atedBy sk m ool cereal,Z,"[2, 62, 3]"
+ca wi ip,un Part,Z,"[2, 62, 3]"
+th ame day,austral ere,Z,"[2, 62, 3]"
+ou bean ents,sel pu,Z,"[2, 62, 3]"

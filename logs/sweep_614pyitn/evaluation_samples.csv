@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+DefinedAs obesity will,next American,opposite of,"[2, 3320, 136]"
+UsedFor mouse,surf,play,"[2, 279, 3]"
+UsedFor a parking structure,providing parking,parking cars,"[2, 1947, 2394]"
+HasLastSubevent sit quietly,speak,turn,"[2, 716, 3]"
+shut those roads in the forest service,the winter,the roads,"[2, 119, 6565]"
+AtLocation storage pan,garage,cupboard,"[2, 2445, 3]"
+CapableOf something,fer ment,go,"[2, 209, 3]"
+UsedFor an airplane seat,sitting in,travel,"[2, 734, 3]"
+AtLocation menu,in restaurant,restaurant,"[2, 559, 3]"
+ReceivesAction one object,attached to,make in,"[2, 325, 92]"

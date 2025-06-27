@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+DefinedAs obesity will,next American ep ide mic,next to of,"[2, 1889, 123, 136, 3]"
+UsedFor mouse,surf,cl ick,"[2, 221, 351, 3]"
+shut those roads in the forest service,the winter,the winter,"[2, 119, 3021, 3]"
+AtLocation storage pan,garage,kitchen,"[2, 1373, 3]"
+AtLocation menu,in restaurant,restaurant iner,"[2, 559, 4501, 3]"
+ReceivesAction one object,attached to another,made out of of,"[2, 1287, 264, 136, 136, 3]"
+UsedFor take bus,ride to school,go somewhere,"[2, 209, 1727, 3]"
+could be the buy ers,foreign concerns,a,"[2, 62, 3]"
+HasFirstSubevent jog,stretch,put on your shoes,"[2, 653, 94, 198, 1601, 3]"
+IsA swim and walk,common mode of loc om ot ion,both of of,"[2, 984, 136, 136, 3]"

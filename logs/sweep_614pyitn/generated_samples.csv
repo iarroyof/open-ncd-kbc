@@ -1,0 +1,10 @@
+source,target,prediction,bleu
+DefinedAs obesity will,next American ep ide mic,opposite of,0.0
+UsedFor mouse,surf,play,0.0
+UsedFor jog,burn calorie,get fit,0.0
+UsedFor a parking structure,providing parking for customers,parking cars,0.05501080739920602
+HasLastSubevent sit quietly,speak,turn,0.0
+CapableOf emotion,prov oke person to make error,make person,0.024066394763145416
+shut those roads in the forest service,the winter,the roads,0.1495348781221221
+AtLocation storage pan,garage,cupboard,0.0
+UsedFor stab to death,get rid of enemy,kill,0.0

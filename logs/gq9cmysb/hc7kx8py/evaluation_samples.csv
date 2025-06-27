@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+ed ere,unk ner i see ane,Z,"[2, 62, 3]"
+Has ric ot icy,army en ck ack compet,Z,"[2, 62, 3]"
+IsA might modern,orm not,Z,"[2, 62, 3]"
+thing gh do,computer x showing steel,Z,"[2, 62, 3]"
+th ame day,austral ere,Z,"[2, 62, 3]"
+ou bean ents,sel pu,Z,"[2, 62, 3]"
+ca ach sign object,build ø ㅕ movies,Z,"[2, 62, 3]"
+our ere,hood flow,Z,"[2, 62, 3]"
+ine 20,changing en For wom,Z,"[2, 62, 3]"
+ou Z transfer,Z ons bla,Z,"[2, 62, 3]"

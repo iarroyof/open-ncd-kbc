@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+DefinedAs obesity will,next American,most of,"[2, 609, 136]"
+UsedFor mouse,surf,play,"[2, 279, 3]"
+shut those roads in the forest service,the winter,the QUANT_O_1,"[2, 119, 681]"
+AtLocation storage pan,garage,kitchen,"[2, 1373, 3]"
+AtLocation menu,in restaurant,your,"[2, 198, 3]"
+ReceivesAction one object,attached to,cover,"[2, 941, 3]"
+UsedFor take bus,ride to,get from,"[2, 214, 366]"
+could be the buy ers,foreign concerns,a,"[2, 62, 3]"
+HasFirstSubevent jog,stretch,put on,"[2, 653, 94]"
+IsA swim and walk,common mode,good,"[2, 339, 3]"

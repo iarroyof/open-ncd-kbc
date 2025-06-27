@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+CapableOf person,jump over p ud dle,"[EMPTY] [2, 2, 2, 2, 2]","[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]"
+IsA hot and cold,measure of ther mal activity,"[EMPTY] [2, 2, 2, 2, 2]","[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]"
+AtLocation something,end of it life,"[EMPTY] [2, 2, 3]","[2, 2, 3]"
+Desires pay cash be for person who,avoid pay interest,"[EMPTY] [2, 2, 2, 2, 2]","[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]"
+UsedFor a desk,putting your computer on it,"[EMPTY] [2, 2, 2, 2, 2]","[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]"
+DefinedAs bon te bo k,D am al is cus py gar us dor cas,"[EMPTY] [2, 2, 2, 2, 2]","[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]"
+AtLocation people,at an airport,"[EMPTY] [2, 2, 3]","[2, 2, 3]"
+CapableOf a girl,join the cho ir,"[EMPTY] [2, 2, 2, 2, 2]","[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]"
+Causes playing games,fatig ue,"[EMPTY] [2, 2, 2, 2, 2]","[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]"
+ReceivesAction che ers,set in Bo ston,"[EMPTY] [2, 2, 2, 2, 2]","[2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]"

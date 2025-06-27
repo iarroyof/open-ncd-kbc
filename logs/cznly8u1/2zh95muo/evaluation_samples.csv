@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+IsA titan,a blurry world,orbit moon,"[2, 3894, 1758, 3]"
+ReceivesAction masks,worn on face,worn in masked,"[2, 3703, 128, 29026, 3]"
+u - 57 1,a good movie,a,"[2, 69, 3]"
+AtLocation a comb,the back of the sofa,a,"[2, 69, 3]"
+AtLocation a kitten,top of a tree,a postcard,"[2, 69, 16806, 3]"
+AtLocation slinkies,toy store,a,"[2, 69, 3]"
+HasA a document folder,documents,adress,"[2, 18154, 3]"
+CapableOf school district c,bus it student to another school,school,"[2, 674, 3]"
+pit cure of see,upside down,you,"[2, 180, 3]"
+father of your cousin,your uncle,uncle uncle,"[2, 6987, 6987, 3]"

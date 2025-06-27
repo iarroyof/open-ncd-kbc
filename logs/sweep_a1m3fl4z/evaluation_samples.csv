@@ -1,0 +1,11 @@
+source,target,prediction,pred_tensor
+DefinedAs obesity will,next American ep ide mic,key to the,"[2, 606, 123, 119, 3]"
+UsedFor mouse,surf,play,"[2, 279, 3]"
+CapableOf someone,sit,eat,"[2, 310, 3]"
+CapableOf lion c un,pur r much loud than cat,live in,"[2, 643, 92, 3]"
+UsedFor returning to work,ending a vacation,getting a,"[2, 607, 62, 3]"
+MotivatedByGoal ride a bicycle,enjoy riding a bicycle,it is fun,"[2, 109, 115, 452, 3]"
+CapableOf a child,talk at an war ly age,be a pet,"[2, 112, 62, 795, 3]"
+IsA it,fish,a,"[2, 62, 3]"
+UsedFor a parking structure,providing parking for customers,storing a,"[2, 2893, 62, 3]"
+HasLastSubevent sit quietly,speak,take off your shoe,"[2, 402, 387, 198, 1681, 3]"
