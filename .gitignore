@@ -1,3 +1,11 @@
+# PyTorch binaries
+*.pt
+*.pth
+*.safetensors
+*.bin
+cache/
+**/checkpoint-*/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
